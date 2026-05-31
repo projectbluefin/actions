@@ -2,6 +2,13 @@
 
 Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github.com/projectbluefin/bluefin), [aurora](https://github.com/ublue-os/aurora), and [bazzite](https://github.com/ublue-os/bazzite).
 
+# DESIGNED FOR UPSTREAM ADOPTION
+
+These skills are the shared knowledge of 5 years of Universal Blue. The humans did such a good job that we were able to redo it with agents in a weekend. If you find an action here that should live in a CNCF or OpenSSF or any other upstream project. If you're here you're the kind of person who likes a challenge. 
+
+Bluefin has testing branches and a passionate developer community, if you're an OSS maintainer and want a piece of tooling in here to live upstream, take it and we'll commit to CI for you. Another logo in your ADOPTERS.md. 
+
+
 ## Available Actions
 
 | Action | Purpose |
