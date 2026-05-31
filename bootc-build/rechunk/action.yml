@@ -1,0 +1,61 @@
+name: "bootc-build/rechunk"
+description: "Rechunk a container image using rpm-ostree compose build-chunked-oci"
+author: "projectbluefin"
+
+inputs:
+  source-image:
+    description: "Local image reference to rechunk (e.g. my-image:latest)"
+    required: true
+  output-image:
+    description: "Output image name"
+    default: "rechunked"
+  max-layers:
+    description: "Maximum number of OCI layers"
+    default: "127"
+  format-version:
+    description: "Chunked format version"
+    default: "2"
+  previous-build:
+    description: "Previous build reference for delta optimization (optional)"
+    default: ""
+  bootc:
+    description: "Pass --bootc flag to chunkah"
+    default: "true"
+
+outputs:
+  image-ref:
+    description: "Reference to rechunked image (containers-storage:localhost/rechunked)"
+    value: ${{ steps.rechunk.outputs.image-ref }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Rechunk image
+      id: rechunk
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source-image }}
+        OUTPUT: ${{ inputs.output-image }}
+        MAX_LAYERS: ${{ inputs.max-layers }}
+        FORMAT_VERSION: ${{ inputs.format-version }}
+        PREVIOUS_BUILD: ${{ inputs.previous-build }}
+        BOOTC_FLAG: ${{ inputs.bootc }}
+      run: |
+        set -euo pipefail
+
+        ARGS=(
+          --max-layers "${MAX_LAYERS}"
+          --format-version "${FORMAT_VERSION}"
+          --from "${SOURCE}"
+          --output "containers-storage:localhost/${OUTPUT}"
+        )
+
+        [[ "${BOOTC_FLAG}" == "true" ]] && ARGS+=(--bootc)
+        [[ -n "${PREVIOUS_BUILD}" ]] && ARGS+=(--previous-build "${PREVIOUS_BUILD}")
+
+        sudo podman run --rm --privileged \
+          --volume /var/lib/containers:/var/lib/containers \
+          "${SOURCE}" \
+          rpm-ostree compose build-chunked-oci "${ARGS[@]}"
+
+        echo "image-ref=containers-storage:localhost/${OUTPUT}" >> "$GITHUB_OUTPUT"

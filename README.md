@@ -4,22 +4,15 @@ Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github
 
 ## Available Actions
 
-### P0 — Foundation
-
 | Action | Purpose |
 |--------|---------|
 | [`bootc-build/setup-runner`](bootc-build/setup-runner/) | Prepare runner: update podman, configure storage, install tools |
 | [`bootc-build/dnf-cache`](bootc-build/dnf-cache/) | Restore/save DNF cache with permissions workaround |
 | [`bootc-build/ghcr-cleanup`](bootc-build/ghcr-cleanup/) | Prune old GHCR images |
-
-### P1 — Core Pipeline (coming soon)
-
-| Action | Purpose |
-|--------|---------|
-| `bootc-build/preflight` | Validate runner environment before build |
-| `bootc-build/sign-and-publish` | Cosign sign + SBOM + attestation |
-| `bootc-build/rechunk` | rpm-ostree rechunking for OTA deltas |
-| `bootc-build/push-image` | GHCR push with retry and digest capture |
+| [`bootc-build/preflight`](bootc-build/preflight/) | Validate runner environment before build |
+| [`bootc-build/sign-and-publish`](bootc-build/sign-and-publish/) | Cosign sign + SBOM + attestation |
+| [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
+| [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
 
 ### P2 — Polish (coming soon)
 

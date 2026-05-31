@@ -1,0 +1,120 @@
+name: "bootc-build/push-image"
+description: "Push container image to GHCR with retry and skopeo copy for additional tags"
+author: "projectbluefin"
+
+inputs:
+  image-name:
+    description: "Local image name (without registry)"
+    required: true
+  tags:
+    description: "Space-separated list of tags to push"
+    required: true
+  default-tag:
+    description: "Primary tag for initial push and digest capture (first tag if empty)"
+    default: ""
+  registry:
+    description: "Target container registry"
+    default: "ghcr.io"
+  max-attempts:
+    description: "Maximum retry attempts for the initial push"
+    default: "3"
+  retry-wait-seconds:
+    description: "Seconds to wait between retries"
+    default: "15"
+  github-token:
+    description: "Token for registry login"
+    required: true
+
+outputs:
+  digest:
+    description: "Digest of the pushed image (sha256:...)"
+    value: ${{ steps.push.outputs.digest }}
+  registry-path:
+    description: "Full lowercased registry path (e.g. ghcr.io/projectbluefin)"
+    value: ${{ steps.push.outputs.registry-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Login to registry
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REGISTRY: ${{ inputs.registry }}
+      run: |
+        echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
+        echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin 2>/dev/null || true
+
+    - name: Push image with retry and skopeo copy for aliases
+      id: push
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        TAGS: ${{ inputs.tags }}
+        DEFAULT_TAG_INPUT: ${{ inputs.default-tag }}
+        REGISTRY: ${{ inputs.registry }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+        RETRY_WAIT: ${{ inputs.retry-wait-seconds }}
+        DIGEST_FILE: ${{ runner.temp }}/push-digest
+      run: |
+        set -euo pipefail
+
+        REGISTRY_LOWER="${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
+        echo "registry-path=${REGISTRY_LOWER}" >> "$GITHUB_OUTPUT"
+
+        # Determine default tag (first tag if not specified)
+        read -r -a TAG_ARRAY <<< "${TAGS}"
+        if [[ ${#TAG_ARRAY[@]} -eq 0 ]]; then
+          echo "::error::At least one tag must be provided"
+          exit 1
+        fi
+        DEFAULT_TAG="${DEFAULT_TAG_INPUT:-${TAG_ARRAY[0]}}"
+
+        attempt=0
+        while true; do
+          attempt=$((attempt + 1))
+          rm -f "${DIGEST_FILE}"
+
+          # Push default tag with full upload (two-push pattern for annotation stability)
+          # Workaround for https://github.com/containers/podman/issues/27796
+          sudo -E podman push \
+            --compression-format zstd:chunked \
+            --compression-level 3 \
+            --force-compression \
+            --retry 5 --retry-delay 30s \
+            "${IMAGE_NAME}:${DEFAULT_TAG}" \
+            "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
+
+          sudo -E podman push \
+            --compression-format zstd:chunked \
+            --compression-level 3 \
+            --force-compression \
+            --retry 5 --retry-delay 30s \
+            --digestfile "${DIGEST_FILE}" \
+            "${IMAGE_NAME}:${DEFAULT_TAG}" \
+            "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
+
+          if [[ -s "${DIGEST_FILE}" ]]; then
+            break
+          fi
+
+          if [[ ${attempt} -ge ${MAX_ATTEMPTS} ]]; then
+            echo "::error::Push failed after ${MAX_ATTEMPTS} attempts"
+            exit 1
+          fi
+          echo "Push attempt ${attempt} failed, retrying in ${RETRY_WAIT}s..."
+          sleep "${RETRY_WAIT}"
+        done
+
+        DIGEST=$(cat "${DIGEST_FILE}")
+        echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+        # Server-side copy for all alias tags (no re-upload)
+        for tag in "${TAG_ARRAY[@]}"; do
+          if [[ "${tag}" != "${DEFAULT_TAG}" ]]; then
+            skopeo copy \
+              "docker://${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}" \
+              "docker://${REGISTRY_LOWER}/${IMAGE_NAME}:${tag}"
+          fi
+        done

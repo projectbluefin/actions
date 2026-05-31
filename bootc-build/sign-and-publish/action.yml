@@ -1,0 +1,178 @@
+name: "bootc-build/sign-and-publish"
+description: "Sign image, generate SBOM, attach via ORAS, and create attestation"
+author: "projectbluefin"
+
+inputs:
+  image:
+    description: "Full image reference (e.g. ghcr.io/projectbluefin/bluefin)"
+    required: true
+  digest:
+    description: "Image digest to sign (sha256:...)"
+    required: true
+  signing-mode:
+    description: "Signing mode: 'keyless' (OIDC/Fulcio) or 'key' (COSIGN_PRIVATE_KEY)"
+    default: "keyless"
+  signing-key:
+    description: "Cosign private key (required when signing-mode=key)"
+    default: ""
+  generate-sbom:
+    description: "Generate and attach SBOM with Syft"
+    default: "true"
+  push-attestation:
+    description: "Push GitHub attestation to registry"
+    default: "true"
+  github-token:
+    description: "Token for ORAS login and attestation"
+    required: true
+  syft-version:
+    description: "Syft version to use (default: latest stable)"
+    default: "v1.39.0"
+  image-name:
+    description: "Short image name for SBOM file path (e.g. bluefin)"
+    default: ""
+
+outputs:
+  sbom-digest:
+    description: "Digest of the attached SBOM OCI artifact"
+    value: ${{ steps.upload-sbom.outputs.sbom-digest }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate keyless permissions
+      if: inputs.signing-mode == 'keyless'
+      shell: bash
+      run: |
+        # id-token:write must be granted by the calling workflow
+        # We check indirectly — if ACTIONS_ID_TOKEN_REQUEST_URL is unset, keyless will fail
+        if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+          echo "::error::signing-mode=keyless requires 'id-token: write' permission in the calling job."
+          exit 1
+        fi
+
+    - name: Validate key-based signing input
+      if: inputs.signing-mode == 'key'
+      shell: bash
+      env:
+        COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
+      run: |
+        if [[ -z "${COSIGN_PRIVATE_KEY}" ]]; then
+          echo "::error::signing-mode=key requires inputs.signing-key to be set."
+          exit 1
+        fi
+
+    - name: Install Cosign
+      uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+
+    - name: Fix sigstore cache permissions
+      shell: bash
+      run: sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore" 2>/dev/null || true
+
+    - name: Sign container image (keyless)
+      if: inputs.signing-mode == 'keyless'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+      run: |
+        cosign sign -y "${IMAGE}@${DIGEST}"
+
+    - name: Sign container image (key-based)
+      if: inputs.signing-mode == 'key'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+        COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
+      run: |
+        cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
+
+    - name: Install Syft
+      if: inputs.generate-sbom == 'true'
+      id: setup-syft
+      uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+      with:
+        syft-version: ${{ inputs.syft-version }}
+
+    - name: Generate SBOM
+      if: inputs.generate-sbom == 'true'
+      id: gen-sbom
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+        SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+        IMAGE_NAME: ${{ inputs.image-name }}
+      run: |
+        set -euo pipefail
+        NAME="${IMAGE_NAME:-$(basename "${IMAGE}")}"
+        SBOM_DIR="sbom_out/${NAME}"
+        mkdir -p "${SBOM_DIR}"
+        "${SYFT_CMD}" "${IMAGE}@${DIGEST}" -o spdx-json="${SBOM_DIR}/sbom.json"
+        echo "sbom-path=${SBOM_DIR}/sbom.json" >> "$GITHUB_OUTPUT"
+        echo "sbom-dir=${SBOM_DIR}" >> "$GITHUB_OUTPUT"
+        echo "image-name=${NAME}" >> "$GITHUB_OUTPUT"
+
+    - name: Install ORAS
+      if: inputs.generate-sbom == 'true'
+      uses: oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0
+
+    - name: Login to registry with ORAS
+      if: inputs.generate-sbom == 'true'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        echo "${GITHUB_TOKEN}" | oras login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+    - name: Attach SBOM via ORAS
+      if: inputs.generate-sbom == 'true'
+      id: upload-sbom
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+        SBOM_PATH: ${{ steps.gen-sbom.outputs.sbom-path }}
+      run: |
+        set -euo pipefail
+        cd "$(dirname "${SBOM_PATH}")"
+        oras attach \
+          --artifact-type application/vnd.spdx+json \
+          --annotation "filename=$(basename "${SBOM_PATH}")" \
+          "${IMAGE}@${DIGEST}" \
+          "$(basename "${SBOM_PATH}")"
+        SBOM_DIGEST=$(oras discover --format json "${IMAGE}@${DIGEST}" \
+          | jq -r '.referrers[] | select(.artifactType == "application/vnd.spdx+json") | .digest' \
+          | head -n1)
+        if [[ -z "${SBOM_DIGEST}" ]]; then
+          echo "::error::Failed to discover attached SBOM digest"
+          exit 1
+        fi
+        echo "sbom-digest=${SBOM_DIGEST}" >> "$GITHUB_OUTPUT"
+
+    - name: Sign SBOM artifact
+      if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'keyless'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
+      run: |
+        cosign sign -y "${IMAGE}@${SBOM_DIGEST}"
+
+    - name: Sign SBOM artifact (key-based)
+      if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'key'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
+        COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
+      run: |
+        cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
+
+    - name: GitHub Attestation
+      if: inputs.push-attestation == 'true'
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.image }}
+        subject-digest: ${{ inputs.digest }}
+        push-to-registry: true

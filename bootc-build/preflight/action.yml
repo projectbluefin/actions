@@ -1,0 +1,79 @@
+name: "bootc-build/preflight"
+description: "Validate runner environment before bootc image build"
+author: "projectbluefin"
+
+inputs:
+  registry:
+    description: "Container registry to validate auth against"
+    default: "ghcr.io"
+  github-token:
+    description: "Token for registry auth check"
+    required: true
+  image-name:
+    description: "Image name to validate and normalize (optional)"
+    default: ""
+  required-secrets:
+    description: "Comma-separated list of env var names that must be non-empty"
+    default: ""
+
+outputs:
+  registry-lowercase:
+    description: "Normalized lowercase registry path (ghcr.io/org)"
+    value: ${{ steps.normalize.outputs.registry-lowercase }}
+  image-ref:
+    description: "Validated and normalized image reference"
+    value: ${{ steps.normalize.outputs.image-ref }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Normalize image reference
+      id: normalize
+      shell: bash
+      env:
+        INPUT_REGISTRY: ${{ inputs.registry }}
+        INPUT_IMAGE_NAME: ${{ inputs.image-name }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+      run: |
+        REGISTRY_LOWER="${INPUT_REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
+        echo "registry-lowercase=${REGISTRY_LOWER}" >> "$GITHUB_OUTPUT"
+        if [[ -n "${INPUT_IMAGE_NAME}" ]]; then
+          IMAGE_REF="${REGISTRY_LOWER}/${INPUT_IMAGE_NAME,,}"
+          echo "image-ref=${IMAGE_REF}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Validate registry auth
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_REGISTRY: ${{ inputs.registry }}
+      run: |
+        set -euo pipefail
+        if ! echo "${GITHUB_TOKEN}" | podman login "${INPUT_REGISTRY}" \
+            -u "${{ github.actor }}" --password-stdin 2>/dev/null; then
+          echo "::error::Registry auth failed for ${INPUT_REGISTRY}. Check GITHUB_TOKEN has packages:write permission."
+          exit 1
+        fi
+        echo "✅ Registry auth OK"
+
+    - name: Validate required secrets
+      if: inputs.required-secrets != ''
+      shell: bash
+      env:
+        REQUIRED: ${{ inputs.required-secrets }}
+      run: |
+        set -euo pipefail
+        IFS=',' read -ra SECRETS <<< "${REQUIRED}"
+        MISSING=()
+        for secret in "${SECRETS[@]}"; do
+          secret="${secret// /}"
+          val="${!secret:-}"
+          if [[ -z "${val}" ]]; then
+            MISSING+=("${secret}")
+          fi
+        done
+        if [[ ${#MISSING[@]} -gt 0 ]]; then
+          echo "::error::Required secrets are missing or empty: ${MISSING[*]}"
+          exit 1
+        fi
+        echo "✅ All required secrets present"
