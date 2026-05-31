@@ -4,7 +4,7 @@ author: "projectbluefin"
 
 inputs:
   storage-backend:
-    description: "Storage backend: 'btrfs' (container-storage-action) or 'remove-software'"
+    description: "Storage backend: 'btrfs' (remove-software + BTRFS loopback for /var/lib/containers) or 'remove-software' (remove-software only)"
     default: "btrfs"
   update-podman:
     description: "Install podman/buildah/crun/skopeo from Ubuntu resolute (25.04)"
@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Maximize build space (remove-software)
-      if: inputs.storage-backend == 'remove-software'
+      if: inputs.storage-backend == 'btrfs' || inputs.storage-backend == 'remove-software'
       uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
       with:
         remove-dotnet: "true"
@@ -36,6 +36,7 @@ runs:
       with:
         target-dir: /var/lib/containers
         mount-opts: compress-force=zstd:2
+        loopback-free: "1"
 
     - name: Update Podman from Ubuntu resolute
       if: inputs.update-podman == 'true'
