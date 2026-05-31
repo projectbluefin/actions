@@ -1,0 +1,51 @@
+# AGENTS.md — projectbluefin/actions
+
+Shared composite GitHub Actions for bootc image builders (bluefin, aurora, bazzite).
+
+Load **[docs/SKILL.md](docs/SKILL.md)** before modifying any action.
+
+## Org pipeline — projectbluefin
+
+```
+projectbluefin/actions  ←── shared CI building blocks
+        │
+        ├── projectbluefin/bluefin    (bootc desktop image)
+        ├── ublue-os/aurora           (Aurora desktop image)
+        └── ublue-os/bazzite          (Bazzite gaming image)
+```
+
+Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaking changes to an action require a version bump and coordinated update across all consuming repos.
+
+---
+
+## Mandatory gates
+
+**Read-first:** Read `AGENTS.md`, `docs/SKILL.md`, and `.github/copilot-instructions.md` before touching any action.
+
+**Skill contribution (enforced):** If you discover a pattern, fix a recurring mistake, or learn something that would help future agents — update the relevant file in `docs/skills/` in the **same PR** as your change. If no skill file exists for the area, create one and add it to the routing table in `docs/SKILL.md`. Skills live here, not in per-agent configs.
+
+**SHA pinning:** Every `uses:` referencing a third-party action must be pinned to a full commit SHA with a version comment. PRs that introduce floating tags (`@main`, `@v3`) will be rejected.
+
+**No breaking changes without a version signal:** Removing or renaming an input, or changing default behavior, requires coordinating with consuming repos. Document the blast radius in the PR description.
+
+**Verification:** Every PR must confirm that the action change was exercised in a real workflow (link to a CI run or test job). No untested changes.
+
+---
+
+## PR Comment Policy
+
+**One comment per PR event, max.** Combine all findings into a single comment.
+
+**Never duplicate GitHub UI state.** Do not post CI pass/fail summaries or approval counts.
+
+**When in doubt, don't post.** "Tests pass" = post nothing.
+
+---
+
+## Knowledge routing
+
+**All learnings go to `docs/skills/`** — never to `.github/copilot-instructions.md` (that file is a pointer-only wrapper, read-only), and never to a personal agent config outside this repo.
+
+After editing a skill file, commit it in the same PR as the triggering change.
+
+> **Why:** Skills in this repo are the canonical reference. Personal agent configs are ephemeral and siloed. A fix discovered here belongs to every future agent working in this repo — not just the one that found it.
