@@ -12,6 +12,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Update a pinned SHA | `docs/skills/composite-actions.md` → "SHA pinning" |
 | Understand the sign-and-publish flow | `docs/skills/composite-actions.md` → "sign-and-publish" |
 | Understand the push-image two-push pattern | `docs/skills/composite-actions.md` → "push-image" |
+| Understand chunkah rechunking | `docs/skills/composite-actions.md` → "chunka" |
 
 ## Full Skill Index
 

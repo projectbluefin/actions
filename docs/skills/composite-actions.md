@@ -161,6 +161,27 @@ Runs `rpm-ostree compose build-chunked-oci` **inside** the source image itself (
 
 `previous-build` enables delta optimization for smaller OTA updates. Pass the previous build's registry reference.
 
+### `chunka`
+
+OCI-native rechunking via [chunkah](https://github.com/coreos/chunkah). Uses `buildah build` with the upstream `Containerfile.splitter` — no rpm-ostree required.
+
+Key design decisions:
+- `CHUNKAH_VERSION` and `CHUNKAH_SHA` are defined once and derive both the image ref (`quay.io/coreos/chunkah:<VERSION>@<SHA>`) and the `Containerfile.splitter` URL. **Bump both together** when upgrading.
+- `CHUNKAH_CONFIG_STR=$(sudo podman inspect "${SOURCE}")` passes existing OCI labels through so `containers.bootc=1` and other metadata are preserved.
+- Mandatory cleanup flags (`--prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-`) strip stale OSTree annotations and are hardcoded — they are correctness requirements, not tuning knobs.
+- `output-image` defaults to `source-image` (in-place rechunk).
+
+**Workarounds carried from consuming repos:**
+
+| Workaround | Reason |
+|---|---|
+| `--skip-unused-stages=false` | buildah may skip the final import stage without this |
+| `-v "$(pwd):/run/src"` + `--security-opt=label=disable` | Required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x) — keeps the `/run/src` bind-mount alive so `out.ociarchive` is findable by the final stage |
+| `sudo rm -f out.ociarchive` | Containerfile.splitter leaves this artifact in the CWD; clean up to avoid stale files on re-runs |
+| `sudo podman save "${OUTPUT_TAG}" \| podman load` | buildah runs as root; its container store is separate from the runner-user's podman store — pipe transfers the image to unprivileged podman |
+
+**Root storage prerequisite:** `source-image` must be visible to rootful container storage (i.e., built or imported with `sudo`/buildah). Images built rootless won't be found by `sudo buildah build --from`.
+
 ### `ghcr-cleanup`
 
 Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images older than `older-than` (default: 90 days), keeping at least `keep-n-tagged` and `keep-n-untagged` (both default: 7).
@@ -186,3 +207,6 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 | `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |
+| `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for `out.ociarchive` to survive to final stage |
+| `sudo rm -f out.ociarchive` | `chunka` | Containerfile.splitter leaves artifact in CWD; stale file breaks re-runs |
+| `sudo podman save \| podman load` | `chunka` | buildah (root) and podman (user) use separate container stores |

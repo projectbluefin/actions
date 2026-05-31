@@ -1,0 +1,69 @@
+name: "bootc-build/chunka"
+description: "Rechunk a bootc image using chunkah (OCI-native, no rpm-ostree)"
+author: "projectbluefin"
+
+inputs:
+  source-image:
+    description: "Local image reference to rechunk — must be in rootful container storage (e.g. localhost/my-image:latest)"
+    required: true
+  output-image:
+    description: "Output image tag; defaults to source-image (in-place rechunk)"
+    default: ""
+  max-layers:
+    description: "Maximum number of OCI layers"
+    default: "128"
+
+outputs:
+  image-ref:
+    description: "Reference to rechunked image in user (podman) storage"
+    value: ${{ steps.chunka.outputs.image-ref }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Rechunk with chunkah
+      id: chunka
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source-image }}
+        OUTPUT: ${{ inputs.output-image }}
+        MAX_LAYERS: ${{ inputs.max-layers }}
+      run: |
+        set -euo pipefail
+
+        # Version pin — bump both CHUNKAH_SHA and CHUNKAH_VERSION together.
+        # Containerfile.splitter is fetched from the matching release tag at build time.
+        CHUNKAH_VERSION="v0.5.0"
+        CHUNKAH_SHA="sha256:352097f3d32186ac11082f8b74cd544678b00388b50c96ba5c8e79503a454fe3"
+        CHUNKAH_REF="quay.io/coreos/chunkah:${CHUNKAH_VERSION}@${CHUNKAH_SHA}"
+        CONTAINERFILE_URL="https://github.com/coreos/chunkah/releases/download/${CHUNKAH_VERSION}/Containerfile.splitter"
+
+        OUTPUT_TAG="${OUTPUT:-${SOURCE}}"
+
+        # CHUNKAH_CONFIG_STR passes existing OCI labels (containers.bootc=1, etc.)
+        # into chunkah so they are preserved on the rechunked image.
+        CHUNKAH_CONFIG_STR="$(sudo podman inspect "${SOURCE}")"
+
+        # -v and --security-opt are required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x).
+        # The bind-mount of /run/src keeps out.ociarchive in the host CWD so that the final
+        # `FROM oci-archive:out.ociarchive` stage in Containerfile.splitter can find it.
+        sudo buildah build \
+          --skip-unused-stages=false \
+          --from "${SOURCE}" \
+          --build-arg "CHUNKAH=${CHUNKAH_REF}" \
+          --build-arg "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
+          --build-arg "CHUNKAH_ARGS=--max-layers ${MAX_LAYERS} --prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-" \
+          -t "${OUTPUT_TAG}" \
+          -v "$(pwd):/run/src" \
+          --security-opt=label=disable \
+          "${CONTAINERFILE_URL}"
+
+        sudo rm -f out.ociarchive
+
+        # Transfer rechunked image from root (buildah) storage to user (podman) storage.
+        # buildah runs as root, so its container store is separate from the runner-user's
+        # podman store. Piping save→load makes the tagged image visible to unprivileged
+        # podman steps that follow.
+        sudo podman save "${OUTPUT_TAG}" | podman load
+
+        echo "image-ref=${OUTPUT_TAG}" >> "$GITHUB_OUTPUT"
