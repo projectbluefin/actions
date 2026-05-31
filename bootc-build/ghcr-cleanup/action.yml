@@ -1,0 +1,32 @@
+name: "bootc-build/ghcr-cleanup"
+description: "Prune untagged/old container images from GHCR"
+author: "projectbluefin"
+
+inputs:
+  packages:
+    description: "Comma-separated GHCR package names to clean up"
+    required: true
+  older-than:
+    description: "Age threshold for deletion"
+    default: "90 days"
+  keep-n-tagged:
+    description: "Minimum number of tagged images to keep"
+    default: "7"
+  keep-n-untagged:
+    description: "Minimum number of untagged images to keep"
+    default: "7"
+  github-token:
+    description: "Token with packages:write permission"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Clean up old GHCR images
+      uses: dataaxiom/ghcr-cleanup-action@cd0cdb900b85ee49ba34d2048b2ccb7c55efb9e1 # v1
+      with:
+        packages: ${{ inputs.packages }}
+        older-than: ${{ inputs.older-than }}
+        keep-n-tagged: ${{ inputs.keep-n-tagged }}
+        keep-n-untagged: ${{ inputs.keep-n-untagged }}
+        token: ${{ inputs.github-token }}

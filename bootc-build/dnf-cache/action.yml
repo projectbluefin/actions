@@ -1,0 +1,50 @@
+name: "bootc-build/dnf-cache"
+description: "Restore or save DNF/buildah cache with permissions workaround"
+author: "projectbluefin"
+
+inputs:
+  action:
+    description: "Operation: 'restore' or 'save'"
+    required: true
+  cache-name:
+    description: "Unique cache identifier (e.g. 'bluefin-dx-43')"
+    required: true
+  architecture:
+    description: "Runner architecture (x86_64 or aarch64)"
+    default: "x86_64"
+  allow-write:
+    description: "Whether saving the cache is permitted"
+    default: "true"
+  cache-path:
+    description: "Path glob to cache"
+    default: "/var/tmp/buildah-cache-*"
+
+outputs:
+  cache-hit:
+    description: "Whether the cache was restored (true/false)"
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Restore DNF package cache
+      id: restore
+      if: inputs.action == 'restore'
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}
+
+    # https://github.com/actions/cache/issues/1533
+    - name: Fix cache permissions before save
+      if: inputs.action == 'save'
+      shell: bash
+      run: |
+        sudo chmod 777 --recursive /var/tmp/buildah-cache-0 2>/dev/null || true
+
+    - name: Save DNF package cache
+      if: inputs.action == 'save' && inputs.allow-write == 'true'
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ inputs.cache-path }}
+        key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}
