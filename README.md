@@ -12,6 +12,7 @@ Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github
 | [`bootc-build/preflight`](bootc-build/preflight/) | Validate runner environment before build |
 | [`bootc-build/sign-and-publish`](bootc-build/sign-and-publish/) | Cosign sign + SBOM + attestation |
 | [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
+| [`bootc-build/chunka`](bootc-build/chunka/) | chunkah rechunking (OCI-native, no rpm-ostree) |
 | [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
 
 ### P2 — Polish (coming soon)
