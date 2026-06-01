@@ -35,6 +35,7 @@ runs:
         path: ${{ inputs.cache-path }}
         key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}
         restore-keys: |
+          ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}-
           ${{ runner.os }}-${{ inputs.architecture }}-buildah-
 
     # https://github.com/actions/cache/issues/1533

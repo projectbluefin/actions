@@ -126,7 +126,7 @@ Wraps `actions/cache/restore` and `actions/cache/save` for the buildah layer cac
 
 **Known workaround:** cache save requires recursively `chmod 777` on every matching `/var/tmp/buildah-cache-*` directory before the save step — buildah may create multiple numbered cache directories, not just `-0`; see [actions/cache#1533](https://github.com/actions/cache/issues/1533). This is intentional, not a bug.
 
-Restore behavior should include a prefix fallback via `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-` so Fedora/cache-name churn can still reuse older archives.
+Restore behavior should include two fallback tiers: first `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}-` for partial matches within the same flavor/version family, then the broader `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-` fallback.
 
 Save behavior should be guarded with `always() && !cancelled()` so failed builds still persist downloaded packages for the next retry.
 
@@ -140,15 +140,33 @@ Outputs `registry-lowercase` and `image-ref` (if `image-name` was supplied).
 
 ### `push-image`
 
-Pushes with `zstd:chunked` compression using a **single** `sudo -E podman push` for the default tag. Do **not** pass `--force-compression`: rechunked Fedora images are already `zstd:chunked`, and forcing recompression strips `ostree.components` layer annotations.
+Pushes with `zstd:chunked` compression using a **single** `sudo -E podman push` for the default tag. Default behavior must **not** pass `--force-compression`: rechunked Fedora images are already `zstd:chunked`, and forcing recompression strips `ostree.components` layer annotations.
+
+For chunkah-based images that need to migrate existing registry layers from `gzip` to `zstd:chunked` (for example bluefin-lts), expose a `force-compression` input and conditionally append `--force-compression` inside the push loop via an env-backed shell flag.
 
 Capture the pushed digest with `skopeo inspect --no-tags ... | jq -r '.Digest'` after the push instead of doing a second `podman push --digestfile` upload.
 
-Before the user-space registry login, restore ownership of `/run/user/$(id -u)/containers` if it exists. Earlier `sudo podman login` calls in consuming workflows can leave root-owned auth files there and break the later unprivileged login.
+Before the user-space registry login, restore ownership of `/run/user/$(id -u)/containers` if it exists. Earlier `sudo podman login` calls in consuming workflows can leave root-owned auth files there and break the later unprivileged login. Keep this as an opt-out input (`fix-auth-permissions`, default `true`) so callers can disable it when unnecessary.
 
 Alias tags are applied server-side via `skopeo copy` (no re-upload).
 
 Retry logic: outer `while` loop up to `max-attempts` (default 3), with `retry-wait-seconds` (default 15s) between attempts. The inner `podman push` also carries `--retry 5 --retry-delay 30s`.
+
+### `create-manifest`
+
+Assembles and pushes a multi-arch OCI manifest index from a JSON map of `platform -> digest` values (for example `{"amd64":"sha256:...","arm64":"sha256:..."}`). The local manifest name should match the lowercased remote path: `${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}`.
+
+**Caller-provided tooling:** this action does **not** install dependencies. Callers must provide `podman` and `jq` themselves (for example by running in a Wolfi container or on an Ubuntu runner that already has them available).
+
+Population pattern:
+- create the manifest locally with `podman manifest create`
+- iterate `digests-json` with `jq` and add each digest using `podman manifest add ... --arch <platform>`
+- apply newline-separated OCI annotations with `podman manifest annotate --index --annotation`
+
+Push pattern:
+- push the **first** tag with `podman manifest push --all=false --digestfile ...` to capture the manifest-list digest
+- push all remaining tags with `podman manifest push --all=false` so each alias tag is published without a separate digest-capture pass
+- wrap each tag push in a small retry loop (3 attempts)
 
 ### `sign-and-publish`
 
@@ -226,17 +244,27 @@ When a consuming repo calls the workflow:
 
 This means the workflow can always use the composite actions from this repo with relative paths, while the Justfile-driven build steps run caller-specific logic.
 
-### `architecture` input must be valid JSON
+### JSON array inputs
 
-The `architecture` input is parsed by `fromJson()`. Always use double-quoted JSON:
+Any input consumed via `fromJson()` must be valid JSON. That means string items inside the array must use **double quotes**.
+
+Always use **single outer quotes** with **double-quoted inner strings**:
 
 ```yaml
 # ✅ correct
+image_flavors: '["main", "nvidia-open"]'
 architecture: '["x86_64", "aarch64"]'
+install-tools: '["just", "cosign", "oras", "syft"]'
+```
 
-# ❌ wrong — fromJson() will fail
+Wrong:
+
+```yaml
+# ❌ wrong — invalid JSON, fromJson() will fail
 architecture: "['x86_64']"
 ```
+
+The reusable workflow's `architecture` input is the concrete pattern to follow because the matrix parses it with `fromJson(inputs.architecture)`. Use `architecture: '["x86_64"]'` or `architecture: '["x86_64", "aarch64"]'`, never single-quoted strings inside the JSON array.
 
 ### SBOM artifact shape
 
@@ -259,7 +287,7 @@ The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/
 
 | Workaround | Location | Issue |
 |---|---|---|
-| `chown /run/user/$UID/containers` before login | `push-image` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
+| `chown /run/user/$UID/containers` before login | `push-image`, `create-manifest` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
 | `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |

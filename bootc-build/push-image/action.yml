@@ -21,6 +21,12 @@ inputs:
   retry-wait-seconds:
     description: "Seconds to wait between retries"
     default: "15"
+  force-compression:
+    description: "Force recompression during podman push"
+    default: "false"
+  fix-auth-permissions:
+    description: "Fix auth file ownership before user-space registry login"
+    default: "true"
   github-token:
     description: "Token for registry login"
     required: true
@@ -37,6 +43,7 @@ runs:
   using: "composite"
   steps:
     - name: Fix container auth permissions
+      if: inputs.fix-auth-permissions == 'true'
       shell: bash
       run: |
         AUTH_DIR="/run/user/$(id -u)/containers"
@@ -64,6 +71,7 @@ runs:
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         MAX_ATTEMPTS: ${{ inputs.max-attempts }}
         RETRY_WAIT: ${{ inputs.retry-wait-seconds }}
+        FORCE_COMPRESSION: ${{ inputs.force-compression }}
         DIGEST_FILE: ${{ runner.temp }}/push-digest
       run: |
         set -euo pipefail
@@ -79,6 +87,11 @@ runs:
         fi
         DEFAULT_TAG="${DEFAULT_TAG_INPUT:-${TAG_ARRAY[0]}}"
 
+        FC_FLAG=""
+        if [[ "${FORCE_COMPRESSION}" == "true" ]]; then
+          FC_FLAG="--force-compression"
+        fi
+
         attempt=0
         while true; do
           attempt=$((attempt + 1))
@@ -87,6 +100,7 @@ runs:
           sudo -E podman push \
             --compression-format zstd:chunked \
             --compression-level 3 \
+            ${FC_FLAG:+${FC_FLAG}} \
             --retry 5 --retry-delay 30s \
             "${IMAGE_NAME}:${DEFAULT_TAG}" \
             "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"

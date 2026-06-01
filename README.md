@@ -36,6 +36,7 @@ Outputs a `digests` JSON map (`image_name → sha256:...`) for downstream signin
 | [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
 | [`bootc-build/chunka`](bootc-build/chunka/) | chunkah rechunking (OCI-native, no rpm-ostree) |
 | [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
+| [`bootc-build/create-manifest`](bootc-build/create-manifest/) | OCI multi-arch manifest assembly and push |
 
 ### P2 — Polish (coming soon)
 

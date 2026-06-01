@@ -1,0 +1,187 @@
+name: "bootc-build/create-manifest"
+description: "Assemble and push a multi-arch OCI image manifest index"
+author: "projectbluefin"
+
+inputs:
+  image-name:
+    description: "Short image name (e.g. bluefin-dx)"
+    required: true
+  registry:
+    description: "Container registry"
+    default: "ghcr.io"
+  digests-json:
+    description: "JSON object mapping platform to digest"
+    required: true
+  tags:
+    description: "Newline-separated list of tags to push the manifest as"
+    required: true
+  labels:
+    description: "Newline-separated OCI annotation strings in key=value form"
+    default: ""
+  github-token:
+    description: "Token for registry login"
+    required: true
+
+outputs:
+  digest:
+    description: "Manifest list digest (sha256:...)"
+    value: ${{ steps.push.outputs.digest }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate required tools
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        command -v podman >/dev/null 2>&1 || {
+          echo "::error::podman is required; callers must provide it."
+          exit 1
+        }
+
+        command -v jq >/dev/null 2>&1 || {
+          echo "::error::jq is required; callers must provide it."
+          exit 1
+        }
+
+    - name: Fix container auth permissions
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        AUTH_DIR="/run/user/$(id -u)/containers"
+        if [[ -d "${AUTH_DIR}" ]]; then
+          if ! chown -R "$(id -u):$(id -g)" "${AUTH_DIR}" 2>/dev/null; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo chown -R "$(id -u):$(id -g)" "${AUTH_DIR}"
+            else
+              echo "::warning::Could not adjust ${AUTH_DIR} ownership; continuing without sudo"
+            fi
+          fi
+        fi
+
+    - name: Login to registry
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REGISTRY: ${{ inputs.registry }}
+        GITHUB_ACTOR: ${{ github.actor }}
+      run: |
+        set -euo pipefail
+
+        echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
+
+    - name: Create manifest
+      id: create-manifest
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        REGISTRY: ${{ inputs.registry }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+      run: |
+        set -euo pipefail
+
+        REGISTRY_LOWER="${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
+        MANIFEST="${REGISTRY_LOWER}/${IMAGE_NAME}"
+
+        podman manifest rm "${MANIFEST}" >/dev/null 2>&1 || true
+        podman manifest create "${MANIFEST}"
+
+        echo "manifest=${MANIFEST}" >> "${GITHUB_OUTPUT}"
+
+    - name: Populate manifest
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        REGISTRY: ${{ inputs.registry }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        DIGESTS_JSON: ${{ inputs.digests-json }}
+        LABELS: ${{ inputs.labels }}
+        MANIFEST: ${{ steps.create-manifest.outputs.manifest }}
+      run: |
+        set -euo pipefail
+
+        REGISTRY_LOWER="${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
+
+        jq -e 'type == "object"' >/dev/null <<< "${DIGESTS_JSON}"
+
+        while read -r platform digest; do
+          [[ -z "${platform}" ]] && continue
+          [[ -z "${digest}" ]] && continue
+          podman manifest add "${MANIFEST}" "${REGISTRY_LOWER}/${IMAGE_NAME}@${digest}" --arch "${platform}"
+        done < <(echo "${DIGESTS_JSON}" | jq -r 'to_entries[] | "\(.key) \(.value)"')
+
+        while IFS= read -r label; do
+          [[ -z "${label}" ]] && continue
+          podman manifest annotate --index --annotation "${label}" "${MANIFEST}"
+        done <<< "${LABELS}"
+
+    - name: Push manifest tags
+      id: push
+      shell: bash
+      env:
+        IMAGE_NAME: ${{ inputs.image-name }}
+        REGISTRY: ${{ inputs.registry }}
+        GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        TAGS: ${{ inputs.tags }}
+        MANIFEST: ${{ steps.create-manifest.outputs.manifest }}
+        DIGEST_FILE: ${{ runner.temp }}/create-manifest.digest
+      run: |
+        set -euo pipefail
+
+        REGISTRY_LOWER="${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
+        DIGEST=""
+        FIRST_TAG=1
+
+        push_with_retry() {
+          local destination="$1"
+          local digestfile="${2:-}"
+          local attempt=1
+
+          while true; do
+            if [[ -n "${digestfile}" ]]; then
+              rm -f "${digestfile}"
+              if podman manifest push --all=false --digestfile "${digestfile}" "${MANIFEST}" "${destination}"; then
+                return 0
+              fi
+            else
+              if podman manifest push --all=false "${MANIFEST}" "${destination}"; then
+                return 0
+              fi
+            fi
+
+            if [[ ${attempt} -ge 3 ]]; then
+              echo "::error::Failed to push ${destination} after 3 attempts"
+              return 1
+            fi
+
+            echo "Push attempt ${attempt} for ${destination} failed, retrying in 5s..."
+            attempt=$((attempt + 1))
+            sleep 5
+          done
+        }
+
+        while IFS= read -r tag; do
+          [[ -z "${tag}" ]] && continue
+
+          destination="${REGISTRY_LOWER}/${IMAGE_NAME}:${tag}"
+          if [[ ${FIRST_TAG} -eq 1 ]]; then
+            push_with_retry "${destination}" "${DIGEST_FILE}"
+            if [[ ! -s "${DIGEST_FILE}" ]]; then
+              echo "::error::Manifest push did not produce a digest file"
+              exit 1
+            fi
+            DIGEST="$(<"${DIGEST_FILE}")"
+            FIRST_TAG=0
+          else
+            push_with_retry "${destination}"
+          fi
+        done <<< "${TAGS}"
+
+        if [[ ${FIRST_TAG} -eq 1 ]]; then
+          echo "::error::At least one tag must be provided"
+          exit 1
+        fi
+
+        echo "digest=${DIGEST}" >> "${GITHUB_OUTPUT}"
