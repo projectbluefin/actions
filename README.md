@@ -2,6 +2,28 @@
 
 Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github.com/projectbluefin/bluefin), [aurora](https://github.com/ublue-os/aurora), and [bazzite](https://github.com/ublue-os/bazzite).
 
+## Reusable Workflows
+
+| Workflow | Purpose |
+|----------|---------|
+| [`.github/workflows/reusable-build.yml`](.github/workflows/reusable-build.yml) | Full Fedora bootc image build pipeline (bluefin, aurora) |
+
+### Calling the reusable workflow
+
+```yaml
+jobs:
+  build:
+    uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
+    secrets: inherit
+    with:
+      brand_name: bluefin
+      stream_name: stable           # stable | latest | beta | testing
+      image_flavors: '["main", "nvidia-open"]'
+      architecture: '["x86_64"]'
+```
+
+Outputs a `digests` JSON map (`image_name → sha256:...`) for downstream signing and release jobs.
+
 ## Available Actions
 
 | Action | Purpose |

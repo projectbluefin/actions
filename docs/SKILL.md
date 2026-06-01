@@ -11,8 +11,10 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
 | Update a pinned SHA | `docs/skills/composite-actions.md` → "SHA pinning" |
 | Understand the sign-and-publish flow | `docs/skills/composite-actions.md` → "sign-and-publish" |
-| Understand the push-image two-push pattern | `docs/skills/composite-actions.md` → "push-image" |
+| Understand the push-image push + digest pattern | `docs/skills/composite-actions.md` → "push-image" |
 | Understand chunkah rechunking | `docs/skills/composite-actions.md` → "chunka" |
+| Author or modify the reusable build workflow | `docs/skills/composite-actions.md` → "Reusable workflow" |
+| Wire a consuming repo to the shared reusable workflow | `docs/skills/composite-actions.md` → "Reusable workflow" |
 
 ## Full Skill Index
 

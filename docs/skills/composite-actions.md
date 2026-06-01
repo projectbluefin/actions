@@ -198,6 +198,52 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 
 ---
 
+## Reusable workflow
+
+The repo provides a complete reusable workflow at `.github/workflows/reusable-build.yml` for Fedora-based bootc image builds (bluefin, aurora, etc.).
+
+### Calling from a consuming repo
+
+```yaml
+jobs:
+  build:
+    uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
+    secrets: inherit
+    with:
+      brand_name: bluefin
+      stream_name: stable
+      image_flavors: '["main", "nvidia-open"]'
+      architecture: '["x86_64"]'
+```
+
+### How local action refs work inside the reusable workflow
+
+When a consuming repo calls the workflow:
+- `github.repository` = the **caller's** repo (e.g. `projectbluefin/bluefin`)
+- `actions/checkout` checks out the **caller's** code into `GITHUB_WORKSPACE`
+- `just` commands run against the **caller's** Justfile — this is intentional
+- `uses: ./bootc-build/...` refs inside the reusable workflow resolve in the **`actions` repo** at the called version — NOT in the caller's workspace
+
+This means the workflow can always use the composite actions from this repo with relative paths, while the Justfile-driven build steps run caller-specific logic.
+
+### `architecture` input must be valid JSON
+
+The `architecture` input is parsed by `fromJson()`. Always use double-quoted JSON:
+
+```yaml
+# ✅ correct
+architecture: '["x86_64", "aarch64"]'
+
+# ❌ wrong — fromJson() will fail
+architecture: "['x86_64']"
+```
+
+### SBOM artifact shape
+
+The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/IMAGE_NAME/sbom.json`) before upload. The `generate-release.yml` workflow expects this `*.sbom.json` glob shape.
+
+---
+
 ## Adding a new action
 
 1. Create `bootc-build/<name>/action.yml`.
