@@ -36,6 +36,14 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Fix container auth permissions
+      shell: bash
+      run: |
+        AUTH_DIR="/run/user/$(id -u)/containers"
+        if [[ -d "${AUTH_DIR}" ]]; then
+          sudo chown -R "$(id -u):$(id -g)" "${AUTH_DIR}"
+        fi
+
     - name: Login to registry
       shell: bash
       env:
@@ -76,26 +84,18 @@ runs:
           attempt=$((attempt + 1))
           rm -f "${DIGEST_FILE}"
 
-          # Push default tag with full upload (two-push pattern for annotation stability)
-          # Workaround for https://github.com/containers/podman/issues/27796
           sudo -E podman push \
             --compression-format zstd:chunked \
             --compression-level 3 \
-            --force-compression \
             --retry 5 --retry-delay 30s \
             "${IMAGE_NAME}:${DEFAULT_TAG}" \
             "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
 
-          sudo -E podman push \
-            --compression-format zstd:chunked \
-            --compression-level 3 \
-            --force-compression \
-            --retry 5 --retry-delay 30s \
-            --digestfile "${DIGEST_FILE}" \
-            "${IMAGE_NAME}:${DEFAULT_TAG}" \
-            "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
+          skopeo inspect --no-tags \
+            "docker://${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}" \
+            | jq -r '.Digest' > "${DIGEST_FILE}"
 
-          if [[ -s "${DIGEST_FILE}" ]]; then
+          if [[ -s "${DIGEST_FILE}" ]] && [[ $(<"${DIGEST_FILE}") != "null" ]]; then
             break
           fi
 
@@ -107,7 +107,7 @@ runs:
           sleep "${RETRY_WAIT}"
         done
 
-        DIGEST=$(cat "${DIGEST_FILE}")
+        DIGEST=$(<"${DIGEST_FILE}")
         echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
         # Server-side copy for all alias tags (no re-upload)

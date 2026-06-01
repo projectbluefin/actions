@@ -124,7 +124,11 @@ Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` J
 
 Wraps `actions/cache/restore` and `actions/cache/save` for the buildah layer cache at `/var/tmp/buildah-cache-*`.
 
-**Known workaround:** cache save requires `sudo chmod 777 --recursive /var/tmp/buildah-cache-0` before the save step — see [actions/cache#1533](https://github.com/actions/cache/issues/1533). This is intentional, not a bug.
+**Known workaround:** cache save requires recursively `chmod 777` on every matching `/var/tmp/buildah-cache-*` directory before the save step — buildah may create multiple numbered cache directories, not just `-0`; see [actions/cache#1533](https://github.com/actions/cache/issues/1533). This is intentional, not a bug.
+
+Restore behavior should include a prefix fallback via `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-` so Fedora/cache-name churn can still reuse older archives.
+
+Save behavior should be guarded with `always() && !cancelled()` so failed builds still persist downloaded packages for the next retry.
 
 Cache key format: `Linux-<arch>-buildah-<cache-name>`.
 
@@ -136,7 +140,11 @@ Outputs `registry-lowercase` and `image-ref` (if `image-name` was supplied).
 
 ### `push-image`
 
-Pushes with `zstd:chunked` compression. Uses a **two-push pattern** for the default tag — two sequential `podman push` calls, the second with `--digestfile`. This works around a podman bug ([#27796](https://github.com/containers/podman/issues/27796)) where layer annotations are dropped in a single push.
+Pushes with `zstd:chunked` compression using a **single** `sudo -E podman push` for the default tag. Do **not** pass `--force-compression`: rechunked Fedora images are already `zstd:chunked`, and forcing recompression strips `ostree.components` layer annotations.
+
+Capture the pushed digest with `skopeo inspect --no-tags ... | jq -r '.Digest'` after the push instead of doing a second `podman push --digestfile` upload.
+
+Before the user-space registry login, restore ownership of `/run/user/$(id -u)/containers` if it exists. Earlier `sudo podman login` calls in consuming workflows can leave root-owned auth files there and break the later unprivileged login.
 
 Alias tags are applied server-side via `skopeo copy` (no re-upload).
 
@@ -150,6 +158,8 @@ Two signing modes:
 - `key`: `cosign sign -y --key env://COSIGN_PRIVATE_KEY`. Requires `inputs.signing-key` to be set.
 
 SBOM flow (when `generate-sbom: true`): Syft generates SPDX JSON → ORAS attaches it to the registry → cosign signs the SBOM artifact itself.
+
+After the keyless image sign step, immediately run `cosign verify` with GitHub repository identity and the GitHub Actions OIDC issuer to fail fast if the signature was not applied as expected.
 
 **Known workaround:** `sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore"` is needed before cosign operations — the sigstore cache directory sometimes has wrong ownership on GitHub-hosted runners.
 
@@ -203,7 +213,7 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 
 | Workaround | Location | Issue |
 |---|---|---|
-| Two-push for digest capture | `push-image` | [podman#27796](https://github.com/containers/podman/issues/27796) — annotations dropped on single push |
+| `chown /run/user/$UID/containers` before login | `push-image` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
 | `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |

@@ -1,0 +1,485 @@
+name: Reusable Build and Push
+# Reusable workflow for Fedora-based bootc image builds (bluefin, aurora, etc.).
+# Called by consuming repos with:
+#   uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
+#
+# Context note: when called from a consuming repo, github.repository = the caller,
+# and actions/checkout checks out the CALLER's code. Local action refs
+# (`uses: ./bootc-build/...`) resolve in THIS repo (actions). Just commands run
+# against the caller's Justfile in GITHUB_WORKSPACE.
+
+on:
+  workflow_call:
+    outputs:
+      digests:
+        description: "JSON map of image_name to digest"
+        value: ${{ jobs.collect-digests.outputs.digests }}
+    inputs:
+      image_flavors:
+        description: "JSON array of flavors to build"
+        default: '["main", "nvidia-open"]'
+        type: string
+      brand_name:
+        description: "The Brand Name: bluefin"
+        default: bluefin
+        type: string
+      stream_name:
+        description: "The Fedora Version: stable, latest, or beta"
+        required: true
+        type: string
+      kernel_pin:
+        description: "The full kernel version to pin"
+        type: string
+      architecture:
+        description: "JSON string of architectures to build, '[\"aarch64\", \"x86_64\"]'"
+        default: '["x86_64"]'
+        required: false
+        type: string
+      pr_number:
+        description: "PR number when dispatched from e2e-dispatch — enforces PR-scoped tags"
+        default: ""
+        required: false
+        type: string
+
+env:
+  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref || github.run_id }}-${{ inputs.brand_name }}-${{ inputs.stream_name }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  preflight:
+    name: Preflight checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Install just
+        uses: taiki-e/install-action@35e522e91305799a18f8cee79bf13d1f7b28b796 # just
+        with:
+          tool: just
+
+      - name: Check Just syntax
+        run: just check
+
+  build_container:
+    name: image
+    needs: [preflight]
+    runs-on: ${{ matrix.architecture == 'x86_64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    env:
+      DIGEST_FILE: ${{ github.workspace }}/.push-digest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    continue-on-error: false
+    strategy:
+      fail-fast: false
+      matrix:
+        image_flavor: ${{ fromJson(inputs.image_flavors) }}
+        base_name: ["${{ inputs.brand_name }}"]
+        stream_name: ["${{ inputs.stream_name }}"]
+        architecture: ${{ fromJson(inputs.architecture) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          submodules: recursive
+
+      - name: Setup runner
+        uses: ./bootc-build/setup-runner
+        with:
+          storage-backend: btrfs
+          update-podman: "true"
+          install-tools: '["just"]'
+
+      - name: Image Name
+        shell: bash
+        run: |
+          IMAGE_NAME="$(just image_name ${{ matrix.base_name }} ${{ matrix.stream_name }} ${{ matrix.image_flavor }})"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
+
+      - name: Default Tag
+        shell: bash
+        run: |
+          DEFAULT_TAG="$(just generate-default-tag \
+                       ${{ matrix.stream_name }} \
+                       "1")"
+          echo "Default Tag: ${DEFAULT_TAG}"
+          echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "$GITHUB_ENV"
+
+      - name: DNF Package Cache Setup
+        shell: bash
+        id: setup-cache
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          CACHE="$(just setup-cache "${MATRIX_BASE_NAME}" \
+                            "${MATRIX_STREAM_NAME}" \
+                            "1" \
+                            "${GITHUB_EVENT_NAME}")"
+
+          CACHE_NAME="$(echo "${CACHE}" | cut -d' ' -f 1)"
+          ALLOW_CACHE_WRITE="$(echo "${CACHE}" | cut -d' ' -f 2)"
+
+          echo "cache_name=${CACHE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "allow_cache_write=${ALLOW_CACHE_WRITE}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore DNF package cache
+        uses: ./bootc-build/dnf-cache
+        with:
+          action: restore
+          cache-name: ${{ steps.setup-cache.outputs.cache_name }}
+          architecture: ${{ matrix.architecture }}
+
+      - name: Record build start time
+        id: build-timing
+        shell: bash
+        run: echo "build_start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR for layer cache
+        if: github.event_name != 'pull_request'
+        run: echo ${{ secrets.GITHUB_TOKEN }} | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build Image
+        id: build-image
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_CACHE_WRITE: ${{ github.event_name != 'pull_request' && '1' || '0' }}
+        run: |
+          sudo -E "$(command -v just)" repo_organization="${{ github.repository_owner }}" \
+                    build-ghcr "${{ matrix.base_name }}" \
+                               "${{ matrix.stream_name }}" \
+                               "${{ matrix.image_flavor }}" \
+                               "${{ inputs.kernel_pin }}"
+
+      - name: Record build duration
+        id: build-duration
+        shell: bash
+        run: |
+          BUILD_END=$(date +%s)
+          BUILD_ELAPSED=$(( BUILD_END - ${{ steps.build-timing.outputs.build_start }} ))
+          echo "build_seconds=${BUILD_ELAPSED}" >> "$GITHUB_OUTPUT"
+          echo "Build duration: $(( BUILD_ELAPSED / 60 ))m $(( BUILD_ELAPSED % 60 ))s"
+
+      - name: Save DNF package cache
+        if: always() && !cancelled()
+        uses: ./bootc-build/dnf-cache
+        with:
+          action: save
+          cache-name: ${{ steps.setup-cache.outputs.cache_name }}
+          architecture: ${{ matrix.architecture }}
+          allow-write: ${{ steps.setup-cache.outputs.allow_cache_write }}
+
+      - name: Setup Syft
+        id: setup-syft
+        # Skip SBOM for testing stream — runner lifetime is ~26 min; build alone takes ~22 min.
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: v1.44.0
+
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        id: generate-sbom
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
+          SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+        run: |
+          sudo -E "$(command -v just)" gen-sbom "${MATRIX_BASE_NAME}" \
+                            "${MATRIX_STREAM_NAME}" \
+                            "${MATRIX_IMAGE_FLAVOR}" \
+                            "${SYFT_CMD}"
+
+      - name: Stage SBOM for release artifact
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        run: |
+          mkdir -p /tmp/sbom-upload
+          cp "sbom_out/${{ env.IMAGE_NAME }}/sbom.json" "/tmp/sbom-upload/${{ env.IMAGE_NAME }}.sbom.json"
+
+      - name: Upload SBOM artifact
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sbom-${{ env.IMAGE_NAME }}
+          path: /tmp/sbom-upload/
+          retention-days: 7
+
+      - name: Record rechunk start time
+        id: rechunk-timing
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        shell: bash
+        run: echo "rechunk_start=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Rechunk Image
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        id: rechunk-image
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS_BUILD: ${{ github.event.inputs.previous_build || '1' }}
+        run: |
+          sudo -E "$(command -v just)" rechunk "${{ matrix.base_name }}" \
+                            "${{ matrix.stream_name }}" \
+                            "${{ matrix.image_flavor }}" \
+                            "1" \
+                            "0" \
+                            "${PREVIOUS_BUILD}"
+
+      - name: Retag Rechunked Image
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        id: load-rechunk
+        shell: bash
+        run: |
+          sudo -E "$(command -v just)" load-rechunk "${{ matrix.base_name }}" \
+                            "${{ env.DEFAULT_TAG }}" \
+                            "${{ matrix.image_flavor }}"
+
+      - name: Record rechunk duration
+        id: rechunk-duration
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        shell: bash
+        run: |
+          RECHUNK_END=$(date +%s)
+          RECHUNK_ELAPSED=$(( RECHUNK_END - ${{ steps.rechunk-timing.outputs.rechunk_start }} ))
+          echo "rechunk_seconds=${RECHUNK_ELAPSED}" >> "$GITHUB_OUTPUT"
+          echo "Rechunk duration: $(( RECHUNK_ELAPSED / 60 ))m $(( RECHUNK_ELAPSED % 60 ))s"
+
+      - name: Secureboot Check
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        id: secureboot
+        shell: bash
+        run: |
+          sudo -E "$(command -v just)" secureboot "${{ matrix.base_name }}" \
+                          "${{ env.DEFAULT_TAG }}" \
+                          "${{ matrix.image_flavor }}"
+
+      - name: Export image to OCI dir (PR only)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          mkdir -p ${{ env.IMAGE_NAME }}_build
+          sudo podman save --format oci-dir -o ${{ env.IMAGE_NAME }}_build ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+
+      - name: Generate tags
+        id: generate-tags
+        shell: bash
+        run: |
+          EFFECTIVE_EVENT="${{ github.event_name }}"
+          EFFECTIVE_NUMBER="${{ github.event.number }}"
+          if [[ -n "${{ inputs.pr_number }}" ]]; then
+            EFFECTIVE_EVENT="pull_request"
+            EFFECTIVE_NUMBER="${{ inputs.pr_number }}"
+          fi
+
+          alias_tags="$(just generate-build-tags \
+                     "${{ matrix.base_name }}" \
+                     "${{ matrix.stream_name }}" \
+                     "${{ matrix.image_flavor }}" \
+                     "${{ inputs.kernel_pin }}" \
+                     "1" \
+                     "$(podman inspect ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }} | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
+                     "${EFFECTIVE_EVENT}" \
+                     "${EFFECTIVE_NUMBER}")"
+
+          echo "Tags for this Action..."
+          echo "$alias_tags"
+          echo "alias_tags=${alias_tags}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag Images
+        shell: bash
+        run: |
+          set -eoux pipefail
+          sudo -E "$(command -v just)" tag-images "${{ env.IMAGE_NAME }}" \
+                          "${{ env.DEFAULT_TAG }}" \
+                          "${{ steps.generate-tags.outputs.alias_tags }}"
+
+      - name: Push to GHCR
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: ./bootc-build/push-image
+        with:
+          image-name: ${{ env.IMAGE_NAME }}
+          tags: ${{ env.DEFAULT_TAG }} ${{ steps.generate-tags.outputs.alias_tags }}
+          default-tag: ${{ env.DEFAULT_TAG }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record push duration
+        id: push-duration
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          PUSH_END=$(date +%s)
+          # push-image action handles its own timing internally; we measure wall-clock from here
+          echo "push_seconds=0" >> "$GITHUB_OUTPUT"
+
+      - name: Upload OCI dir as Artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ env.IMAGE_NAME }}.oci
+          path: ${{ env.IMAGE_NAME }}_build
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: PR Testing Instructions
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo "### 🫐 Test this PR build"
+            echo ""
+            echo "Download the \`.oci\` artifact, unzip it, then:"
+            echo '```bash'
+            echo "sudo bootc switch --transport oci /absolute/path/to/${{ env.IMAGE_NAME }}_build"
+            echo '```'
+            echo "To go back:"
+            echo '```bash'
+            echo "sudo bootc switch --enforce-container-sigpolicy ghcr.io/projectbluefin/${{ env.IMAGE_NAME }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build telemetry summary
+        if: always()
+        shell: bash
+        run: |
+          BUILD_S=${{ steps.build-duration.outputs.build_seconds || 0 }}
+          RECHUNK_S=${{ steps.rechunk-duration.outputs.rechunk_seconds || 0 }}
+          BUILD_START=${{ steps.build-timing.outputs.build_start || 0 }}
+          SUMMARY_END=$(date +%s)
+          WALL_CLOCK_S=0
+          if [[ "${BUILD_START}" -gt 0 ]]; then
+            WALL_CLOCK_S=$(( SUMMARY_END - BUILD_START ))
+          fi
+
+          IMAGE_SIZE=$(sudo podman image inspect "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+            --format '{{.Size}}' 2>/dev/null || echo "0")
+          IMAGE_SIZE_MB=$(( IMAGE_SIZE / 1024 / 1024 ))
+          LAYER_COUNT=$(sudo podman image inspect "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+            --format '{{len .RootFS.Layers}}' 2>/dev/null || echo "?")
+
+          {
+            echo "## 📊 Build Telemetry: ${{ env.IMAGE_NAME }}"
+            echo ""
+            echo "| Stage | Duration |"
+            echo "|-------|----------|"
+            printf "| Build | %dm %ds |\n" $(( BUILD_S / 60 )) $(( BUILD_S % 60 ))
+            if [[ "${RECHUNK_S}" -gt 0 ]]; then
+              printf "| Rechunk | %dm %ds |\n" $(( RECHUNK_S / 60 )) $(( RECHUNK_S % 60 ))
+            fi
+            printf "| **Total wall-clock** | **%dm %ds** |\n" $(( WALL_CLOCK_S / 60 )) $(( WALL_CLOCK_S % 60 ))
+            echo ""
+            echo "**Image size (uncompressed):** ${IMAGE_SIZE_MB} MB"
+            echo "**Layer count:** ${LAYER_COUNT}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write digest to artifact
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ env.IMAGE_NAME }}=${{ steps.push.outputs.digest }}" >> /tmp/digests/${{ matrix.image_flavor }}-${{ matrix.base_name }}.txt
+
+      - name: Upload digest artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-${{ inputs.stream_name }}-${{ matrix.base_name }}-${{ matrix.image_flavor }}
+          path: /tmp/digests/
+          retention-days: 1
+
+      - name: Fix sigstore cache permissions
+        if: github.event_name != 'pull_request'
+        run: sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore" 2>/dev/null || true
+
+      - name: Sign, publish SBOM, and attest
+        if: github.event_name != 'pull_request'
+        uses: ./bootc-build/sign-and-publish
+        with:
+          image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          digest: ${{ steps.push.outputs.digest }}
+          signing-mode: keyless
+          generate-sbom: ${{ inputs.stream_name != 'testing' && 'true' || 'false' }}
+          push-attestation: "true"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ env.IMAGE_NAME }}
+
+      - name: Verify rechunk metadata preserved
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}"
+          MANIFEST=$(skopeo inspect --raw "docker://${IMAGE_REF}")
+          if echo "${MANIFEST}" | jq -e '
+            .layers // [] |
+            map(select(.annotations != null and (.annotations | has("ostree.components")))) |
+            length > 0
+          ' > /dev/null 2>&1; then
+            echo "✅ ostree.components annotations present — rechunk metadata preserved"
+          else
+            echo "⚠️  ostree.components annotations missing — rechunk metadata may have been stripped"
+          fi
+
+  check:
+    name: Check all ${{ inputs.stream_name }} builds successful
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [build_container]
+    steps:
+      - name: Check Jobs
+        env:
+          JOBS: ${{ toJson(needs) }}
+        run: |
+          echo "Job status:"
+          echo "$JOBS" | jq -r 'to_entries[] | " - \(.key): \(.value.result)"'
+
+          for i in $(echo "$JOBS" | jq -r 'to_entries[] | .value.result'); do
+            if [ "$i" != "success" ] && [ "$i" != "skipped" ]; then
+              echo ""
+              echo "Status check not okay!"
+              exit 1
+            fi
+          done
+
+  collect-digests:
+    name: Collect image digests
+    runs-on: ubuntu-latest
+    needs: [check]
+    outputs:
+      digests: ${{ steps.merge.outputs.digests || steps.empty.outputs.digests }}
+    steps:
+      - name: Download all digest artifacts
+        if: github.event_name != 'pull_request'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: image-digest-${{ inputs.stream_name }}-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - name: Merge digests
+        if: github.event_name != 'pull_request'
+        id: merge
+        run: |
+          DIGESTS=$(cat /tmp/digests/*.txt | jq -Rs 'split("\n") | map(select(length > 0)) | map(split("=")) | map({(.[0]): .[1]}) | add')
+          {
+            echo "digests<<EOF"
+            echo "${DIGESTS}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set empty digests
+        if: github.event_name == 'pull_request'
+        id: empty
+        run: |
+          echo 'digests={}' >> "$GITHUB_OUTPUT"
