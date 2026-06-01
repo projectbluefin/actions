@@ -5,7 +5,7 @@ name: Reusable Build and Push
 #
 # Context note: when called from a consuming repo, github.repository = the caller,
 # and actions/checkout checks out the CALLER's code. Local action refs
-# (`uses: ./bootc-build/...`) resolve in THIS repo (actions). Just commands run
+# Uses full SHA refs for composite actions so cross-repo callers resolve correctly. Just commands run
 # against the caller's Justfile in GITHUB_WORKSPACE.
 
 on:
@@ -95,7 +95,7 @@ jobs:
           submodules: recursive
 
       - name: Setup runner
-        uses: ./bootc-build/setup-runner
+        uses: projectbluefin/actions/bootc-build/setup-runner@1845e36f17f998e164b697c5518d3abc062e9ef9
         with:
           storage-backend: btrfs
           update-podman: "true"
@@ -136,7 +136,7 @@ jobs:
           echo "allow_cache_write=${ALLOW_CACHE_WRITE}" >> "$GITHUB_OUTPUT"
 
       - name: Restore DNF package cache
-        uses: ./bootc-build/dnf-cache
+        uses: projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9
         with:
           action: restore
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -175,7 +175,7 @@ jobs:
 
       - name: Save DNF package cache
         if: always() && !cancelled()
-        uses: ./bootc-build/dnf-cache
+        uses: projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9
         with:
           action: save
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -310,7 +310,7 @@ jobs:
       - name: Push to GHCR
         id: push
         if: github.event_name != 'pull_request'
-        uses: ./bootc-build/push-image
+        uses: projectbluefin/actions/bootc-build/push-image@1845e36f17f998e164b697c5518d3abc062e9ef9
         with:
           image-name: ${{ env.IMAGE_NAME }}
           tags: ${{ env.DEFAULT_TAG }} ${{ steps.generate-tags.outputs.alias_tags }}
@@ -405,7 +405,7 @@ jobs:
 
       - name: Sign, publish SBOM, and attest
         if: github.event_name != 'pull_request'
-        uses: ./bootc-build/sign-and-publish
+        uses: projectbluefin/actions/bootc-build/sign-and-publish@1845e36f17f998e164b697c5518d3abc062e9ef9
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
