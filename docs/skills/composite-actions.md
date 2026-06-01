@@ -234,15 +234,24 @@ jobs:
       architecture: '["x86_64"]'
 ```
 
-### How local action refs work inside the reusable workflow
+### How action refs work inside the reusable workflow
 
 When a consuming repo calls the workflow:
 - `github.repository` = the **caller's** repo (e.g. `projectbluefin/bluefin`)
 - `actions/checkout` checks out the **caller's** code into `GITHUB_WORKSPACE`
 - `just` commands run against the **caller's** Justfile — this is intentional
-- `uses: ./bootc-build/...` refs inside the reusable workflow resolve in the **`actions` repo** at the called version — NOT in the caller's workspace
 
-This means the workflow can always use the composite actions from this repo with relative paths, while the Justfile-driven build steps run caller-specific logic.
+> **Critical: cross-repo action refs**  
+> When the reusable workflow is called cross-repo (e.g. from `projectbluefin/bluefin`), `uses: ./bootc-build/<name>` resolves to the **caller's** checked-out workspace — not the actions repo. This causes `Can't find action.yml` errors.  
+> Always use full SHA-pinned refs inside the reusable workflow:
+>
+> ```yaml
+> uses: projectbluefin/actions/bootc-build/setup-runner@<SHA>
+> ```
+>
+> Never use `./bootc-build/...` in `.github/workflows/reusable-build.yml`.
+
+Inside the reusable workflow, cross-repo composite action calls must use fully qualified `projectbluefin/actions/bootc-build/<name>@<SHA>` refs, while the Justfile-driven build steps continue to run caller-specific logic from the checked-out consumer repo.
 
 ### JSON array inputs
 
