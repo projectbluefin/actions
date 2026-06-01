@@ -301,6 +301,14 @@ Invalid (breaking) change: removing `tags`, renaming `github-token`, or changing
 
 1. Land change on a **feature branch** in this repo
 2. In one consumer repo (e.g. `projectbluefin/bluefin`), open a **draft PR** that pins `uses:` to the feature branch SHA
+   - Consumer PRs must target `testing` (the default branch) — **never `main`, `latest`, or `stable`**
+   - Targeting `testing` triggers `pr-validation.yml` (fast lint/check gate)
+   - For a full build smoke test, dispatch `build-image-testing.yml` manually on the feature branch:
+     ```bash
+     gh workflow run build-image-testing.yml \
+       --ref <your-feature-branch> \
+       --repo projectbluefin/bluefin
+     ```
 3. CI must pass on the consumer PR before the feature branch merges to `main` here
 4. After `main` merge, move the `@v1` tag forward:
    ```bash
