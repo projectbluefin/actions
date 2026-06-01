@@ -272,6 +272,44 @@ The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/
 
 ---
 
+## Rollout strategy
+
+### Additive-only rule
+
+All changes to existing actions must be **additive**: new optional inputs with defaults that preserve existing behavior. Never remove or rename an input, and never change the behavior an existing caller already relies on, without a major version bump.
+
+Valid additive change:
+```yaml
+# Adding a new optional input with a safe default
+force-compression:
+  description: "Force recompression on push"
+  default: "false"   # ← existing callers are unaffected
+```
+
+Invalid (breaking) change: removing `tags`, renaming `github-token`, or changing a default that alters behavior for existing callers.
+
+### Consumer validation flow
+
+1. Land change on a **feature branch** in this repo
+2. In one consumer repo (e.g. `projectbluefin/bluefin`), open a **draft PR** that pins `uses:` to the feature branch SHA
+3. CI must pass on the consumer PR before the feature branch merges to `main` here
+4. After `main` merge, move the `@v1` tag forward:
+   ```bash
+   git tag -f v1
+   git push --force origin v1
+   ```
+5. Consumer PRs can then switch from the SHA pin to `@v1`
+
+### Breaking change policy
+
+If a breaking change is unavoidable:
+- Option A: create a versioned subdirectory (`bootc-build/<name>/v2/action.yml`) and route new callers there while old callers keep `v1`
+- Option B: coordinate a single wave — update all consuming repos in one PR sweep, then bump `@v1`
+
+Document the blast radius (which repos, which inputs change) in the PR description. Do not merge without a link to passing CI in at least one consumer.
+
+---
+
 ## Adding a new action
 
 1. Create `bootc-build/<name>/action.yml`.
