@@ -263,7 +263,7 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 | Pushing to the wrong remote | Run `git remote -v` before pushing. If your feature branch is tracking `origin`, but you meant to push to `projectbluefin`, specify `git push projectbluefin <branch>` explicitly. In high-activity repos, always double-check the remote name. |
 | Feature branches go stale quickly | High-velocity repos like `bluefin-lts` (1400+ merged PRs, constant digest bumps via Renovate) can make a feature branch outdated within hours. Rebase onto the target remote's `main` before opening or re-opening a PR: `git rebase projectbluefin/main` |
 | Multi-arch matrix stays in the consumer workflow | Do not move matrix orchestration (`generate_matrix`, per-arch build matrix, conditional arm64 logic) into shared actions. Shared actions are per-arch steps; the matrix stays in the consumer workflow. This keeps the action catalog focused and lets each consumer tune its own build strategy. |
-| CentOS Stream requires explicit compression | If your consumer is CentOS Stream 10 or another non-Fedora OS, set `force-compression: true` on both `chunka` and `push-image` actions due to zstd layer migration requirements. Fedora consumers can leave this at the default `false`. |
+| CentOS Stream requires explicit compression | If your consumer is CentOS Stream 10 or another non-Fedora OS, set `force-compression: true` on both `chunka` and `push-image` actions. In `chunka` this passes `--compression-format zstd:chunked --force-compression` to `buildah build`. In `push-image` it adds `--force-compression` to `podman push`. Fedora consumers must leave both at the default `false` — Fedora images are already zstd:chunked and forcing recompression strips `ostree.components` layer annotations. |
 
 ---
 
@@ -294,6 +294,132 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 
 ---
 
+## Upgrade test
+
+A post-build gate: after your image is built and pushed, call this workflow with
+the new image ref. It boots it in QEMU via `projectbluefin/testsuite` and runs the
+`lifecycle` suite — upgrade, reboot, rollback, `/etc` persistence, and idempotency.
+Only if the gate passes should the image be promoted or tagged stable.
+
+### Minimal wiring — build → gate → promote
+
+```yaml
+jobs:
+  build:
+    # ... your build steps ...
+    outputs:
+      image: ${{ steps.push.outputs.registry-path }}/your-image
+      digest: ${{ steps.push.outputs.digest }}
+
+  upgrade-test:
+    needs: build
+    uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+
+  promote:
+    needs: upgrade-test
+    if: needs.upgrade-test.outputs.result == 'success'
+    # ... move tag, cut release, etc. ...
+```
+
+### Hello-world: bluefin
+
+```yaml
+# .github/workflows/upgrade-test.yml  (in projectbluefin/bluefin)
+name: Upgrade Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Full OCI ref of the build to gate on"
+        required: false
+        default: "ghcr.io/ublue-os/bluefin:stable"
+  schedule:
+    - cron: "0 6 * * 1"   # weekly on Monday
+
+jobs:
+  upgrade-test:
+    uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ${{ inputs.image || 'ghcr.io/ublue-os/bluefin:stable' }}
+```
+
+### Hello-world: bluefin-lts
+
+```yaml
+# .github/workflows/upgrade-test.yml  (in projectbluefin/bluefin-lts)
+name: Upgrade Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Full OCI ref of the build to gate on"
+        required: false
+        default: "ghcr.io/ublue-os/bluefin-lts:lts"
+  schedule:
+    - cron: "0 6 * * 1"   # weekly on Monday
+
+jobs:
+  upgrade-test:
+    uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ${{ inputs.image || 'ghcr.io/ublue-os/bluefin-lts:lts' }}
+```
+
+### Inputs reference
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `image` | **yes** | — | Full OCI ref of the image to gate on — tag or digest (e.g. `ghcr.io/ublue-os/bluefin:stable` or `…@sha256:abc`) |
+| `suites` | no | `lifecycle` | Comma-separated testsuite suites to run |
+| `skip_native_apps` | no | `false` | Skip `@native_app` scenarios |
+| `screenshot_flatpaks` | no | `""` | Comma-separated Flatpak IDs to launch-and-screenshot |
+
+### Outputs reference
+
+| Output | Description |
+|---|---|
+| `result` | Job outcome: `success`, `failure`, `cancelled`, or `skipped` — use in `if:` conditions for downstream promote jobs |
+
+### What the `lifecycle` suite tests
+
+| Scenario | Tags |
+|---|---|
+| `bootc status` reports expected image and is not dirty | `@lifecycle @status` |
+| Pin and unpin the current deployment | `@lifecycle @pin` |
+| `bootc upgrade` stages a new deployment | `@lifecycle @upgrade` |
+| VM boots into upgraded deployment after reboot | `@lifecycle @upgrade @reboot` |
+| `bootc rollback` reverts to previous deployment | `@lifecycle @rollback` |
+| `/etc` customizations survive upgrade | `@lifecycle @etc_merge` |
+| `ostree admin status` shows two deployments | `@lifecycle @ostree` |
+| `os-release` version changes tracked after upgrade | `@lifecycle @upgrade @version` |
+| `bootc upgrade` is idempotent when already at latest | `@lifecycle @upgrade @idempotent` |
+| Auto-update timer is present and not masked | `@lifecycle @autoupdate` |
+
+Source: [`tests/lifecycle/features/bootc.feature`](https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/bootc.feature)
+
+### Permissions required
+
+```yaml
+permissions:
+  contents: read
+  packages: write   # testsuite pushes desktop screenshots as OCI artifacts
+```
+
+---
+
 ## Getting help
 
 - File issues at [projectbluefin/actions](https://github.com/projectbluefin/actions/issues)
@@ -309,6 +435,6 @@ bluefin-lts uses CentOS Stream 10 (non-Fedora base) and cannot use the full reus
 |---|---|---|
 | `validate-pr` | `shellcheck-glob: "build_scripts/**/*.sh"` | lts uses `build_scripts/`, not `build_files/` |
 | `detect-changes` | `filters:` with `build_scripts/**`, `image-versions.yaml` | default paths are bluefin-specific |
-| `chunka` | `force-compression: true` | CentOS base must migrate gzip layers to zstd:chunked |
+| `chunka` | `force-compression: true` | CentOS base must migrate gzip layers to zstd:chunked — passes `--compression-format zstd:chunked --force-compression` to `buildah build` |
 
 This is the reference implementation for any bootc image repo that diverges from the bluefin path convention.
