@@ -70,22 +70,28 @@ runs:
 
     - name: Sign container image (keyless)
       if: inputs.signing-mode == 'keyless'
-      shell: bash
+      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
       env:
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
-      run: |
-        cosign sign -y "${IMAGE}@${DIGEST}"
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 30
+        command: cosign sign -y "${IMAGE}@${DIGEST}"
 
     - name: Sign container image (key-based)
       if: inputs.signing-mode == 'key'
-      shell: bash
+      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
       env:
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
         COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
-      run: |
-        cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 30
+        command: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
 
     - name: Verify signature
       if: inputs.signing-mode == 'keyless'
@@ -165,22 +171,28 @@ runs:
 
     - name: Sign SBOM artifact
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'keyless'
-      shell: bash
+      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
       env:
         IMAGE: ${{ inputs.image }}
         SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
-      run: |
-        cosign sign -y "${IMAGE}@${SBOM_DIGEST}"
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 30
+        command: cosign sign -y "${IMAGE}@${SBOM_DIGEST}"
 
     - name: Sign SBOM artifact (key-based)
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'key'
-      shell: bash
+      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
       env:
         IMAGE: ${{ inputs.image }}
         SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
         COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
-      run: |
-        cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
+      with:
+        timeout_minutes: 5
+        max_attempts: 3
+        retry_wait_seconds: 30
+        command: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
 
     - name: GitHub Attestation
       if: inputs.push-attestation == 'true'
