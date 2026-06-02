@@ -126,6 +126,8 @@ Wraps `actions/cache/restore` and `actions/cache/save` for the buildah layer cac
 
 **Known workaround:** cache save requires recursively `chmod 777` on every matching `/var/tmp/buildah-cache-*` directory before the save step — buildah may create multiple numbered cache directories, not just `-0`; see [actions/cache#1533](https://github.com/actions/cache/issues/1533). This is intentional, not a bug.
 
+**Empty-glob guard (cold build):** the `chmod` loop must use `if [[ -d "$d" ]]; then ... fi` rather than `[[ -d "$d" ]] && cmd`. On a cold build where no `/var/tmp/buildah-cache-*` directory exists yet, bash expands the glob to the literal string, `[[ -d "..." ]]` returns false, and the `&&` chain propagates that as a non-zero exit even under `set -e`. The `if` form treats the false branch as a no-op.
+
 Restore behavior should include two fallback tiers: first `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}-` for partial matches within the same flavor/version family, then the broader `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-` fallback.
 
 Save behavior should be guarded with `always() && !cancelled()` so failed builds still persist downloaded packages for the next retry.

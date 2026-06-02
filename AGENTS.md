@@ -9,10 +9,16 @@ Load **[docs/SKILL.md](docs/SKILL.md)** before modifying any action.
 ```
 projectbluefin/actions  ←── shared CI building blocks
         │
-        ├── projectbluefin/bluefin    (bootc desktop image)
-        ├── ublue-os/aurora           (Aurora desktop image)
-        └── ublue-os/bazzite          (Bazzite gaming image)
+        ├── projectbluefin/bluefin      (bootc desktop image, Path 1 — reusable-build.yml)
+        ├── projectbluefin/bluefin-lts  (LTS on CentOS Stream 10, Path 2 — à la carte)
+        ├── projectbluefin/dakota       (BST/BuildStream image, Path 2 — à la carte, deferred)
+        ├── ublue-os/aurora             (Aurora desktop image)
+        └── ublue-os/bazzite            (Bazzite gaming image)
 ```
+
+**Path 1** (full reusable workflow): consumer calls `reusable-build.yml@v1` and satisfies the Justfile contract. Used by bluefin and aurora.
+
+**Path 2** (à la carte composite actions): consumer calls individual actions. Used by bluefin-lts (CentOS Stream 10 base, multi-arch, `chunka` not `rechunk`) and dakota (BST build engine — partial adoption, see issue #16).
 
 Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaking changes to an action require a version bump and coordinated update across all consuming repos.
 
