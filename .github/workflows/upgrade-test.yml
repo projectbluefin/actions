@@ -57,7 +57,7 @@ on:
     outputs:
       result:
         description: "Outcome of the upgrade test job: success, failure, cancelled, or skipped"
-        value: ${{ jobs.upgrade-test.result }}
+        value: ${{ jobs.report.outputs.result }}
 
 permissions:
   contents: read
@@ -75,3 +75,12 @@ jobs:
       suites: ${{ inputs.suites }}
       skip_native_apps: ${{ inputs.skip_native_apps }}
       screenshot_flatpaks: ${{ inputs.screenshot_flatpaks }}
+
+  report:
+    needs: upgrade-test
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ needs.upgrade-test.result }}
+    steps:
+      - run: echo "upgrade-test result=${{ needs.upgrade-test.result }}"
