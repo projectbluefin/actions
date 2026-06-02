@@ -124,7 +124,11 @@ Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` J
 
 Wraps `actions/cache/restore` and `actions/cache/save` for the buildah layer cache at `/var/tmp/buildah-cache-*`.
 
-**Known workaround:** cache save requires `sudo chmod 777 --recursive /var/tmp/buildah-cache-0` before the save step — see [actions/cache#1533](https://github.com/actions/cache/issues/1533). This is intentional, not a bug.
+**Known workaround:** cache save requires recursively `chmod 777` on every matching `/var/tmp/buildah-cache-*` directory before the save step — buildah may create multiple numbered cache directories, not just `-0`; see [actions/cache#1533](https://github.com/actions/cache/issues/1533). This is intentional, not a bug.
+
+Restore behavior should include two fallback tiers: first `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}-` for partial matches within the same flavor/version family, then the broader `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-` fallback.
+
+Save behavior should be guarded with `always() && !cancelled()` so failed builds still persist downloaded packages for the next retry.
 
 Cache key format: `Linux-<arch>-buildah-<cache-name>`.
 
@@ -136,11 +140,33 @@ Outputs `registry-lowercase` and `image-ref` (if `image-name` was supplied).
 
 ### `push-image`
 
-Pushes with `zstd:chunked` compression. Uses a **two-push pattern** for the default tag — two sequential `podman push` calls, the second with `--digestfile`. This works around a podman bug ([#27796](https://github.com/containers/podman/issues/27796)) where layer annotations are dropped in a single push.
+Pushes with `zstd:chunked` compression using a **single** `sudo -E podman push` for the default tag. Default behavior must **not** pass `--force-compression`: rechunked Fedora images are already `zstd:chunked`, and forcing recompression strips `ostree.components` layer annotations.
+
+For chunkah-based images that need to migrate existing registry layers from `gzip` to `zstd:chunked` (for example bluefin-lts), expose a `force-compression` input and conditionally append `--force-compression` inside the push loop via an env-backed shell flag.
+
+Capture the pushed digest with `skopeo inspect --no-tags ... | jq -r '.Digest'` after the push instead of doing a second `podman push --digestfile` upload.
+
+Before the user-space registry login, restore ownership of `/run/user/$(id -u)/containers` if it exists. Earlier `sudo podman login` calls in consuming workflows can leave root-owned auth files there and break the later unprivileged login. Keep this as an opt-out input (`fix-auth-permissions`, default `true`) so callers can disable it when unnecessary.
 
 Alias tags are applied server-side via `skopeo copy` (no re-upload).
 
 Retry logic: outer `while` loop up to `max-attempts` (default 3), with `retry-wait-seconds` (default 15s) between attempts. The inner `podman push` also carries `--retry 5 --retry-delay 30s`.
+
+### `create-manifest`
+
+Assembles and pushes a multi-arch OCI manifest index from a JSON map of `platform -> digest` values (for example `{"amd64":"sha256:...","arm64":"sha256:..."}`). The local manifest name should match the lowercased remote path: `${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}`.
+
+**Caller-provided tooling:** this action does **not** install dependencies. Callers must provide `podman` and `jq` themselves (for example by running in a Wolfi container or on an Ubuntu runner that already has them available).
+
+Population pattern:
+- create the manifest locally with `podman manifest create`
+- iterate `digests-json` with `jq` and add each digest using `podman manifest add ... --arch <platform>`
+- apply newline-separated OCI annotations with `podman manifest annotate --index --annotation`
+
+Push pattern:
+- push the **first** tag with `podman manifest push --all=false --digestfile ...` to capture the manifest-list digest
+- push all remaining tags with `podman manifest push --all=false` so each alias tag is published without a separate digest-capture pass
+- wrap each tag push in a small retry loop (3 attempts)
 
 ### `sign-and-publish`
 
@@ -150,6 +176,8 @@ Two signing modes:
 - `key`: `cosign sign -y --key env://COSIGN_PRIVATE_KEY`. Requires `inputs.signing-key` to be set.
 
 SBOM flow (when `generate-sbom: true`): Syft generates SPDX JSON → ORAS attaches it to the registry → cosign signs the SBOM artifact itself.
+
+After the keyless image sign step, immediately run `cosign verify` with GitHub repository identity and the GitHub Actions OIDC issuer to fail fast if the signature was not applied as expected.
 
 **Known workaround:** `sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore"` is needed before cosign operations — the sigstore cache directory sometimes has wrong ownership on GitHub-hosted runners.
 
@@ -188,6 +216,117 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 
 ---
 
+## Reusable workflow
+
+The repo provides a complete reusable workflow at `.github/workflows/reusable-build.yml` for Fedora-based bootc image builds (bluefin, aurora, etc.).
+
+### Calling from a consuming repo
+
+```yaml
+jobs:
+  build:
+    uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
+    secrets: inherit
+    with:
+      brand_name: bluefin
+      stream_name: stable
+      image_flavors: '["main", "nvidia-open"]'
+      architecture: '["x86_64"]'
+```
+
+### How action refs work inside the reusable workflow
+
+When a consuming repo calls the workflow:
+- `github.repository` = the **caller's** repo (e.g. `projectbluefin/bluefin`)
+- `actions/checkout` checks out the **caller's** code into `GITHUB_WORKSPACE`
+- `just` commands run against the **caller's** Justfile — this is intentional
+
+> **Critical: cross-repo action refs**  
+> When the reusable workflow is called cross-repo (e.g. from `projectbluefin/bluefin`), `uses: ./bootc-build/<name>` resolves to the **caller's** checked-out workspace — not the actions repo. This causes `Can't find action.yml` errors.  
+> Always use full SHA-pinned refs inside the reusable workflow:
+>
+> ```yaml
+> uses: projectbluefin/actions/bootc-build/setup-runner@<SHA>
+> ```
+>
+> Never use `./bootc-build/...` in `.github/workflows/reusable-build.yml`.
+
+Inside the reusable workflow, cross-repo composite action calls must use fully qualified `projectbluefin/actions/bootc-build/<name>@<SHA>` refs, while the Justfile-driven build steps continue to run caller-specific logic from the checked-out consumer repo.
+
+### JSON array inputs
+
+Any input consumed via `fromJson()` must be valid JSON. That means string items inside the array must use **double quotes**.
+
+Always use **single outer quotes** with **double-quoted inner strings**:
+
+```yaml
+# ✅ correct
+image_flavors: '["main", "nvidia-open"]'
+architecture: '["x86_64", "aarch64"]'
+install-tools: '["just", "cosign", "oras", "syft"]'
+```
+
+Wrong:
+
+```yaml
+# ❌ wrong — invalid JSON, fromJson() will fail
+architecture: "['x86_64']"
+```
+
+The reusable workflow's `architecture` input is the concrete pattern to follow because the matrix parses it with `fromJson(inputs.architecture)`. Use `architecture: '["x86_64"]'` or `architecture: '["x86_64", "aarch64"]'`, never single-quoted strings inside the JSON array.
+
+### SBOM artifact shape
+
+The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/IMAGE_NAME/sbom.json`) before upload. The `generate-release.yml` workflow expects this `*.sbom.json` glob shape.
+
+---
+
+## Rollout strategy
+
+### Additive-only rule
+
+All changes to existing actions must be **additive**: new optional inputs with defaults that preserve existing behavior. Never remove or rename an input, and never change the behavior an existing caller already relies on, without a major version bump.
+
+Valid additive change:
+```yaml
+# Adding a new optional input with a safe default
+force-compression:
+  description: "Force recompression on push"
+  default: "false"   # ← existing callers are unaffected
+```
+
+Invalid (breaking) change: removing `tags`, renaming `github-token`, or changing a default that alters behavior for existing callers.
+
+### Consumer validation flow
+
+1. Land change on a **feature branch** in this repo
+2. In one consumer repo (e.g. `projectbluefin/bluefin`), open a **draft PR** that pins `uses:` to the feature branch SHA
+   - Consumer PRs must target `testing` (the default branch) — **never `main`, `latest`, or `stable`**
+   - Targeting `testing` triggers `pr-validation.yml` (fast lint/check gate)
+   - For a full build smoke test, dispatch `build-image-testing.yml` manually on the feature branch:
+     ```bash
+     gh workflow run build-image-testing.yml \
+       --ref <your-feature-branch> \
+       --repo projectbluefin/bluefin
+     ```
+3. CI must pass on the consumer PR before the feature branch merges to `main` here
+4. After `main` merge, move the `@v1` tag forward:
+   ```bash
+   git tag -f v1
+   git push --force origin v1
+   ```
+5. Consumer PRs can then switch from the SHA pin to `@v1`
+
+### Breaking change policy
+
+If a breaking change is unavoidable:
+- Option A: create a versioned subdirectory (`bootc-build/<name>/v2/action.yml`) and route new callers there while old callers keep `v1`
+- Option B: coordinate a single wave — update all consuming repos in one PR sweep, then bump `@v1`
+
+Document the blast radius (which repos, which inputs change) in the PR description. Do not merge without a link to passing CI in at least one consumer.
+
+---
+
 ## Adding a new action
 
 1. Create `bootc-build/<name>/action.yml`.
@@ -203,7 +342,7 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 
 | Workaround | Location | Issue |
 |---|---|---|
-| Two-push for digest capture | `push-image` | [podman#27796](https://github.com/containers/podman/issues/27796) — annotations dropped on single push |
+| `chown /run/user/$UID/containers` before login | `push-image`, `create-manifest` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
 | `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |

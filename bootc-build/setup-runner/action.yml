@@ -75,7 +75,7 @@ runs:
       if: contains(fromJSON(inputs.install-tools), 'syft')
       uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
       with:
-        syft-version: v1.39.0
+        syft-version: v1.44.0
 
     - name: Get podman version
       id: podman-version

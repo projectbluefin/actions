@@ -21,6 +21,12 @@ inputs:
   retry-wait-seconds:
     description: "Seconds to wait between retries"
     default: "15"
+  force-compression:
+    description: "Force recompression during podman push"
+    default: "false"
+  fix-auth-permissions:
+    description: "Fix auth file ownership before user-space registry login"
+    default: "true"
   github-token:
     description: "Token for registry login"
     required: true
@@ -36,6 +42,15 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Fix container auth permissions
+      if: inputs.fix-auth-permissions == 'true'
+      shell: bash
+      run: |
+        AUTH_DIR="/run/user/$(id -u)/containers"
+        if [[ -d "${AUTH_DIR}" ]]; then
+          sudo chown -R "$(id -u):$(id -g)" "${AUTH_DIR}"
+        fi
+
     - name: Login to registry
       shell: bash
       env:
@@ -56,6 +71,7 @@ runs:
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         MAX_ATTEMPTS: ${{ inputs.max-attempts }}
         RETRY_WAIT: ${{ inputs.retry-wait-seconds }}
+        FORCE_COMPRESSION: ${{ inputs.force-compression }}
         DIGEST_FILE: ${{ runner.temp }}/push-digest
       run: |
         set -euo pipefail
@@ -71,31 +87,29 @@ runs:
         fi
         DEFAULT_TAG="${DEFAULT_TAG_INPUT:-${TAG_ARRAY[0]}}"
 
+        FC_FLAG=""
+        if [[ "${FORCE_COMPRESSION}" == "true" ]]; then
+          FC_FLAG="--force-compression"
+        fi
+
         attempt=0
         while true; do
           attempt=$((attempt + 1))
           rm -f "${DIGEST_FILE}"
 
-          # Push default tag with full upload (two-push pattern for annotation stability)
-          # Workaround for https://github.com/containers/podman/issues/27796
           sudo -E podman push \
             --compression-format zstd:chunked \
             --compression-level 3 \
-            --force-compression \
+            ${FC_FLAG:+${FC_FLAG}} \
             --retry 5 --retry-delay 30s \
             "${IMAGE_NAME}:${DEFAULT_TAG}" \
             "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
 
-          sudo -E podman push \
-            --compression-format zstd:chunked \
-            --compression-level 3 \
-            --force-compression \
-            --retry 5 --retry-delay 30s \
-            --digestfile "${DIGEST_FILE}" \
-            "${IMAGE_NAME}:${DEFAULT_TAG}" \
-            "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
+          skopeo inspect --no-tags \
+            "docker://${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}" \
+            | jq -r '.Digest' > "${DIGEST_FILE}"
 
-          if [[ -s "${DIGEST_FILE}" ]]; then
+          if [[ -s "${DIGEST_FILE}" ]] && [[ $(<"${DIGEST_FILE}") != "null" ]]; then
             break
           fi
 
@@ -107,7 +121,7 @@ runs:
           sleep "${RETRY_WAIT}"
         done
 
-        DIGEST=$(cat "${DIGEST_FILE}")
+        DIGEST=$(<"${DIGEST_FILE}")
         echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
         # Server-side copy for all alias tags (no re-upload)
