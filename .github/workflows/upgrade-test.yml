@@ -1,0 +1,62 @@
+name: bootc Upgrade and Rollback Test
+# Reusable workflow: boots a bootc OCI image in QEMU and runs the
+# projectbluefin/testsuite lifecycle suite (upgrade + rollback).
+#
+# Any bootc image project can gate releases with:
+#   uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+#   with:
+#     image: ghcr.io/ublue-os/bluefin:latest
+#
+# Example callers:
+#   projectbluefin/bluefin — ghcr.io/ublue-os/bluefin:latest
+#   projectbluefin/bluefin-lts — ghcr.io/ublue-os/bluefin-lts:latest
+#
+# The lifecycle suite validates: bootc status, upgrade, reboot into new
+# deployment, rollback to previous deployment, and /etc persistence.
+# See: https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/bootc.feature
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: >
+          Full OCI image reference to test.
+          Must be pullable without auth (i.e. public GHCR image or a pre-authed registry).
+          Example: ghcr.io/ublue-os/bluefin:latest
+        required: true
+        type: string
+      suites:
+        description: >
+          Comma-separated test suites to run.
+          Default is 'lifecycle' which covers: bootc status, upgrade, rollback,
+          /etc merge, and idempotency.
+          Any suite supported by projectbluefin/testsuite may be added.
+        type: string
+        default: "lifecycle"
+      skip_native_apps:
+        description: "Skip @native_app scenarios (non-Flatpak app tests)"
+        type: boolean
+        default: false
+      screenshot_flatpaks:
+        description: >
+          Comma-separated Flatpak app IDs to launch-and-screenshot after the
+          test run. Leave empty to skip.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  packages: write   # required by testsuite e2e.yml for screenshot OCI push
+
+jobs:
+  upgrade-test:
+    name: Upgrade & rollback — ${{ inputs.image }}
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@4ca86c64f3ed92dabe24d31f5a08b82fe3a3df8a # main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ${{ inputs.image }}
+      suites: ${{ inputs.suites }}
+      skip_native_apps: ${{ inputs.skip_native_apps }}
+      screenshot_flatpaks: ${{ inputs.screenshot_flatpaks }}
