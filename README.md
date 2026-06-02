@@ -78,3 +78,4 @@ Pin to `@v1` for stability. Renovate manages updates in consuming repos.
 ## Related
 
 - Epic: [projectbluefin/bluefin#134](https://github.com/projectbluefin/bluefin/issues/134)
+- **Onboarding a new image:** [`docs/skills/consumer-guide.md`](docs/skills/consumer-guide.md)
