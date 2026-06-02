@@ -1,0 +1,50 @@
+name: "bootc-build/validate-pr"
+description: "Validate a bootc PR: just check, shellcheck, hadolint, pre-commit — all action pins live here so Renovate updates this one file, not every consumer workflow"
+author: "projectbluefin"
+
+inputs:
+  dockerfile:
+    description: "Path to the Containerfile/Dockerfile to lint with hadolint"
+    default: "Containerfile"
+  hadolint-config:
+    description: "Path to the hadolint configuration file"
+    default: ".hadolint.yaml"
+  shellcheck-glob:
+    description: "Glob for shell scripts to check (expanded with globstar in workspace root)"
+    default: "build_files/**/*.sh"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install just
+      uses: taiki-e/install-action@35e522e91305799a18f8cee79bf13d1f7b28b796 # just
+      with:
+        tool: just
+
+    - name: Install shellcheck
+      shell: bash
+      run: sudo apt-get install -y shellcheck
+
+    - name: Install pre-commit
+      shell: bash
+      run: pip install pre-commit
+
+    - name: Check Just syntax
+      shell: bash
+      run: just check
+
+    - name: Shellcheck build scripts
+      shell: bash
+      run: |
+        shopt -s globstar nullglob
+        shellcheck ${{ inputs.shellcheck-glob }}
+
+    - name: Lint Containerfile
+      uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
+      with:
+        dockerfile: ${{ inputs.dockerfile }}
+        config: ${{ inputs.hadolint-config }}
+
+    - name: Run pre-commit
+      shell: bash
+      run: pre-commit run --all-files
