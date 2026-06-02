@@ -1,0 +1,84 @@
+name: Skill Drift Check
+
+on:
+  workflow_call:
+    inputs:
+      code-paths:
+        description: 'JSON array of glob patterns for code files that should have skill updates'
+        required: true
+        type: string
+      skill-paths:
+        description: 'JSON array of glob patterns for skill files'
+        required: true
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Check for skill drift
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE_PATHS: ${{ inputs.code-paths }}
+          SKILL_PATHS: ${{ inputs.skill-paths }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Get list of changed files from the PR
+          if [ -z "${PR_NUMBER}" ]; then
+            echo "::warning::PR_NUMBER is not set. Skipping skill drift check."
+            exit 0
+          fi
+
+          CHANGED_FILES=$(gh pr diff "${PR_NUMBER}" --name-only)
+
+          # Helper function to match a file against a glob pattern
+          matches_glob() {
+            local file="$1"
+            local pattern="$2"
+            # Convert glob pattern to regex
+            # Handle ** (recursive), * (any chars except /), ? (single char)
+            local regex="${pattern}"
+            regex="${regex//\./\\.}"  # escape dots
+            regex="${regex//\*\*/.*}"  # ** becomes .*
+            regex="${regex//\*/[^/]*}"  # * becomes [^/]*
+            regex="${regex//\?/.}"  # ? becomes .
+            regex="^${regex}$"
+            [[ "$file" =~ $regex ]]
+          }
+
+          # Parse JSON arrays from inputs and check for matches
+          code_changed=false
+          skill_changed=false
+
+          while IFS= read -r file; do
+            # Check against code patterns
+            while IFS= read -r pattern; do
+              if matches_glob "$file" "$pattern"; then
+                echo "Code file matched: $file (pattern: $pattern)"
+                code_changed=true
+                break
+              fi
+            done <<< "$(echo "${CODE_PATHS}" | jq -r '.[]')"
+
+            # Check against skill patterns
+            while IFS= read -r pattern; do
+              if matches_glob "$file" "$pattern"; then
+                echo "Skill file matched: $file (pattern: $pattern)"
+                skill_changed=true
+                break
+              fi
+            done <<< "$(echo "${SKILL_PATHS}" | jq -r '.[]')"
+          done <<< "$CHANGED_FILES"
+
+          # Emit warning if code changed but skills weren't touched
+          if [ "$code_changed" = true ] && [ "$skill_changed" = false ]; then
+            echo "::warning::Code files changed but no skill files were updated. Please review and update docs/skills/ as needed. See docs/SKILL.md for guidance."
+          fi
+
+          exit 0

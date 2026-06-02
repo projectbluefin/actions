@@ -1,0 +1,12 @@
+name: Skill Drift
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  skill-drift:
+    uses: ./.github/workflows/skill-drift-check.yml
+    with:
+      code-paths: '["bootc-build/**/action.yml", ".github/workflows/reusable-*.yml"]'
+      skill-paths: '["docs/skills/**"]'
