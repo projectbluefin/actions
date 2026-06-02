@@ -349,6 +349,14 @@ architecture: "['x86_64']"
 
 The reusable workflow's `architecture` input is the concrete pattern to follow because the matrix parses it with `fromJson(inputs.architecture)`. Use `architecture: '["x86_64"]'` or `architecture: '["x86_64", "aarch64"]'`, never single-quoted strings inside the JSON array.
 
+### Variant expansion pattern
+
+When a consumer needs an additive variant like `brand_name-dx`, keep the public API additive: introduce a boolean input on `workflow_call`, compute the JSON array in a small pre-matrix job, then feed that output into `fromJson(...)` for `matrix.base_name`.
+
+For `reusable-build.yml`, `include_dx_variant: true` expands `base_name` from `[brand_name]` to `[brand_name, brand_name-dx]`. The unsupported arm combination is handled with a static `strategy.matrix.exclude` entry for `architecture: aarch64` plus `base_name: "${{ inputs.brand_name }}-dx"`.
+
+This preserves existing callers by default while letting Bluefin build both `bluefin` and `bluefin-dx` from the shared workflow.
+
 ### SBOM artifact shape
 
 The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/IMAGE_NAME/sbom.json`) before upload. The `generate-release.yml` workflow expects this `*.sbom.json` glob shape.
