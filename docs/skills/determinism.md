@@ -110,7 +110,7 @@ A CI check enforces they match. This ensures:
 
 ### 1. Third-party action SHAs in all composite actions
 
-**Scope:** Every `uses:` reference in `bootc-build/*/action.yml`
+**Scope:** Every `uses:` reference in `bootc-build/*/action.yml`, plus pinned `uses:` calls in `.github/workflows/reusable-build.yml`
 
 **Current state:**
 - ✅ `actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6`
@@ -122,14 +122,20 @@ A CI check enforces they match. This ensures:
 - ✅ `ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10`
 - ✅ `actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5`
 - ✅ `actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5`
-- ✅ `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7`
+- ✅ `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7` (also appears once as `# v7.0.1` in `reusable-build.yml` on the same SHA)
 - ✅ `actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8`
 - ✅ `actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0`
-- ⚠️ `ublue-os/container-storage-action@dc1f4c8f17b672069e921f001132f7cf98a423a6` — SHA pinned but **missing version comment**
+- ✅ `projectbluefin/actions/bootc-build/setup-runner@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
+- ✅ `projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
+- ✅ `projectbluefin/actions/bootc-build/push-image@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
+- ✅ `projectbluefin/actions/bootc-build/sign-and-publish@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
+- ✅ `ublue-os/container-storage-action@dc1f4c8f17b672069e921f001132f7cf98a423a6` — SHA pinned; no version comment possible (repo has no release tags, SHA is HEAD of `main`)
 
-**Reusable workflow (`reusable-build.yml`):**
-- ✅ All `uses:` references are pinned SHAs with version comments
-- ✅ No floating tags (`@main`, `@latest`, `@v3`)
+**Audit result:**
+- ✅ No undocumented third-party SHA pins remain in `bootc-build/*/action.yml`
+- ✅ `.github/workflows/reusable-build.yml` has no floating tags (`@main`, `@latest`, `@v3`)
+- ✅ Internal `projectbluefin/actions/bootc-build/*` refs are pinned to a full commit SHA for cross-repo callers
+- ⚠️ The previous claim that all `uses:` refs in `reusable-build.yml` had version comments was stale: third-party refs do, internal composite-action refs do not
 
 **Chunkah container SHA:**
 - ✅ `quay.io/coreos/chunkah:v0.5.0@sha256:352097f3d32186ac11082f8b74cd544678b00388b50c96ba5c8e79503a454fe3`
@@ -146,7 +152,8 @@ A CI check enforces they match. This ensures:
 - Manual audit quarterly for drift
 
 **Action items:**
-1. Add version comment to `ublue-os/container-storage-action` SHA in `setup-runner/action.yml` (line 35)
+1. ~~Add version comment to `ublue-os/container-storage-action` SHA in `setup-runner/action.yml`~~ — this repo has no release tags (HEAD of `main` only); the SHA is the canonical reference. No version comment is possible.
+2. Normalize the `actions/upload-artifact` version comment in `reusable-build.yml` (`# v7` vs `# v7.0.1`) the next time that workflow is touched
 
 ---
 

@@ -104,12 +104,24 @@ jobs:
 
 ### Per-repo path configs
 
+These are the committed reference configs currently deployed in each repo's `.github/workflows/skill-drift.yml` wrapper.
+
 | Repo | `code-paths` | `skill-paths` |
 |---|---|---|
 | `projectbluefin/actions` | `'["bootc-build/**/action.yml", ".github/workflows/reusable-*.yml"]'` | `'["docs/skills/**"]'` |
 | `projectbluefin/bluefin` | `'[".github/workflows/**", "build_files/**", "Justfile", "recipes/**"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
 | `projectbluefin/bluefin-lts` | `'[".github/workflows/**", "build_files/**", "Justfile"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
 | `projectbluefin/dakota` | `'[".github/workflows/**", "build_files/**", "Justfile", "elements/**"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
+
+### Current consumer deployment status
+
+The per-repo wrappers are no longer pending: all three consumer PRs merged on 2026-06-02, and the default branches now call `projectbluefin/actions/.github/workflows/skill-drift-check.yml@v1`.
+
+| Repo | PR | Branch | Status |
+|---|---|---|---|
+| `projectbluefin/bluefin` | [#239](https://github.com/projectbluefin/bluefin/pull/239) | `feat/skill-drift-wrapper` | Merged / deployed |
+| `projectbluefin/bluefin-lts` | [#24](https://github.com/projectbluefin/bluefin-lts/pull/24) | `feat/skill-drift-wrapper` | Merged / deployed |
+| `projectbluefin/dakota` | [#660](https://github.com/projectbluefin/dakota/pull/660) | `feat/skill-drift-wrapper` | Merged / deployed |
 
 ### Bypass
 
@@ -150,7 +162,7 @@ The workflow auto-creates the `skill-drift` label (color `e4e669`, description "
 
 ### What it does NOT audit
 
-- Per-repo skill files in consumer repos (`bluefin/docs/skills/`, `bluefin-lts/docs/skills/`) — those are out-of-scope for the `actions`-hosted audit. Consumer repos are responsible for their own skill freshness.
+- Per-repo skill files in consumer repos (`bluefin/docs/skills/`, `bluefin-lts/docs/skills/`, `dakota/docs/skills/`) — those are out-of-scope for the `actions`-hosted audit. Consumer repos are responsible for their own skill freshness.
 - Whether skill content is *correct* — only whether it was recently touched.
 
 ### Front-matter lint

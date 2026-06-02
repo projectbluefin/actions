@@ -12,8 +12,11 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Update a pinned SHA | `docs/skills/composite-actions.md` → "SHA pinning" |
 | Understand the sign-and-publish flow | `docs/skills/composite-actions.md` → "sign-and-publish" |
 | Understand the push-image push + digest pattern | `docs/skills/composite-actions.md` → "push-image" |
+| Generate OCI image tags in a custom pipeline | `docs/skills/composite-actions.md` → "generate-tags" |
+| Assemble a multi-arch OCI manifest index | `docs/skills/composite-actions.md` → "create-manifest" |
 | Understand chunkah rechunking | `docs/skills/composite-actions.md` → "chunka" |
 | Author or modify the reusable build workflow | `docs/skills/composite-actions.md` → "Reusable workflow" |
+| Understand when to use `generate-tags` vs `just generate-build-tags` | `docs/skills/composite-actions.md` → "generate-tags" + "Reusable workflow" |
 | Wire a consuming repo to the shared reusable workflow | `docs/skills/composite-actions.md` → "Reusable workflow" |
 | Use these actions in a new or external bootc image repo | `docs/skills/consumer-guide.md` |
 | Understand the Justfile contract for the reusable workflow | `docs/skills/consumer-guide.md` → "Justfile contract" |

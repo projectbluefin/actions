@@ -124,12 +124,15 @@ Use individual actions when you need more control: different base distro (CentOS
 | `setup-runner` | `bootc-build/setup-runner@v1` | Update podman, set up BTRFS storage, install tools |
 | `dnf-cache` | `bootc-build/dnf-cache@v1` | Restore/save buildah layer cache |
 | `preflight` | `bootc-build/preflight@v1` | Validate registry auth, normalize image refs |
+| `generate-tags` | `bootc-build/generate-tags@v1` | Generate shared Bluefin/Fedora OCI alias tags from version + event context |
 | `push-image` | `bootc-build/push-image@v1` | Push with retry, digest capture, skopeo alias tags |
 | `create-manifest` | `bootc-build/create-manifest@v1` | Multi-arch OCI manifest index assembly |
 | `sign-and-publish` | `bootc-build/sign-and-publish@v1` | Cosign (keyless or key) + Syft SBOM + attestation |
 | `rechunk` | `bootc-build/rechunk@v1` | rpm-ostree `zstd:chunked` rechunking with delta support |
 | `chunka` | `bootc-build/chunka@v1` | OCI-native chunkah rechunking (no rpm-ostree needed) |
 | `ghcr-cleanup` | `bootc-build/ghcr-cleanup@v1` | Prune old/untagged GHCR images |
+
+`generate-tags` is for **Path 2** and other custom pipelines that want the shared Bluefin tag policy without reimplementing it. **Path 1** does not use this action; the reusable workflow keeps tag generation in the caller's Justfile contract via `just generate-build-tags`. Prefer `generate-tags` when you are assembling your own workflow from individual actions, and prefer the Justfile recipe when you are adopting the full reusable workflow and want tag policy owned by the consumer repo.
 
 ### Minimal custom pipeline
 
