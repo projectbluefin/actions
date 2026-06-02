@@ -1,0 +1,7 @@
+# Default: any one maintainer approves
+* @castrojo @p5 @m2Giles @tulilirockz
+
+# Sensitive paths — require maintainer review
+bootc-build/        @castrojo @p5 @m2Giles @tulilirockz
+.github/workflows/  @castrojo @p5 @m2Giles @tulilirockz
+docs/               @castrojo @p5 @m2Giles @tulilirockz

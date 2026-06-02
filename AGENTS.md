@@ -38,6 +38,12 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 **Verification:** Every PR must confirm that the action change was exercised in a real workflow (link to a CI run or test job). No untested changes.
 
+**Agents MUST NOT push directly to `main`.** All changes via PR from a feature branch. Branch protection enforces this; direct pushes are blocked for non-admins.
+
+**`@v1` tag moves require human authorization.** Force-pushing the shared tag affects every consumer repo simultaneously. A human must run `git tag -f v1 && git push --force origin v1` after verifying CI is green. Do not initiate this as an agent action.
+
+**Production promotion in consumer repos is 2-human gated.** The `environment: production` gate on promotion/release workflows cannot be bypassed by changing actions here. Any change that could affect the promotion path requires explicit maintainer review. Admin bypasses are permanently logged in the Environment deployment history.
+
 ---
 
 ## PR Comment Policy
