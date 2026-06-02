@@ -187,6 +187,8 @@ SBOM flow (when `generate-sbom: true`): Syft generates SPDX JSON → ORAS attach
 
 After the keyless image sign step, immediately run `cosign verify` with GitHub repository identity and the GitHub Actions OIDC issuer to fail fast if the signature was not applied as expected.
 
+**Retry policy:** All four `cosign sign` invocations (image keyless, image key-based, SBOM keyless, SBOM key-based) are wrapped with `nick-fields/retry` — 3 attempts, 30s wait between attempts, 5 min timeout per attempt. This reduces unsigned-image publishes from transient Rekor/TUF connectivity failures.
+
 **Known workaround:** `sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore"` is needed before cosign operations — the sigstore cache directory sometimes has wrong ownership on GitHub-hosted runners.
 
 GitHub attestation pushed via `actions/attest` (always when `push-attestation: true`, regardless of signing mode).
