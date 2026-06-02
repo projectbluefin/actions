@@ -5,11 +5,19 @@ name: bootc Upgrade and Rollback Test
 # Any bootc image project can gate releases with:
 #   uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
 #   with:
-#     image: ghcr.io/ublue-os/bluefin:latest
+#     image: ghcr.io/ublue-os/bluefin:stable-20240601
+#     target-image: ghcr.io/ublue-os/bluefin:stable
+#
+# The workflow boots 'image' (the from / currently deployed version),
+# runs 'bootc upgrade' inside the VM which will resolve 'target-image'
+# at the same ref, verifies the new deployment boots, then rolls back.
+#
+# For same-base upgrades (stable → stable, lts → lts):
+#   'bootc upgrade' picks up the newest digest at the target tag naturally.
 #
 # Example callers:
-#   projectbluefin/bluefin — ghcr.io/ublue-os/bluefin:latest
-#   projectbluefin/bluefin-lts — ghcr.io/ublue-os/bluefin-lts:latest
+#   projectbluefin/bluefin    — stable-<date> → stable
+#   projectbluefin/bluefin-lts — lts-<date>   → lts
 #
 # The lifecycle suite validates: bootc status, upgrade, reboot into new
 # deployment, rollback to previous deployment, and /etc persistence.
@@ -20,11 +28,26 @@ on:
     inputs:
       image:
         description: >
-          Full OCI image reference to test.
-          Must be pullable without auth (i.e. public GHCR image or a pre-authed registry).
-          Example: ghcr.io/ublue-os/bluefin:latest
+          The image to boot — the "from" / currently deployed version.
+          Full OCI reference including tag or digest.
+          Example: ghcr.io/ublue-os/bluefin:stable-20240601
+          Example: ghcr.io/ublue-os/bluefin@sha256:abc123
         required: true
         type: string
+      target-image:
+        description: >
+          The image to upgrade to — the "to" / new build being validated.
+          Full OCI reference including tag or digest.
+          Example: ghcr.io/ublue-os/bluefin:stable
+          Example: ghcr.io/ublue-os/bluefin@sha256:def456
+          When 'image' and 'target-image' share the same base ref, 'bootc upgrade'
+          inside the VM will naturally resolve to this image. For cross-image
+          upgrades (different repo or org) the lifecycle switch scenario is used.
+          If omitted, 'bootc upgrade' upgrades to whatever is current at the
+          booted image's reference.
+        required: false
+        type: string
+        default: ""
       suites:
         description: >
           Comma-separated test suites to run.
@@ -44,13 +67,20 @@ on:
         type: string
         default: ""
 
+    outputs:
+      result:
+        description: "Outcome of the upgrade test job: success or failure"
+        value: ${{ jobs.upgrade-test.result }}
+
 permissions:
   contents: read
   packages: write   # required by testsuite e2e.yml for screenshot OCI push
 
 jobs:
   upgrade-test:
-    name: Upgrade & rollback — ${{ inputs.image }}
+    name: >
+      Upgrade & rollback
+      ${{ inputs.target-image != '' && format('{0} → {1}', inputs.image, inputs.target-image) || inputs.image }}
     uses: projectbluefin/testsuite/.github/workflows/e2e.yml@4ca86c64f3ed92dabe24d31f5a08b82fe3a3df8a # main
     permissions:
       contents: read
