@@ -6,6 +6,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 
 | I need to... | Load |
 |---|---|
+| Detect changed paths for PR build matrix | `docs/skills/composite-actions.md` → "detect-changes" |
+| Validate a PR (just check, shellcheck, hadolint, pre-commit) | `docs/skills/composite-actions.md` → "validate-pr" |
 | Author or modify a composite action | `docs/skills/composite-actions.md` |
 | Add a new action to the repo | `docs/skills/composite-actions.md` → "Adding a new action" |
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
