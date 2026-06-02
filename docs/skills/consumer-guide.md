@@ -296,50 +296,34 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 
 ## Upgrade test
 
-Gate releases on a live upgrade-and-rollback cycle using `projectbluefin/testsuite`.
-The `upgrade-test.yml` reusable workflow boots any bootc OCI image in QEMU and runs
-the `lifecycle` suite: `bootc status`, upgrade, reboot into the new deployment, rollback
-to the previous one, and `/etc` persistence verification.
+A post-build gate: after your image is built and pushed, call this workflow with
+the new image ref. It boots it in QEMU via `projectbluefin/testsuite` and runs the
+`lifecycle` suite — upgrade, reboot, rollback, `/etc` persistence, and idempotency.
+Only if the gate passes should the image be promoted or tagged stable.
 
-### Why this matters
-
-Users need to trust that `bootc upgrade` and `bootc rollback` work on every published
-image. This workflow gives that guarantee in CI before the image ever ships.
-
-### Inputs model: `image` → `target-image`
-
-The workflow takes two full OCI refs:
-
-| Input | What it is |
-|---|---|
-| `image` | The **from** image — what the VM boots (currently deployed / previous version) |
-| `target-image` | The **to** image — what `bootc upgrade` should land on (new build being validated) |
-
-The VM is booted with `image`. The testsuite's lifecycle suite runs `bootc upgrade` inside
-the VM, which naturally resolves to `target-image` when both share the same base ref and
-`target-image` is the current digest at that tag. Both inputs accept any valid OCI reference —
-full tag, pinned digest, or PR build tag. No tag convention is assumed.
-
-### Minimal wiring (any bootc image repo)
+### Minimal wiring — build → gate → promote
 
 ```yaml
-# .github/workflows/upgrade-test.yml
-name: Upgrade Test
-
-on:
-  push:
-    branches: [main]
-  workflow_dispatch:
-
 jobs:
+  build:
+    # ... your build steps ...
+    outputs:
+      image: ${{ steps.push.outputs.registry-path }}/your-image
+      digest: ${{ steps.push.outputs.digest }}
+
   upgrade-test:
+    needs: build
     uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
     permissions:
       contents: read
       packages: write
     with:
-      image: ghcr.io/your-org/your-image:previous-stable
-      target-image: ghcr.io/your-org/your-image:stable
+      image: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+
+  promote:
+    needs: upgrade-test
+    if: needs.upgrade-test.outputs.result == 'success'
+    # ... move tag, cut release, etc. ...
 ```
 
 ### Hello-world: bluefin
@@ -352,12 +336,8 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: "From image (the currently deployed version)"
-        required: true
-        default: "ghcr.io/ublue-os/bluefin:stable"
-      target-image:
-        description: "To image (the new build to validate)"
-        required: true
+        description: "Full OCI ref of the build to gate on"
+        required: false
         default: "ghcr.io/ublue-os/bluefin:stable"
   schedule:
     - cron: "0 6 * * 1"   # weekly on Monday
@@ -370,7 +350,6 @@ jobs:
       packages: write
     with:
       image: ${{ inputs.image || 'ghcr.io/ublue-os/bluefin:stable' }}
-      target-image: ${{ inputs.target-image || 'ghcr.io/ublue-os/bluefin:stable' }}
 ```
 
 ### Hello-world: bluefin-lts
@@ -383,12 +362,8 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: "From image (the currently deployed version)"
-        required: true
-        default: "ghcr.io/ublue-os/bluefin-lts:lts"
-      target-image:
-        description: "To image (the new build to validate)"
-        required: true
+        description: "Full OCI ref of the build to gate on"
+        required: false
         default: "ghcr.io/ublue-os/bluefin-lts:lts"
   schedule:
     - cron: "0 6 * * 1"   # weekly on Monday
@@ -401,40 +376,13 @@ jobs:
       packages: write
     with:
       image: ${{ inputs.image || 'ghcr.io/ublue-os/bluefin-lts:lts' }}
-      target-image: ${{ inputs.target-image || 'ghcr.io/ublue-os/bluefin-lts:lts' }}
-```
-
-### Consuming the result in a downstream job
-
-```yaml
-jobs:
-  build:
-    # ... build and push image ...
-    outputs:
-      digest: ${{ steps.push.outputs.digest }}
-
-  upgrade-test:
-    needs: build
-    uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
-    permissions:
-      contents: read
-      packages: write
-    with:
-      image: ghcr.io/your-org/your-image:stable          # last known-good
-      target-image: ghcr.io/your-org/your-image@${{ needs.build.outputs.digest }}
-
-  promote:
-    needs: upgrade-test
-    if: needs.upgrade-test.outputs.result == 'success'
-    # ... promote / tag / release ...
 ```
 
 ### Inputs reference
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `image` | **yes** | — | The **from** image: full OCI ref of the version to boot (tag or digest) |
-| `target-image` | no | `""` | The **to** image: full OCI ref of the new build to upgrade to |
+| `image` | **yes** | — | Full OCI ref of the image to gate on — tag or digest (e.g. `ghcr.io/ublue-os/bluefin:stable` or `…@sha256:abc`) |
 | `suites` | no | `lifecycle` | Comma-separated testsuite suites to run |
 | `skip_native_apps` | no | `false` | Skip `@native_app` scenarios |
 | `screenshot_flatpaks` | no | `""` | Comma-separated Flatpak IDs to launch-and-screenshot |
@@ -443,7 +391,7 @@ jobs:
 
 | Output | Description |
 |---|---|
-| `result` | Job outcome: `success` or `failure` — use in `if:` conditions for downstream promote jobs |
+| `result` | Job outcome: `success`, `failure`, `cancelled`, or `skipped` — use in `if:` conditions for downstream promote jobs |
 
 ### What the `lifecycle` suite tests
 

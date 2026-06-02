@@ -1,53 +1,40 @@
 name: bootc Upgrade and Rollback Test
-# Reusable workflow: boots a bootc OCI image in QEMU and runs the
-# projectbluefin/testsuite lifecycle suite (upgrade + rollback).
+# Reusable workflow: post-build gate that boots the newly pushed image in QEMU
+# and runs the projectbluefin/testsuite lifecycle suite (upgrade + rollback).
 #
-# Any bootc image project can gate releases with:
-#   uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
-#   with:
-#     image: ghcr.io/ublue-os/bluefin:stable-20240601
-#     target-image: ghcr.io/ublue-os/bluefin:stable
+# Wire it after your build job and gate promotion on the result:
 #
-# The workflow boots 'image' (the from / currently deployed version),
-# runs 'bootc upgrade' inside the VM which will resolve 'target-image'
-# at the same ref, verifies the new deployment boots, then rolls back.
+#   upgrade-test:
+#     needs: build
+#     uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+#     with:
+#       image: ghcr.io/your-org/your-image@${{ needs.build.outputs.digest }}
 #
-# For same-base upgrades (stable → stable, lts → lts):
-#   'bootc upgrade' picks up the newest digest at the target tag naturally.
-#
-# Example callers:
-#   projectbluefin/bluefin    — stable-<date> → stable
-#   projectbluefin/bluefin-lts — lts-<date>   → lts
+#   promote:
+#     needs: upgrade-test
+#     if: needs.upgrade-test.outputs.result == 'success'
 #
 # The lifecycle suite validates: bootc status, upgrade, reboot into new
 # deployment, rollback to previous deployment, and /etc persistence.
 # See: https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/bootc.feature
+#
+# NOTE: explicit from→to cross-version upgrade path testing requires testsuite
+# changes tracked in:
+#   https://github.com/projectbluefin/testsuite/issues/223  (target-image input)
+#   https://github.com/projectbluefin/testsuite/issues/222  (no-op upgrade guard)
 
 on:
   workflow_call:
     inputs:
       image:
         description: >
-          The image to boot — the "from" / currently deployed version.
-          Full OCI reference including tag or digest.
-          Example: ghcr.io/ublue-os/bluefin:stable-20240601
-          Example: ghcr.io/ublue-os/bluefin@sha256:abc123
+          Full OCI image reference to boot and gate on — accepts a tag or pinned digest.
+          Pass the freshly built digest from your build job to gate promotion on it.
+          Example (digest gate): ghcr.io/ublue-os/bluefin@sha256:abc123
+          Example (tag gate):    ghcr.io/ublue-os/bluefin:stable
+          Example (LTS):         ghcr.io/ublue-os/bluefin-lts:lts
         required: true
         type: string
-      target-image:
-        description: >
-          The image to upgrade to — the "to" / new build being validated.
-          Full OCI reference including tag or digest.
-          Example: ghcr.io/ublue-os/bluefin:stable
-          Example: ghcr.io/ublue-os/bluefin@sha256:def456
-          When 'image' and 'target-image' share the same base ref, 'bootc upgrade'
-          inside the VM will naturally resolve to this image. For cross-image
-          upgrades (different repo or org) the lifecycle switch scenario is used.
-          If omitted, 'bootc upgrade' upgrades to whatever is current at the
-          booted image's reference.
-        required: false
-        type: string
-        default: ""
       suites:
         description: >
           Comma-separated test suites to run.
@@ -69,7 +56,7 @@ on:
 
     outputs:
       result:
-        description: "Outcome of the upgrade test job: success or failure"
+        description: "Outcome of the upgrade test job: success, failure, cancelled, or skipped"
         value: ${{ jobs.upgrade-test.result }}
 
 permissions:
@@ -78,9 +65,7 @@ permissions:
 
 jobs:
   upgrade-test:
-    name: >
-      Upgrade & rollback
-      ${{ inputs.target-image != '' && format('{0} → {1}', inputs.image, inputs.target-image) || inputs.image }}
+    name: Upgrade & rollback — ${{ inputs.image }}
     uses: projectbluefin/testsuite/.github/workflows/e2e.yml@4ca86c64f3ed92dabe24d31f5a08b82fe3a3df8a # main
     permissions:
       contents: read
