@@ -12,6 +12,9 @@ inputs:
   max-layers:
     description: "Maximum number of OCI layers"
     default: "128"
+  force-compression:
+    description: "Force recompression via buildah (optional; default preserves existing compression)"
+    default: "false"
 
 outputs:
   image-ref:
