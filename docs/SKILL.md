@@ -6,6 +6,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 
 | I need to... | Load |
 |---|---|
+| Add a weekly GHCR image cleanup schedule to a consumer repo | `docs/skills/composite-actions.md` → "ghcr-cleanup" |
 | Detect changed paths for PR build matrix | `docs/skills/composite-actions.md` → "detect-changes" |
 | Validate a PR (just check, shellcheck, hadolint, pre-commit) | `docs/skills/composite-actions.md` → "validate-pr" |
 | Author or modify a composite action | `docs/skills/composite-actions.md` |

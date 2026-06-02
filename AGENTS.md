@@ -11,14 +11,14 @@ projectbluefin/actions  ←── shared CI building blocks
         │
         ├── projectbluefin/bluefin      (bootc desktop image, Path 1 — reusable-build.yml)
         ├── projectbluefin/bluefin-lts  (LTS on CentOS Stream 10, Path 2 — à la carte)
-        ├── projectbluefin/dakota       (BST/BuildStream image, Path 2 — à la carte, deferred)
+        ├── projectbluefin/dakota       (BST/BuildStream image, Path 2 — à la carte; ghcr-cleanup deployed)
         ├── ublue-os/aurora             (Aurora desktop image)
         └── ublue-os/bazzite            (Bazzite gaming image)
 ```
 
 **Path 1** (full reusable workflow): consumer calls `reusable-build.yml@v1` and satisfies the Justfile contract. Used by bluefin and aurora.
 
-**Path 2** (à la carte composite actions): consumer calls individual actions. Used by bluefin-lts (CentOS Stream 10 base, multi-arch, `chunka` not `rechunk`) and dakota (BST build engine — partial adoption, see issue #16).
+**Path 2** (à la carte composite actions): consumer calls individual actions. Used by bluefin-lts (CentOS Stream 10 base, multi-arch, `chunka` not `rechunk`) and dakota (BST build engine; `ghcr-cleanup` deployed, full adoption tracked in issue #16).
 
 Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaking changes to an action require a version bump and coordinated update across all consuming repos.
 
@@ -34,7 +34,7 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 **No breaking changes without a version signal:** Removing or renaming an input, or changing default behavior, requires coordinating with consuming repos. Document the blast radius in the PR description.
 
-**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. See the Rollout strategy section in `docs/skills/composite-actions.md` for the full protocol.
+**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. Use `projectbluefin/bluefin` as the primary validator for build-pipeline actions. For maintenance-only actions (e.g. `ghcr-cleanup`) that aren't used by bluefin, validate in the affected consumer repo instead (e.g. dakota). See the Rollout strategy section in `docs/skills/composite-actions.md` for the full protocol.
 
 **Verification:** Every PR must confirm that the action change was exercised in a real workflow (link to a CI run or test job). No untested changes.
 

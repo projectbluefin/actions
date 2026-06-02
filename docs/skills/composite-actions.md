@@ -221,7 +221,28 @@ Key design decisions:
 
 ### `ghcr-cleanup`
 
-Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images older than `older-than` (default: 90 days), keeping at least `keep-n-tagged` and `keep-n-untagged` (both default: 7).
+Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images older than `older-than` (default: 90 days), keeping at least `keep-n-tagged` and `keep-n-untagged` (both default: 7). Also prunes orphaned images (untagged layers not referenced by any manifest list) when `delete-orphaned-images` is `true` (default).
+
+**Standard usage** (weekly Sunday schedule, mirrors bluefin `clean.yml`):
+
+```yaml
+jobs:
+  delete-older-than-90:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: projectbluefin/actions/bootc-build/ghcr-cleanup@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          packages: myimage,myimage-nvidia   # comma-separated GHCR package names
+          older-than: 90 days
+          delete-orphaned-images: true
+          keep-n-tagged: 7
+          keep-n-untagged: 7
+```
+
+Deploy as a scheduled workflow (`cron: "15 0 * * 0"`) with `workflow_dispatch` for manual runs. Deployed in: bluefin (direct upstream call), dakota (`clean.yml` via this action).
 
 ### `detect-changes`
 
