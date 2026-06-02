@@ -1,0 +1,134 @@
+name: Skill Audit
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'  # Monday 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Ensure skill-drift label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create skill-drift \
+            --repo "${{ github.repository }}" \
+            --description "Skill file is stale relative to code changes" \
+            --color "e4e669" 2>/dev/null || true
+
+      - name: Audit skill files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          issues_opened=0
+          warnings=0
+
+          # ── 1. Routing-table completeness ─────────────────────────────────
+          echo "==> Checking SKILL.md routing table..."
+          for skill_file in docs/skills/*.md; do
+            skill_name=$(basename "$skill_file")
+            if ! grep -qF "$skill_name" docs/SKILL.md; then
+              echo "::warning file=docs/SKILL.md::Skill file '$skill_name' is not referenced in docs/SKILL.md"
+              warnings=$((warnings + 1))
+            fi
+          done
+
+          # ── 2. Front-matter lint ──────────────────────────────────────────
+          echo "==> Linting skill front-matter..."
+          for skill_file in docs/skills/*.md; do
+            skill_name=$(basename "$skill_file" .md)
+            first_line=$(head -1 "$skill_file")
+            if [[ "$first_line" != "---" ]]; then
+              echo "::warning file=${skill_file}::Skill '${skill_name}' is missing YAML front-matter (name:, description:, metadata.type:)"
+              warnings=$((warnings + 1))
+            fi
+          done
+
+          # ── 3. Staleness check ────────────────────────────────────────────
+          echo "==> Checking skill staleness..."
+
+          # Most recent commit touching any code path (actions or reusable workflows)
+          code_ts=$(git log -1 --format=%ct -- \
+            bootc-build/ \
+            .github/workflows/reusable-build.yml \
+            .github/workflows/reusable-build-image.yml \
+            2>/dev/null || echo 0)
+
+          if [[ "$code_ts" -eq 0 ]]; then
+            echo "Could not determine latest code commit timestamp; skipping staleness check."
+          else
+            code_date=$(date -d "@${code_ts}" '+%Y-%m-%d' 2>/dev/null || date -r "${code_ts}" '+%Y-%m-%d')
+            echo "Latest code change: ${code_date}"
+
+            for skill_file in docs/skills/*.md; do
+              skill_name=$(basename "$skill_file" .md)
+              skill_ts=$(git log -1 --format=%ct -- "$skill_file" 2>/dev/null || echo 0)
+
+              if [[ "$skill_ts" -eq 0 ]]; then
+                echo "::warning file=${skill_file}::Skill '${skill_name}' has no git history"
+                continue
+              fi
+
+              skill_date=$(date -d "@${skill_ts}" '+%Y-%m-%d' 2>/dev/null || date -r "${skill_ts}" '+%Y-%m-%d')
+
+              if [[ "$skill_ts" -lt "$code_ts" ]]; then
+                stale_days=$(( (code_ts - skill_ts) / 86400 ))
+                echo "Stale: ${skill_name} (skill: ${skill_date}, code: ${code_date}, ${stale_days}d behind)"
+
+                # Check for existing open issue
+                issue_title="skill-drift: ${skill_name} is stale (${stale_days}d behind latest code)"
+                existing=$(gh issue list \
+                  --repo "${REPO}" \
+                  --label skill-drift \
+                  --state open \
+                  --search "${skill_name}" \
+                  --json number,title \
+                  --jq ".[0].number // empty" 2>/dev/null || true)
+
+                if [[ -n "$existing" ]]; then
+                  echo "  -> Commenting on existing issue #${existing}"
+                  gh issue comment "$existing" \
+                    --repo "${REPO}" \
+                    --body "Audit re-run $(date '+%Y-%m-%d'): docs/skills/${skill_name}.md is now ${stale_days}d behind the latest code change (${code_date}). Please review and update."
+                else
+                  echo "  -> Opening new issue"
+                  body_file=$(mktemp)
+                  printf '%s\n\n%s\n%s\n%s\n%s\n\n%s\n\n%s\n\n%s\n' \
+                    "## Skill drift detected" \
+                    "Skill file: docs/skills/${skill_name}.md" \
+                    "Last updated: ${skill_date}" \
+                    "Latest code change: ${code_date}" \
+                    "Days behind: ${stale_days}" \
+                    "The skill file has not been updated since the last code change in bootc-build/ or the reusable workflows. Please review whether it needs updating." \
+                    "See docs/SKILL.md for guidance on what to update." \
+                    "Opened automatically by the weekly skill audit." \
+                    > "$body_file"
+                  gh issue create \
+                    --repo "${REPO}" \
+                    --title "${issue_title}" \
+                    --label skill-drift \
+                    --body-file "$body_file"
+                  rm -f "$body_file"
+                  issues_opened=$((issues_opened + 1))
+                fi
+              else
+                echo "Fresh: ${skill_name} (${skill_date})"
+              fi
+            done
+          fi
+
+          echo ""
+          echo "==> Audit complete: ${warnings} warning(s), ${issues_opened} issue(s) opened"
