@@ -17,9 +17,14 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Wire a consuming repo to the shared reusable workflow | `docs/skills/composite-actions.md` → "Reusable workflow" |
 | Use these actions in a new or external bootc image repo | `docs/skills/consumer-guide.md` |
 | Understand the Justfile contract for the reusable workflow | `docs/skills/consumer-guide.md` → "Justfile contract" |
+| Wire a skill-drift check to a consumer repo | `docs/skills/consumer-guide.md` → "Checklist" + `docs/skills/factory-operations.md` |
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
 | Find or report floating action tags | `docs/skills/determinism.md` → "Already pinned" or file a GitHub issue |
 | Understand the gold standards for determinism | `docs/skills/determinism.md` → "Gold standards" |
+| Understand or configure the production gate (2-human approval) | `docs/skills/factory-operations.md` → "Production Gate" |
+| Understand the skill-drift PR check | `docs/skills/factory-operations.md` → "Skill-Drift PR Check" |
+| Understand the weekly skill audit | `docs/skills/factory-operations.md` → "Skill Audit" |
+| Debug a stuck or missing Environment approval gate | `docs/skills/factory-operations.md` → "Troubleshooting" |
 
 ## Full Skill Index
 
@@ -28,3 +33,4 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`composite-actions.md`](skills/composite-actions.md) | Authoring conventions, known workarounds, action-by-action reference |
 | [`consumer-guide.md`](skills/consumer-guide.md) | Onboarding a new image repo: full reusable workflow and à la carte composite actions |
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
+| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, and scheduled skill audit |

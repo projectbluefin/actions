@@ -284,6 +284,8 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 - [ ] `image_flavors` and `architecture` use double-quoted strings inside the JSON array: `'["main"]'` not `"['main']"`
 - [ ] Tested with `stream_name: testing` first (skips SBOM/signing/rechunk — faster feedback loop)
 - [ ] Opened a draft PR in your repo to validate the integration before merging
+- [ ] Added a `skill-drift.yml` wrapper calling `skill-drift-check.yml@v1` — see `docs/skills/factory-operations.md` → "Skill-Drift PR Check" for the 16-line template and path configs per repo type
+- [ ] Production promotion workflow gated behind `environment: production` with 2 required reviewers configured in GitHub Settings → Environments
 
 ---
 
