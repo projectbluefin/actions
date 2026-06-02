@@ -227,6 +227,8 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 
 Wraps `dorny/paths-filter` with the standard bluefin/bootc image path set. Eliminates duplicate path-filter blocks across `pr-validation.yml` and `build-image-testing.yml` in consuming repos, and centralizes the `dorny/paths-filter` pin so Renovate updates propagate via a single PR here.
 
+⚠️ **The hardcoded paths are bluefin-specific.** The action watches `build_files/**` and `image-versions.yml`. Repos that use different conventions (e.g. `bluefin-lts` uses `build_scripts/**` and `image-versions.yaml`) must **not** use this action until it supports configurable paths. See issue #37 for the planned `image_paths` input. Using it with mismatched paths silently skips builds on real image changes — the worst kind of failure.
+
 Outputs:
 
 | Output | Description |
@@ -270,6 +272,10 @@ Inputs:
 | `dockerfile` | `Containerfile` | Path to lint with hadolint |
 | `hadolint-config` | `.hadolint.yaml` | hadolint config file |
 | `shellcheck-glob` | `build_files/**/*.sh` | Shell scripts glob |
+
+**Consumer layout gotcha — `validate-pr` default glob is bluefin-specific:** The default `shellcheck-glob` is `build_files/**/*.sh`, which is the bluefin/aurora layout. Repos with different conventions must override:
+- `bluefin-lts`: uses `build_scripts/**/*.sh` (not `build_files`)
+- Pass `hadolint-config: ""` if the repo has no `.hadolint.yaml`
 
 **Usage pattern:**
 
