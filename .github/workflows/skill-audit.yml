@@ -102,28 +102,26 @@ jobs:
                   echo "  -> Commenting on existing issue #${existing}"
                   gh issue comment "$existing" \
                     --repo "${REPO}" \
-                    --body "Audit re-run $(date '+%Y-%m-%d'): \`docs/skills/${skill_name}.md\` is now **${stale_days}d** behind the latest code change (${code_date}). Please review and update."
+                    --body "Audit re-run $(date '+%Y-%m-%d'): docs/skills/${skill_name}.md is now ${stale_days}d behind the latest code change (${code_date}). Please review and update."
                 else
                   echo "  -> Opening new issue"
+                  body_file=$(mktemp)
+                  printf '%s\n\n%s\n%s\n%s\n%s\n\n%s\n\n%s\n\n%s\n' \
+                    "## Skill drift detected" \
+                    "Skill file: docs/skills/${skill_name}.md" \
+                    "Last updated: ${skill_date}" \
+                    "Latest code change: ${code_date}" \
+                    "Days behind: ${stale_days}" \
+                    "The skill file has not been updated since the last code change in bootc-build/ or the reusable workflows. Please review whether it needs updating." \
+                    "See docs/SKILL.md for guidance on what to update." \
+                    "Opened automatically by the weekly skill audit." \
+                    > "$body_file"
                   gh issue create \
                     --repo "${REPO}" \
                     --title "${issue_title}" \
                     --label skill-drift \
-                    --body "$(cat <<BODY
-## Skill drift detected
-
-**Skill file:** \`docs/skills/${skill_name}.md\`
-**Last updated:** ${skill_date}
-**Latest code change:** ${code_date}
-**Days behind:** ${stale_days}
-
-The skill file has not been updated since the last code change in \`bootc-build/\` or the reusable workflows. Please review whether it needs updating.
-
-See [docs/SKILL.md](../blob/main/docs/SKILL.md) for guidance on what to update.
-
-_Opened automatically by the weekly skill audit._
-BODY
-)"
+                    --body-file "$body_file"
+                  rm -f "$body_file"
                   issues_opened=$((issues_opened + 1))
                 fi
               else
