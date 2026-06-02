@@ -1,0 +1,45 @@
+name: "bootc-build/detect-changes"
+description: "Detect whether image-affecting paths changed; computes image_flavors for the build matrix."
+author: "projectbluefin"
+
+outputs:
+  image_changed:
+    description: "'true' if any image-affecting path changed (Containerfile, build_files, system_files, image-versions.yml, Justfile)"
+    value: ${{ steps.filter.outputs.image }}
+  nvidia_changed:
+    description: "'true' if a path that requires the nvidia-open flavor changed"
+    value: ${{ steps.filter.outputs.nvidia }}
+  should_build:
+    description: "Alias for image_changed — 'true' when a build is needed"
+    value: ${{ steps.filter.outputs.image }}
+  image_flavors:
+    description: "JSON array of image flavors to build: '[\"main\"]' or '[\"main\",\"nvidia-open\"]'"
+    value: ${{ steps.matrix.outputs.image_flavors }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Filter changed paths
+      uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
+      id: filter
+      with:
+        filters: |
+          image:
+            - 'Containerfile'
+            - 'build_files/**'
+            - 'system_files/**'
+            - 'image-versions.yml'
+            - 'Justfile'
+          nvidia:
+            - 'build_files/base/04-install-kernel-akmods.sh'
+            - 'Containerfile'
+
+    - name: Compute image_flavors
+      id: matrix
+      shell: bash
+      run: |
+        if [[ "${{ steps.filter.outputs.nvidia }}" == "true" ]]; then
+          echo 'image_flavors=["main","nvidia-open"]' >> "$GITHUB_OUTPUT"
+        else
+          echo 'image_flavors=["main"]' >> "$GITHUB_OUTPUT"
+        fi
