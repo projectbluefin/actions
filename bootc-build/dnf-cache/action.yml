@@ -44,7 +44,9 @@ runs:
       shell: bash
       run: |
         for d in /var/tmp/buildah-cache-*; do
-          [[ -d "$d" ]] && sudo chmod 777 --recursive "$d"
+          if [[ -d "$d" ]]; then
+            sudo chmod 777 --recursive "$d"
+          fi
         done
 
     - name: Save DNF package cache
