@@ -1,0 +1,27 @@
+name: actionlint
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'bootc-build/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+      - 'bootc-build/**'
+
+jobs:
+  actionlint:
+    name: Lint GitHub Actions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v4.2.2
+
+      - name: Run actionlint
+        uses: reviewdog/action-actionlint@068bf0ce873c499b29c1c799fa813417db01f578 # v1.9.0
+        with:
+          reporter: github-pr-check
+          fail_on_error: true
