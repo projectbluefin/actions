@@ -225,20 +225,24 @@ Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images
 
 ### `detect-changes`
 
-Wraps `dorny/paths-filter` with the standard bluefin/bootc image path set. Eliminates duplicate path-filter blocks across `pr-validation.yml` and `build-image-testing.yml` in consuming repos, and centralizes the `dorny/paths-filter` pin so Renovate updates propagate via a single PR here.
+Wraps `dorny/paths-filter` with configurable path filters. Eliminates duplicate path-filter blocks across `pr-validation.yml` and `build-image-testing.yml` in consuming repos, and centralizes the `dorny/paths-filter` pin so Renovate updates propagate via a single PR here.
 
-⚠️ **The hardcoded paths are bluefin-specific.** The action watches `build_files/**` and `image-versions.yml`. Repos that use different conventions (e.g. `bluefin-lts` uses `build_scripts/**` and `image-versions.yaml`) must **not** use this action until it supports configurable paths. See issue #37 for the planned `image_paths` input. Using it with mismatched paths silently skips builds on real image changes — the worst kind of failure.
+Inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `filters` | bluefin/aurora paths | Full `dorny/paths-filter` YAML defining `image` and `nvidia` filters. Override for repos with different path conventions. |
 
 Outputs:
 
 | Output | Description |
 |---|---|
-| `image_changed` | `true` if Containerfile, `build_files/**`, `system_files/**`, `image-versions.yml`, or `Justfile` changed |
+| `image_changed` | `true` if any image-affecting path changed |
 | `should_build` | Alias for `image_changed` |
 | `nvidia_changed` | `true` if Containerfile or the akmods kernel script changed |
 | `image_flavors` | JSON array — `["main"]` or `["main","nvidia-open"]` |
 
-**Usage pattern in a consuming workflow:**
+**Standard usage (bluefin/aurora — no override needed):**
 
 ```yaml
 detect-changes:
@@ -250,6 +254,23 @@ detect-changes:
     - uses: actions/checkout@...
     - uses: projectbluefin/actions/bootc-build/detect-changes@v1
       id: detect
+```
+
+**bluefin-lts override (build_scripts, image-versions.yaml):**
+
+```yaml
+    - uses: projectbluefin/actions/bootc-build/detect-changes@v1
+      id: detect
+      with:
+        filters: |
+          image:
+            - 'Containerfile'
+            - 'build_scripts/**'
+            - 'system_files/**'
+            - 'image-versions.yaml'
+            - 'Justfile'
+          nvidia:
+            - 'Containerfile'
 ```
 
 ### `validate-pr`

@@ -2,9 +2,23 @@ name: "bootc-build/detect-changes"
 description: "Detect whether image-affecting paths changed; computes image_flavors for the build matrix."
 author: "projectbluefin"
 
+inputs:
+  filters:
+    description: "Full dorny/paths-filter YAML. Must define 'image' and 'nvidia' filters. Override for repos that use different path conventions (e.g. build_scripts instead of build_files)."
+    default: |
+      image:
+        - 'Containerfile'
+        - 'build_files/**'
+        - 'system_files/**'
+        - 'image-versions.yml'
+        - 'Justfile'
+      nvidia:
+        - 'build_files/base/04-install-kernel-akmods.sh'
+        - 'Containerfile'
+
 outputs:
   image_changed:
-    description: "'true' if any image-affecting path changed (Containerfile, build_files, system_files, image-versions.yml, Justfile)"
+    description: "'true' if any image-affecting path changed"
     value: ${{ steps.filter.outputs.image }}
   nvidia_changed:
     description: "'true' if a path that requires the nvidia-open flavor changed"
@@ -23,16 +37,7 @@ runs:
       uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3
       id: filter
       with:
-        filters: |
-          image:
-            - 'Containerfile'
-            - 'build_files/**'
-            - 'system_files/**'
-            - 'image-versions.yml'
-            - 'Justfile'
-          nvidia:
-            - 'build_files/base/04-install-kernel-akmods.sh'
-            - 'Containerfile'
+        filters: ${{ inputs.filters }}
 
     - name: Compute image_flavors
       id: matrix
