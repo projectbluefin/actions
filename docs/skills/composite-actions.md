@@ -223,6 +223,63 @@ Key design decisions:
 
 Thin wrapper around `dataaxiom/ghcr-cleanup-action`. Deletes untagged/old images older than `older-than` (default: 90 days), keeping at least `keep-n-tagged` and `keep-n-untagged` (both default: 7).
 
+### `detect-changes`
+
+Wraps `dorny/paths-filter` with the standard bluefin/bootc image path set. Eliminates duplicate path-filter blocks across `pr-validation.yml` and `build-image-testing.yml` in consuming repos, and centralizes the `dorny/paths-filter` pin so Renovate updates propagate via a single PR here.
+
+Outputs:
+
+| Output | Description |
+|---|---|
+| `image_changed` | `true` if Containerfile, `build_files/**`, `system_files/**`, `image-versions.yml`, or `Justfile` changed |
+| `should_build` | Alias for `image_changed` |
+| `nvidia_changed` | `true` if Containerfile or the akmods kernel script changed |
+| `image_flavors` | JSON array — `["main"]` or `["main","nvidia-open"]` |
+
+**Usage pattern in a consuming workflow:**
+
+```yaml
+detect-changes:
+  runs-on: ubuntu-latest
+  outputs:
+    image_flavors: ${{ steps.detect.outputs.image_flavors }}
+    should_build:  ${{ steps.detect.outputs.should_build }}
+  steps:
+    - uses: actions/checkout@...
+    - uses: projectbluefin/actions/bootc-build/detect-changes@v1
+      id: detect
+```
+
+### `validate-pr`
+
+Centralises all PR-validation action pins (hadolint, taiki-e/install-action, pre-commit). Previously each consumer had `hadolint/hadolint-action` and `taiki-e/install-action` (via a local `.github/actions/bootstrap-just/`) pinned inline, causing per-workflow Renovate bump PRs. With this action, Renovate updates happen once here; all consumers inherit the fix on their next SHA bump.
+
+Steps executed in order:
+1. Install `just` (via `taiki-e/install-action`)
+2. Install `shellcheck` (apt)
+3. Install `pre-commit` (pip)
+4. `just check`
+5. `shellcheck` over `inputs.shellcheck-glob`
+6. `hadolint/hadolint-action` with configurable dockerfile + config path
+7. `pre-commit run --all-files`
+
+Inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `dockerfile` | `Containerfile` | Path to lint with hadolint |
+| `hadolint-config` | `.hadolint.yaml` | hadolint config file |
+| `shellcheck-glob` | `build_files/**/*.sh` | Shell scripts glob |
+
+**Usage pattern:**
+
+```yaml
+- uses: projectbluefin/actions/bootc-build/validate-pr@v1
+  # no inputs needed for standard bluefin/aurora layout
+```
+
+**When updating hadolint or taiki-e/install-action SHA pins:** edit only the pin in `bootc-build/validate-pr/action.yml`. All consuming repos pick up the update automatically when their `projectbluefin/actions` Renovate bump PR merges.
+
 ---
 
 ## Reusable workflow
@@ -360,6 +417,29 @@ Document the blast radius (which repos, which inputs change) in the PR descripti
 4. Add the action to the table in `README.md`.
 5. Add a row to the skill routing table in `docs/SKILL.md`.
 6. Add an entry to the action-by-action reference section above.
+7. Add the action to the catalog table in `docs/skills/consumer-guide.md`.
+
+---
+
+## CI-fix-first workflow (for agents)
+
+When an agent working in a **consuming repo** (bluefin, aurora, bazzite…) discovers a CI issue that involves duplicated inline steps or pinned third-party actions, the fix belongs **here first**:
+
+1. **Check if an action already exists** — scan the catalog above. If the shared action doesn't exist yet, create it here (follow "Adding a new action" above).
+2. **Open a PR in this repo** on a feature branch with the new or updated action.
+3. **Open a draft PR in the consumer repo** pinned to the feature branch SHA (e.g. `projectbluefin/actions/bootc-build/detect-changes@<SHA>`). CI must pass there before this repo's PR merges.
+4. **After this repo's PR merges** and `@v1` tag moves, update the consumer PR to `@v1`.
+
+**What belongs here vs. in the consumer repo:**
+
+| Belongs here (`projectbluefin/actions`) | Stays in the consumer repo |
+|---|---|
+| Shared step sequences (lint, validate, detect-changes) | Caller-specific permissions scoping |
+| Third-party action pins (hadolint, install-action, paths-filter) | `secrets: inherit` decisions |
+| Reusable logic used in ≥2 workflows or repos | Repo-specific Justfile recipes |
+| Path-filter definitions shared across workflows | Workflow scheduling and triggers |
+
+Never add a new inline `uses:` for a third-party action in a consumer workflow if that action is already wrapped here. Inline pins create Renovate drift across all consumer workflows — centralize them.
 
 ---
 

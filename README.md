@@ -19,6 +19,8 @@ Maintainers: see [docs/MAINTAINERS.md](docs/MAINTAINERS.md) for the agentic work
 | [`bootc-build/dnf-cache`](bootc-build/dnf-cache/) | Restore/save DNF cache with permissions workaround |
 | [`bootc-build/ghcr-cleanup`](bootc-build/ghcr-cleanup/) | Prune old GHCR images |
 | [`bootc-build/preflight`](bootc-build/preflight/) | Validate runner environment before build |
+| [`bootc-build/detect-changes`](bootc-build/detect-changes/) | Detect changed paths and compute the image-flavor build matrix |
+| [`bootc-build/validate-pr`](bootc-build/validate-pr/) | Validate a PR: just check, shellcheck, hadolint, pre-commit |
 | [`bootc-build/generate-tags`](bootc-build/generate-tags/) | Generate OCI image tags from stream, version, and event context |
 | [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
 | [`bootc-build/create-manifest`](bootc-build/create-manifest/) | Assemble and push a multi-arch OCI image manifest index |
