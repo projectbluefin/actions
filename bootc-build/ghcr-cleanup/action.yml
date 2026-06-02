@@ -15,6 +15,9 @@ inputs:
   keep-n-untagged:
     description: "Minimum number of untagged images to keep"
     default: "7"
+  delete-orphaned-images:
+    description: "Delete orphaned images (untagged images not referenced by a manifest list)"
+    default: "true"
   github-token:
     description: "Token with packages:write permission"
     required: true
@@ -23,10 +26,11 @@ runs:
   using: "composite"
   steps:
     - name: Clean up old GHCR images
-      uses: dataaxiom/ghcr-cleanup-action@cd0cdb900b85ee49ba34d2048b2ccb7c55efb9e1 # v1
+      uses: dataaxiom/ghcr-cleanup-action@f092b48ba3b604b2a83690dc4b2bbb3392e1045f # v1.2.1
       with:
         packages: ${{ inputs.packages }}
         older-than: ${{ inputs.older-than }}
         keep-n-tagged: ${{ inputs.keep-n-tagged }}
         keep-n-untagged: ${{ inputs.keep-n-untagged }}
+        delete-orphaned-images: ${{ inputs.delete-orphaned-images }}
         token: ${{ inputs.github-token }}
