@@ -297,4 +297,18 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 ## Getting help
 
 - File issues at [projectbluefin/actions](https://github.com/projectbluefin/actions/issues)
-- Working examples: [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) and [ublue-os/aurora](https://github.com/ublue-os/aurora)
+- Working examples: [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) (Path 1) and [projectbluefin/bluefin-lts](https://github.com/projectbluefin/bluefin-lts) (Path 2 à la carte)
+
+---
+
+## Live Path 2 consumer: bluefin-lts
+
+bluefin-lts uses CentOS Stream 10 (non-Fedora base) and cannot use the full reusable workflow. It calls composite actions individually. Key overrides:
+
+| Action | Override | Why |
+|---|---|---|
+| `validate-pr` | `shellcheck-glob: "build_scripts/**/*.sh"` | lts uses `build_scripts/`, not `build_files/` |
+| `detect-changes` | `filters:` with `build_scripts/**`, `image-versions.yaml` | default paths are bluefin-specific |
+| `chunka` | `force-compression: true` | CentOS base must migrate gzip layers to zstd:chunked |
+
+This is the reference implementation for any bootc image repo that diverges from the bluefin path convention.
