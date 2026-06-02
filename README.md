@@ -9,6 +9,8 @@ These skills are the shared knowledge of 5 years of Universal Blue. The humans d
 Bluefin has testing branches and a passionate developer community, if you're an OSS maintainer and want a piece of tooling in here to live upstream, take it and we'll commit to CI for you. Another logo in your ADOPTERS.md. 
 
 
+Maintainers: see [docs/MAINTAINERS.md](docs/MAINTAINERS.md) for the agentic workflow, review gates, and on-call runbook.
+
 ## Available Actions
 
 | Action | Purpose |
@@ -17,16 +19,17 @@ Bluefin has testing branches and a passionate developer community, if you're an 
 | [`bootc-build/dnf-cache`](bootc-build/dnf-cache/) | Restore/save DNF cache with permissions workaround |
 | [`bootc-build/ghcr-cleanup`](bootc-build/ghcr-cleanup/) | Prune old GHCR images |
 | [`bootc-build/preflight`](bootc-build/preflight/) | Validate runner environment before build |
+| [`bootc-build/generate-tags`](bootc-build/generate-tags/) | Generate OCI image tags from stream, version, and event context |
+| [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
+| [`bootc-build/create-manifest`](bootc-build/create-manifest/) | Assemble and push a multi-arch OCI image manifest index |
 | [`bootc-build/sign-and-publish`](bootc-build/sign-and-publish/) | Cosign sign + SBOM + attestation |
 | [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
 | [`bootc-build/chunka`](bootc-build/chunka/) | chunkah rechunking (OCI-native, no rpm-ostree) |
-| [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
 
 ### P2 — Polish (coming soon)
 
 | Action | Purpose |
 |--------|---------|
-| `bootc-build/generate-tags` | OCI image tag generation |
 | `bootc-build/generate-release` | Changelog and GitHub release |
 
 ## Quick Start

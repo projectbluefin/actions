@@ -154,6 +154,12 @@ Alias tags are applied server-side via `skopeo copy` (no re-upload).
 
 Retry logic: outer `while` loop up to `max-attempts` (default 3), with `retry-wait-seconds` (default 15s) between attempts. The inner `podman push` also carries `--retry 5 --retry-delay 30s`.
 
+### `generate-tags`
+
+Generates the shared Fedora/Bluefin-style OCI alias tags from the built image's `org.opencontainers.image.version` label plus GitHub event context. Use this in **Path 2** or other custom pipelines that want the repo's stock tag policy without depending on a consumer Justfile.
+
+The reusable workflow intentionally does **not** call this action. **Path 1** keeps tag generation inside the caller's Justfile contract via `just generate-build-tags`, so consuming repos retain control over tag policy and can evolve it without changing shared workflow wiring.
+
 ### `create-manifest`
 
 Assembles and pushes a multi-arch OCI manifest index from a JSON map of `platform -> digest` values (for example `{"amd64":"sha256:...","arm64":"sha256:..."}`). The local manifest name should match the lowercased remote path: `${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}`.
@@ -255,6 +261,14 @@ When a consuming repo calls the workflow:
 > Never use `./bootc-build/...` in `.github/workflows/reusable-build.yml`.
 
 Inside the reusable workflow, cross-repo composite action calls must use fully qualified `projectbluefin/actions/bootc-build/<name>@<SHA>` refs, while the Justfile-driven build steps continue to run caller-specific logic from the checked-out consumer repo.
+
+### Tag generation and manifest scope
+
+`reusable-build.yml` intentionally keeps tag generation in the caller repo by running `just generate-build-tags` instead of `bootc-build/generate-tags`. That is part of the Path 1 Justfile contract, alongside `image_name`, `generate-default-tag`, `build-ghcr`, and `tag-images`.
+
+`bootc-build/generate-tags` exists for Path 2 / à la carte pipelines that want the shared default tag policy without adopting the full reusable workflow contract.
+
+`bootc-build/create-manifest` is also a Path 2 building block today. The reusable workflow builds and pushes per-architecture images and emits digests, but it does **not** assemble or push a multi-arch manifest index; callers that need a manifest job should add an explicit follow-on `create-manifest` step in their own workflow.
 
 ### JSON array inputs
 
