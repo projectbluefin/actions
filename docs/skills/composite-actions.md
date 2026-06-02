@@ -298,6 +298,14 @@ force-compression:
 
 Invalid (breaking) change: removing `tags`, renaming `github-token`, or changing a default that alters behavior for existing callers.
 
+### Line-count reduction targets
+
+When refactoring a consumer workflow to use shared actions, the real metric is "inline blocks replaced" not absolute line count. Multi-arch matrix orchestration (the `generate_matrix` job, per-arch build matrix, conditional arm64 logic) stays in the consumer workflow — shared actions are per-arch steps, not matrix orchestrators. Account for this when estimating reduction. For example, a 611-line `reusable-build-image.yml` may reduce to ~412 lines after Phase A because the matrix stays; do not expect <250 lines.
+
+### Force-compression input rationale
+
+The `chunka` and `push-image` actions expose an optional `force-compression` input (default: `false`). This input exists for CentOS Stream 10 and other non-Fedora consumers that need to migrate existing registry layers from `gzip` to `zstd:chunked`. Fedora consumers should leave it at the default because Fedora images are already `zstd:chunked` and forcing recompression strips `ostree.components` layer annotations.
+
 ### Consumer validation flow
 
 1. Land change on a **feature branch** in this repo

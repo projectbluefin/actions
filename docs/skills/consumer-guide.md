@@ -249,6 +249,19 @@ The reusable workflow always pushes to `ghcr.io/<github.repository_owner>/<image
 
 ---
 
+## Multi-repo consumers: known pitfalls
+
+When your repo has multiple git remotes (e.g., forked from upstream), take care:
+
+| Pitfall | How to avoid |
+|---|---|
+| Pushing to the wrong remote | Run `git remote -v` before pushing. If your feature branch is tracking `origin`, but you meant to push to `projectbluefin`, specify `git push projectbluefin <branch>` explicitly. In high-activity repos, always double-check the remote name. |
+| Feature branches go stale quickly | High-velocity repos like `bluefin-lts` (1400+ merged PRs, constant digest bumps via Renovate) can make a feature branch outdated within hours. Rebase onto the target remote's `main` before opening or re-opening a PR: `git rebase projectbluefin/main` |
+| Multi-arch matrix stays in the consumer workflow | Do not move matrix orchestration (`generate_matrix`, per-arch build matrix, conditional arm64 logic) into shared actions. Shared actions are per-arch steps; the matrix stays in the consumer workflow. This keeps the action catalog focused and lets each consumer tune its own build strategy. |
+| CentOS Stream requires explicit compression | If your consumer is CentOS Stream 10 or another non-Fedora OS, set `force-compression: true` on both `chunka` and `push-image` actions due to zstd layer migration requirements. Fedora consumers can leave this at the default `false`. |
+
+---
+
 ## Known constraints
 
 | Constraint | Detail |
