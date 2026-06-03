@@ -70,7 +70,7 @@ permissions:
 jobs:
   upgrade-test:
     name: Upgrade & rollback — ${{ inputs.image }}
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@bb44fb42a39d8e904477916fdaa58cab60570f16 # feat/lifecycle/zstd-chunked-migration
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@6c34d8297ad28ff533e269ffe5ab3c0a36c2e2f5 # main
     permissions:
       contents: read
       packages: write
