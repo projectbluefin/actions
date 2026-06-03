@@ -35,6 +35,12 @@ uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10
 
 Never use floating tags (`@main`, `@v3`, `@latest`). Renovate manages SHA bumps in consuming repos — but the canonical pins live here.
 
+The version comment must match a **released** version tag (e.g. `v3.10.1`, not just `v3`). If a repo has no releases or tags, use a descriptive comment instead:
+
+```yaml
+uses: ublue-os/some-action@abc123def456... # no-release, Merge PR #18 (2026-02)
+```
+
 ---
 
 ## Shell steps
@@ -64,6 +70,34 @@ run: |
 run: |
   cosign sign -y "${{ inputs.image }}@${{ inputs.digest }}"
 ```
+
+This applies to **all** expression types in `run:` blocks: inputs, matrix values, context values (`github.actor`, `github.event_name`), step outputs, and especially secrets. The only safe place to reference `${{ ... }}` in shell is via env vars.
+
+**Glob inputs:** when an input is a shell glob (e.g. `shellcheck-glob`), pass it via env and expand it unquoted:
+
+```yaml
+env:
+  SHELLCHECK_GLOB: ${{ inputs.shellcheck-glob }}
+run: |
+  shopt -s globstar nullglob
+  # shellcheck disable=SC2086
+  shellcheck ${SHELLCHECK_GLOB}
+```
+
+Word splitting on an env var is safe for globs but is NOT command injection — `;` in a variable is not a command separator.
+
+### Secrets in run: steps
+
+Pass secrets via `env:` and reference with `${VAR}`:
+
+```yaml
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+run: |
+  echo "${GITHUB_TOKEN}" | podman login ...
+```
+
+Never do `echo ${{ secrets.GITHUB_TOKEN }}` directly in `run:`. GitHub masks it in logs but error messages and downstream uses may still leak it.
 
 ### Lowercasing registry paths
 

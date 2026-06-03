@@ -32,7 +32,7 @@ runs:
 
     - name: Mount BTRFS for podman storage
       if: inputs.storage-backend == 'btrfs'
-      uses: ublue-os/container-storage-action@dc1f4c8f17b672069e921f001132f7cf98a423a6
+      uses: ublue-os/container-storage-action@dc1f4c8f17b672069e921f001132f7cf98a423a6 # no-release, Merge PR #18 (2026-02)
       with:
         target-dir: /var/lib/containers
         mount-opts: compress-force=zstd:2

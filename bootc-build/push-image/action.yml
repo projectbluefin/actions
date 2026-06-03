@@ -56,9 +56,10 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         REGISTRY: ${{ inputs.registry }}
+        GITHUB_ACTOR: ${{ github.actor }}
       run: |
-        echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin
-        echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${{ github.actor }}" --password-stdin 2>/dev/null || true
+        echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
+        echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin 2>/dev/null || true
 
     - name: Push image with retry and skopeo copy for aliases
       id: push

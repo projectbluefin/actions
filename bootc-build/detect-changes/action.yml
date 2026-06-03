@@ -42,8 +42,10 @@ runs:
     - name: Compute image_flavors
       id: matrix
       shell: bash
+      env:
+        NVIDIA_CHANGED: ${{ steps.filter.outputs.nvidia }}
       run: |
-        if [[ "${{ steps.filter.outputs.nvidia }}" == "true" ]]; then
+        if [[ "${NVIDIA_CHANGED}" == "true" ]]; then
           echo 'image_flavors=["main","nvidia-open"]' >> "$GITHUB_OUTPUT"
         else
           echo 'image_flavors=["main"]' >> "$GITHUB_OUTPUT"
