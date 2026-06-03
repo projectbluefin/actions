@@ -24,6 +24,20 @@ name: bootc Upgrade and Rollback Test
 #   https://github.com/projectbluefin/testsuite/issues/222  (no-op upgrade guard)
 
 on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "Full OCI image reference (e.g. ghcr.io/ublue-os/bluefin:latest)"
+        required: true
+        default: "ghcr.io/ublue-os/bluefin:latest"
+      suites:
+        description: "Comma-separated suites (default: lifecycle)"
+        required: false
+        default: "lifecycle"
+      chunked_enabled:
+        description: "Enable zstd:chunked migration scenarios"
+        required: false
+        default: "false"
   workflow_call:
     inputs:
       image:
@@ -76,10 +90,10 @@ jobs:
       packages: write
     with:
       image: ${{ inputs.image }}
-      suites: ${{ inputs.suites }}
-      skip_native_apps: ${{ inputs.skip_native_apps }}
-      screenshot_flatpaks: ${{ inputs.screenshot_flatpaks }}
-      chunked_enabled: ${{ inputs.chunked_enabled }}
+      suites: ${{ inputs.suites || 'lifecycle' }}
+      skip_native_apps: ${{ inputs.skip_native_apps || false }}
+      screenshot_flatpaks: ${{ inputs.screenshot_flatpaks || '' }}
+      chunked_enabled: ${{ inputs.chunked_enabled == true || inputs.chunked_enabled == 'true' }}
 
   report:
     needs: upgrade-test
