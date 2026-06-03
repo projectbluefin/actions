@@ -66,7 +66,7 @@ A CI check enforces they match. This ensures:
 - Latest-stable is the right policy for desktop OS (Bluefin)
 
 **Mitigation:** 
-- DNF cache in reusable workflow (`reusable-build.yml` lines 139–183)
+- DNF cache in reusable workflow reduces re-download of unchanged packages
 - Document expected drift in release notes
 - Run weekly e2e testing to catch breakage early
 
@@ -110,50 +110,34 @@ A CI check enforces they match. This ensures:
 
 ### 1. Third-party action SHAs in all composite actions
 
-**Scope:** Every `uses:` reference in `bootc-build/*/action.yml`, plus pinned `uses:` calls in `.github/workflows/reusable-build.yml`
+**Pattern:** Every `uses:` reference in `bootc-build/*/action.yml` and `.github/workflows/reusable-build.yml` must be pinned to a full commit SHA with a version comment. No floating tags (`@main`, `@v3`, `@latest`).
 
-**Current state:**
-- ✅ `actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6`
-- ✅ `taiki-e/install-action@35e522e91305799a18f8cee79bf13d1f7b28b796 # just`
-- ✅ `sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1`
-- ✅ `oras-project/setup-oras@38de303aac69abb66f3e6255b7198bff35f323e3 # v2.0.0`
-- ✅ `anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0`
-- ✅ `dataaxiom/ghcr-cleanup-action@cd0cdb900b85ee49ba34d2048b2ccb7c55efb9e1 # v1`
-- ✅ `ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10`
-- ✅ `actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5`
-- ✅ `actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5`
-- ✅ `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7` (also appears once as `# v7.0.1` in `reusable-build.yml` on the same SHA)
-- ✅ `actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8`
-- ✅ `actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0`
-- ✅ `projectbluefin/actions/bootc-build/setup-runner@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
-- ✅ `projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
-- ✅ `projectbluefin/actions/bootc-build/push-image@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
-- ✅ `projectbluefin/actions/bootc-build/sign-and-publish@1845e36f17f998e164b697c5518d3abc062e9ef9` — internal composite action pin in `reusable-build.yml`
-- ✅ `ublue-os/container-storage-action@dc1f4c8f17b672069e921f001132f7cf98a423a6` — SHA pinned; no version comment possible (repo has no release tags, SHA is HEAD of `main`)
+**How to verify the repo is clean:**
+```bash
+# Find any floating tags — should return nothing
+grep -r 'uses:' bootc-build/ .github/workflows/ \
+  | grep -v '@[0-9a-f]\{40\}'
+```
 
-**Audit result:**
-- ✅ No undocumented third-party SHA pins remain in `bootc-build/*/action.yml`
-- ✅ `.github/workflows/reusable-build.yml` has no floating tags (`@main`, `@latest`, `@v3`)
-- ✅ Internal `projectbluefin/actions/bootc-build/*` refs are pinned to a full commit SHA for cross-repo callers
-- ⚠️ The previous claim that all `uses:` refs in `reusable-build.yml` had version comments was stale: third-party refs do, internal composite-action refs do not
+**How to verify a SHA comment is accurate (not a pre-release branch tip):**
+```bash
+# Check that the comment tag exists as a real release, not just a branch ref
+gh release view v6.0.3 --repo actions/checkout --json tagName
+# If no release exists, use: # no-release, <landmark> (YYYY-MM)
+```
+
+**Version comment rules:**
+- Use the **exact** release tag: `# v6.0.3` not `# v6`
+- For repos with no releases/tags: `# no-release, Merge PR #N (YYYY-MM)`
+- Renovate bumps SHAs in consuming repos — the canonical pins live here
 
 **Chunkah container SHA:**
-- ✅ `quay.io/coreos/chunkah:v0.5.0@sha256:352097f3d32186ac11082f8b74cd544678b00388b50c96ba5c8e79503a454fe3`
-  - Version and digest both pinned in `chunka/action.yml`
-  - Containerfile.splitter fetched from matching release tag
+- Version and digest both pinned in `chunka/action.yml` (`CHUNKAH_VERSION` + `CHUNKAH_SHA`)
+- Bump both together when upgrading — they derive the image ref and the Containerfile.splitter URL
 
 **Dakota BST2 pin:**
-- ✅ Enforced by `dakota/.github/actions/check-bst2-pin/` consistency check
-- Pinned in both Justfile and workflow
-
-**Mitigation:**
-- Renovate PRs keep GitHub action SHAs up to date in consuming repos
-- CI blocks workflows with floating tags (see `actionlint.yml` below)
-- Manual audit quarterly for drift
-
-**Action items:**
-1. ~~Add version comment to `ublue-os/container-storage-action` SHA in `setup-runner/action.yml`~~ — this repo has no release tags (HEAD of `main` only); the SHA is the canonical reference. No version comment is possible.
-2. Normalize the `actions/upload-artifact` version comment in `reusable-build.yml` (`# v7` vs `# v7.0.1`) the next time that workflow is touched
+- Enforced by `dakota/.github/actions/check-bst2-pin/` consistency check
+- Pinned in both Justfile and workflow — CI blocks drift
 
 ---
 
@@ -184,28 +168,22 @@ A CI check enforces they match. This ensures:
 
 **Question:** Are Containerfile builds using SOURCE_DATE_EPOCH to pin timestamps?
 
-**Finding:** Grep across `bluefin/` and `dakota/` repos:
-```bash
-$ grep -r "SOURCE_DATE_EPOCH" /var/home/jorge/src/bluefin /var/home/jorge/src/dakota
-# (no results)
-```
-
 **Analysis:**
-- Neither repo explicitly sets SOURCE_DATE_EPOCH in Containerfiles or Justfiles
-- Podman respects SOURCE_DATE_EPOCH if set in runner environment, but it is not
-- This means timestamps (e.g., file mtimes inside built images) may vary between runs
+- Neither bluefin nor dakota sets `SOURCE_DATE_EPOCH` in Containerfiles or Justfiles
+- Podman respects it if set in the runner environment, but it is not set
+- Timestamps (e.g., file mtimes inside built images) may vary between runs
 
 **Impact:**
-- Minimal for bootc images (timestamps in /etc are not part of the runtime state)
-- Relevant for SBOM metadata (generation timestamp recorded)
+- Minimal for bootc images (timestamps in /etc are not part of runtime state)
+- Relevant for SBOM metadata (generation timestamp is recorded)
 - Could affect reproducible builds if using timestamps for verification
 
 **Current mitigation:**
-- SBOM generation step (sign-and-publish) captures workflow run timestamp separately
+- SBOM generation captures workflow run timestamp separately
 - Attestations include build metadata (run ID, timestamp)
 
 **Next steps:**
-1. Verify that OSTree commit hashes are deterministic (not dependent on timestamps)
+1. Verify that OSTree commit hashes are deterministic (not timestamp-dependent)
 2. If needed, set `SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)` in build steps
 3. Pin in consuming repos if cross-repo reproducibility is required
 
@@ -241,7 +219,6 @@ $ grep -r "SOURCE_DATE_EPOCH" /var/home/jorge/src/bluefin /var/home/jorge/src/da
 | Chunkah reproducibility test | Quarterly | Agent-run (reproducibility CI) |
 | SOURCE_DATE_EPOCH decision | Next design review | Architecture review |
 | AT-SPI test flake analysis | As-needed (PR blocking) | Whoever hits it in CI |
-| Container-storage-action version comment | Next PR touch | @castrojo |
 
 ---
 
