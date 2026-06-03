@@ -134,6 +134,8 @@ Save behavior should be guarded with `always() && !cancelled()` so failed builds
 
 Cache key format: `Linux-<arch>-buildah-[<flavor>-]<cache-name>`. Pass `image-flavor` (e.g., `main`, `nvidia-open`) to partition caches per flavor and prevent cross-flavor pollution. The input is optional — callers that don't pass it fall back to the old format.
 
+**Exposing `cache-hit` to the caller:** the composite exposes a `cache-hit` output (`steps.restore.outputs.cache-hit`). To read it in the calling workflow's telemetry/summary, give the `uses:` step an `id:` (e.g., `id: dnf-cache-restore`) and reference `steps.dnf-cache-restore.outputs.cache-hit`. Without the `id`, the output is silently empty.
+
 ### `preflight`
 
 Validates registry auth, normalizes image refs to lowercase, and checks required secrets are non-empty.
@@ -283,10 +285,11 @@ Steps executed in order:
 1. Install `just` (via `taiki-e/install-action`)
 2. Install `shellcheck` (apt)
 3. Install `pre-commit` (pip)
-4. `just check`
-5. `shellcheck` over `inputs.shellcheck-glob`
-6. `hadolint/hadolint-action` with configurable dockerfile + config path
-7. `pre-commit run --all-files`
+4. Restore `~/.cache/pre-commit` from GHA cache (keyed by `runner.os + runner.arch + hashFiles('.pre-commit-config.yaml')`)
+5. `just check`
+6. `shellcheck` over `inputs.shellcheck-glob`
+7. `hadolint/hadolint-action` with configurable dockerfile + config path
+8. `pre-commit run --all-files`
 
 Inputs:
 
