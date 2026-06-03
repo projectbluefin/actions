@@ -27,8 +27,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Understand `force-compression` for CentOS Stream consumers | `docs/skills/composite-actions.md` → "Force-compression input rationale" |
 | Understand zstd:chunked compression invariants or run regression tests | `docs/skills/composite-actions.md` → "Compression regression tests" |
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
-| Find or report floating action tags | `docs/skills/determinism.md` → "Already pinned" or file a GitHub issue |
-| Understand the gold standards for determinism | `docs/skills/determinism.md` → "Gold standards" |
+| Verify SHA pins are correct and comments are accurate | `docs/skills/determinism.md` → "Already pinned" |
+| Run a security audit of actions | `docs/skills/composite-actions.md` → "Shell steps" + "SHA Pinning" + `docs/skills/determinism.md` |
 | Understand or configure the production gate (2-human approval) | `docs/skills/factory-operations.md` → "Production Gate" |
 | Understand the skill-drift PR check | `docs/skills/factory-operations.md` → "Skill-Drift PR Check" |
 | Understand the weekly skill audit | `docs/skills/factory-operations.md` → "Skill Audit" |

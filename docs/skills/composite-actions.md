@@ -233,6 +233,8 @@ GitHub attestation pushed via `actions/attest` (always when `push-attestation: t
 
 Runs `rpm-ostree compose build-chunked-oci` **inside** the source image itself (privileged `podman run --rm --privileged`) with the host's `/var/lib/containers` volume mounted. Output lands in `containers-storage:localhost/<output-image>`.
 
+⚠️ **Trust requirement:** The source image is executed as a privileged container with full access to host container storage. Only use `rechunk` with images you built in the same CI job or that come from a controlled registry. Never rechunk an image from an untrusted or external source.
+
 `previous-build` enables delta optimization for smaller OTA updates. Pass the previous build's registry reference.
 
 ### `chunka`
@@ -484,6 +486,29 @@ Document the blast radius (which repos, which inputs change) in the PR descripti
 5. Add a row to the skill routing table in `docs/SKILL.md`.
 6. Add an entry to the action-by-action reference section above.
 7. Add the action to the catalog table in `docs/skills/consumer-guide.md`.
+
+---
+
+## Common editing pitfalls
+
+### Dropping `with:` when editing `uses:`
+
+When you change only the SHA or comment on a `uses:` line, it's easy to accidentally delete the `with:` block below it. The result is a valid-looking YAML step where `uses:` runs but all inputs are silently dropped — actionlint catches this on push.
+
+```yaml
+# ❌ broken — with: block dropped, all inputs silently gone
+- name: Upload artifact
+  uses: actions/upload-artifact@abc123 # v7.0.1
+    path: /tmp/output/               # ← this is now orphaned YAML, not under with:
+
+# ✅ correct
+- name: Upload artifact
+  uses: actions/upload-artifact@abc123 # v7.0.1
+  with:
+    path: /tmp/output/
+```
+
+Always verify the `with:` block is still present after editing a `uses:` line. Actionlint enforces this but only on push — not in local editors.
 
 ---
 
