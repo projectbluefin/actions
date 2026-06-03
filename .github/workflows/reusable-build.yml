@@ -57,7 +57,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Install just
         uses: taiki-e/install-action@35e522e91305799a18f8cee79bf13d1f7b28b796 # just
@@ -90,7 +90,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
         with:
           submodules: recursive
 
@@ -103,15 +103,21 @@ jobs:
 
       - name: Image Name
         shell: bash
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
         run: |
-          IMAGE_NAME="$(just image_name ${{ matrix.base_name }} ${{ matrix.stream_name }} ${{ matrix.image_flavor }})"
+          IMAGE_NAME="$(just image_name "${MATRIX_BASE_NAME}" "${MATRIX_STREAM_NAME}" "${MATRIX_IMAGE_FLAVOR}")"
           echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
 
       - name: Default Tag
         shell: bash
+        env:
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
         run: |
           DEFAULT_TAG="$(just generate-default-tag \
-                       ${{ matrix.stream_name }} \
+                       "${MATRIX_STREAM_NAME}" \
                        "1")"
           echo "Default Tag: ${DEFAULT_TAG}"
           echo "DEFAULT_TAG=${DEFAULT_TAG}" >> "$GITHUB_ENV"
@@ -151,7 +157,11 @@ jobs:
 
       - name: Login to GHCR for layer cache
         if: github.event_name != 'pull_request'
-        run: echo ${{ secrets.GITHUB_TOKEN }} | sudo podman login ghcr.io -u ${{ github.actor }} --password-stdin
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: echo "${GITHUB_TOKEN}" | sudo podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build Image
         id: build-image
@@ -159,12 +169,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_CACHE_WRITE: ${{ github.event_name != 'pull_request' && '1' || '0' }}
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
+          INPUT_KERNEL_PIN: ${{ inputs.kernel_pin }}
+          REPO_ORGANIZATION: ${{ github.repository_owner }}
         run: |
-          sudo -E "$(command -v just)" repo_organization="${{ github.repository_owner }}" \
-                    build-ghcr "${{ matrix.base_name }}" \
-                               "${{ matrix.stream_name }}" \
-                               "${{ matrix.image_flavor }}" \
-                               "${{ inputs.kernel_pin }}"
+          sudo -E "$(command -v just)" repo_organization="${REPO_ORGANIZATION}" \
+                    build-ghcr "${MATRIX_BASE_NAME}" \
+                               "${MATRIX_STREAM_NAME}" \
+                               "${MATRIX_IMAGE_FLAVOR}" \
+                               "${INPUT_KERNEL_PIN}"
 
       - name: Record build duration
         id: build-duration
@@ -215,7 +230,7 @@ jobs:
 
       - name: Upload SBOM artifact
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-${{ env.IMAGE_NAME }}
           path: /tmp/sbom-upload/
@@ -234,10 +249,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PREVIOUS_BUILD: ${{ github.event.inputs.previous_build || '1' }}
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
         run: |
-          sudo -E "$(command -v just)" rechunk "${{ matrix.base_name }}" \
-                            "${{ matrix.stream_name }}" \
-                            "${{ matrix.image_flavor }}" \
+          sudo -E "$(command -v just)" rechunk "${MATRIX_BASE_NAME}" \
+                            "${MATRIX_STREAM_NAME}" \
+                            "${MATRIX_IMAGE_FLAVOR}" \
                             "1" \
                             "0" \
                             "${PREVIOUS_BUILD}"
@@ -246,10 +264,13 @@ jobs:
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         id: load-rechunk
         shell: bash
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
         run: |
-          sudo -E "$(command -v just)" load-rechunk "${{ matrix.base_name }}" \
-                            "${{ env.DEFAULT_TAG }}" \
-                            "${{ matrix.image_flavor }}"
+          sudo -E "$(command -v just)" load-rechunk "${MATRIX_BASE_NAME}" \
+                            "${DEFAULT_TAG}" \
+                            "${MATRIX_IMAGE_FLAVOR}"
 
       - name: Record rechunk duration
         id: rechunk-duration
@@ -265,36 +286,47 @@ jobs:
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         id: secureboot
         shell: bash
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
         run: |
-          sudo -E "$(command -v just)" secureboot "${{ matrix.base_name }}" \
-                          "${{ env.DEFAULT_TAG }}" \
-                          "${{ matrix.image_flavor }}"
+          sudo -E "$(command -v just)" secureboot "${MATRIX_BASE_NAME}" \
+                          "${DEFAULT_TAG}" \
+                          "${MATRIX_IMAGE_FLAVOR}"
 
       - name: Export image to OCI dir (PR only)
         if: github.event_name == 'pull_request'
         shell: bash
         run: |
-          mkdir -p ${{ env.IMAGE_NAME }}_build
-          sudo podman save --format oci-dir -o ${{ env.IMAGE_NAME }}_build ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          mkdir -p "${IMAGE_NAME}_build"
+          sudo podman save --format oci-dir -o "${IMAGE_NAME}_build" "${IMAGE_NAME}:${DEFAULT_TAG}"
 
       - name: Generate tags
         id: generate-tags
         shell: bash
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
+          INPUT_KERNEL_PIN: ${{ inputs.kernel_pin }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_NUMBER: ${{ github.event.number }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
         run: |
-          EFFECTIVE_EVENT="${{ github.event_name }}"
-          EFFECTIVE_NUMBER="${{ github.event.number }}"
-          if [[ -n "${{ inputs.pr_number }}" ]]; then
+          EFFECTIVE_EVENT="${GITHUB_EVENT_NAME}"
+          EFFECTIVE_NUMBER="${GITHUB_EVENT_NUMBER}"
+          if [[ -n "${INPUT_PR_NUMBER}" ]]; then
             EFFECTIVE_EVENT="pull_request"
-            EFFECTIVE_NUMBER="${{ inputs.pr_number }}"
+            EFFECTIVE_NUMBER="${INPUT_PR_NUMBER}"
           fi
 
           alias_tags="$(just generate-build-tags \
-                     "${{ matrix.base_name }}" \
-                     "${{ matrix.stream_name }}" \
-                     "${{ matrix.image_flavor }}" \
-                     "${{ inputs.kernel_pin }}" \
+                     "${MATRIX_BASE_NAME}" \
+                     "${MATRIX_STREAM_NAME}" \
+                     "${MATRIX_IMAGE_FLAVOR}" \
+                     "${INPUT_KERNEL_PIN}" \
                      "1" \
-                     "$(podman inspect ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }} | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
+                     "$(podman inspect "${IMAGE_NAME}:${DEFAULT_TAG}" | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
                      "${EFFECTIVE_EVENT}" \
                      "${EFFECTIVE_NUMBER}")"
 
@@ -304,11 +336,13 @@ jobs:
 
       - name: Tag Images
         shell: bash
+        env:
+          ALIAS_TAGS: ${{ steps.generate-tags.outputs.alias_tags }}
         run: |
           set -eoux pipefail
-          sudo -E "$(command -v just)" tag-images "${{ env.IMAGE_NAME }}" \
-                          "${{ env.DEFAULT_TAG }}" \
-                          "${{ steps.generate-tags.outputs.alias_tags }}"
+          sudo -E "$(command -v just)" tag-images "${IMAGE_NAME}" \
+                          "${DEFAULT_TAG}" \
+                          "${ALIAS_TAGS}"
 
       - name: Push to GHCR
         id: push
@@ -330,9 +364,8 @@ jobs:
 
       - name: Upload OCI dir as Artifact
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ env.IMAGE_NAME }}.oci
           path: ${{ env.IMAGE_NAME }}_build
           if-no-files-found: warn
           retention-days: 1
@@ -389,15 +422,21 @@ jobs:
 
       - name: Write digest to artifact
         if: github.event_name != 'pull_request'
+        shell: bash
+        env:
+          MATRIX_BASE_NAME: ${{ matrix.base_name }}
+          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
+          MATRIX_ARCHITECTURE: ${{ matrix.architecture }}
+          PUSH_DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           mkdir -p /tmp/digests
-          echo "${{ env.IMAGE_NAME }}=${{ steps.push.outputs.digest }}" >> /tmp/digests/${{ matrix.image_flavor }}-${{ matrix.base_name }}.txt
+          echo "${IMAGE_NAME}=${PUSH_DIGEST}" >> "/tmp/digests/${MATRIX_IMAGE_FLAVOR}-${MATRIX_BASE_NAME}-${MATRIX_ARCHITECTURE}.txt"
 
       - name: Upload digest artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: image-digest-${{ inputs.stream_name }}-${{ matrix.base_name }}-${{ matrix.image_flavor }}
+          name: image-digest-${{ inputs.stream_name }}-${{ matrix.base_name }}-${{ matrix.image_flavor }}-${{ matrix.architecture }}
           path: /tmp/digests/
           retention-days: 1
 

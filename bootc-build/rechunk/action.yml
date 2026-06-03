@@ -1,5 +1,5 @@
 name: "bootc-build/rechunk"
-description: "Rechunk a container image using rpm-ostree compose build-chunked-oci"
+description: "Rechunk a container image using rpm-ostree compose build-chunked-oci. NOTE: runs source-image as a privileged executor — only use with trusted, internally-built images."
 author: "projectbluefin"
 
 inputs:

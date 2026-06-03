@@ -35,6 +35,7 @@ runs:
         INPUT_IMAGE_NAME: ${{ inputs.image-name }}
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
       run: |
+        set -euo pipefail
         REGISTRY_LOWER="${INPUT_REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
         echo "registry-lowercase=${REGISTRY_LOWER}" >> "$GITHUB_OUTPUT"
         if [[ -n "${INPUT_IMAGE_NAME}" ]]; then
@@ -47,10 +48,11 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         INPUT_REGISTRY: ${{ inputs.registry }}
+        GITHUB_ACTOR: ${{ github.actor }}
       run: |
         set -euo pipefail
         if ! echo "${GITHUB_TOKEN}" | podman login "${INPUT_REGISTRY}" \
-            -u "${{ github.actor }}" --password-stdin 2>/dev/null; then
+            -u "${GITHUB_ACTOR}" --password-stdin 2>/dev/null; then
           echo "::error::Registry auth failed for ${INPUT_REGISTRY}. Check GITHUB_TOKEN has packages:write permission."
           exit 1
         fi

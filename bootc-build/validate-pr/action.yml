@@ -23,7 +23,7 @@ runs:
 
     - name: Install shellcheck
       shell: bash
-      run: sudo apt-get install -y shellcheck
+      run: sudo apt-get update -y && sudo apt-get install -y shellcheck
 
     - name: Install pre-commit
       shell: bash
@@ -43,9 +43,12 @@ runs:
 
     - name: Shellcheck build scripts
       shell: bash
+      env:
+        SHELLCHECK_GLOB: ${{ inputs.shellcheck-glob }}
       run: |
         shopt -s globstar nullglob
-        shellcheck ${{ inputs.shellcheck-glob }}
+        # shellcheck disable=SC2086
+        shellcheck ${SHELLCHECK_GLOB}
 
     - name: Lint Containerfile
       uses: hadolint/hadolint-action@54c9adbab1582c2ef04b2016b760714a4bfde3cf # v3.1.0
