@@ -53,6 +53,10 @@ on:
           test run. Leave empty to skip.
         type: string
         default: ""
+      chunked_enabled:
+        description: "Enable zstd:chunked migration scenarios in the lifecycle suite"
+        type: boolean
+        default: false
 
     outputs:
       result:
@@ -66,7 +70,7 @@ permissions:
 jobs:
   upgrade-test:
     name: Upgrade & rollback — ${{ inputs.image }}
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@4ca86c64f3ed92dabe24d31f5a08b82fe3a3df8a # main
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@50e030cc17d981fb1eb6a02d5f00db172239da64 # feat/lifecycle/zstd-chunked-migration
     permissions:
       contents: read
       packages: write
@@ -75,6 +79,7 @@ jobs:
       suites: ${{ inputs.suites }}
       skip_native_apps: ${{ inputs.skip_native_apps }}
       screenshot_flatpaks: ${{ inputs.screenshot_flatpaks }}
+      chunked_enabled: ${{ inputs.chunked_enabled }}
 
   report:
     needs: upgrade-test
