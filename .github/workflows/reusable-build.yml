@@ -136,11 +136,13 @@ jobs:
           echo "allow_cache_write=${ALLOW_CACHE_WRITE}" >> "$GITHUB_OUTPUT"
 
       - name: Restore DNF package cache
+        id: dnf-cache-restore
         uses: projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9
         with:
           action: restore
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
           architecture: ${{ matrix.architecture }}
+          image-flavor: ${{ matrix.image_flavor }}
 
       - name: Record build start time
         id: build-timing
@@ -181,6 +183,7 @@ jobs:
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
           architecture: ${{ matrix.architecture }}
           allow-write: ${{ steps.setup-cache.outputs.allow_cache_write }}
+          image-flavor: ${{ matrix.image_flavor }}
 
       - name: Setup Syft
         id: setup-syft
