@@ -1,0 +1,86 @@
+name: bootc Upgrade and Rollback Test
+# Reusable workflow: post-build gate that boots the newly pushed image in QEMU
+# and runs the projectbluefin/testsuite lifecycle suite (upgrade + rollback).
+#
+# Wire it after your build job and gate promotion on the result:
+#
+#   upgrade-test:
+#     needs: build
+#     uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+#     with:
+#       image: ghcr.io/your-org/your-image@${{ needs.build.outputs.digest }}
+#
+#   promote:
+#     needs: upgrade-test
+#     if: needs.upgrade-test.outputs.result == 'success'
+#
+# The lifecycle suite validates: bootc status, upgrade, reboot into new
+# deployment, rollback to previous deployment, and /etc persistence.
+# See: https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/bootc.feature
+#
+# NOTE: explicit from→to cross-version upgrade path testing requires testsuite
+# changes tracked in:
+#   https://github.com/projectbluefin/testsuite/issues/223  (target-image input)
+#   https://github.com/projectbluefin/testsuite/issues/222  (no-op upgrade guard)
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: >
+          Full OCI image reference to boot and gate on — accepts a tag or pinned digest.
+          Pass the freshly built digest from your build job to gate promotion on it.
+          Example (digest gate): ghcr.io/ublue-os/bluefin@sha256:abc123
+          Example (tag gate):    ghcr.io/ublue-os/bluefin:stable
+          Example (LTS):         ghcr.io/ublue-os/bluefin-lts:lts
+        required: true
+        type: string
+      suites:
+        description: >
+          Comma-separated test suites to run.
+          Default is 'lifecycle' which covers: bootc status, upgrade, rollback,
+          /etc merge, and idempotency.
+          Any suite supported by projectbluefin/testsuite may be added.
+        type: string
+        default: "lifecycle"
+      skip_native_apps:
+        description: "Skip @native_app scenarios (non-Flatpak app tests)"
+        type: boolean
+        default: false
+      screenshot_flatpaks:
+        description: >
+          Comma-separated Flatpak app IDs to launch-and-screenshot after the
+          test run. Leave empty to skip.
+        type: string
+        default: ""
+
+    outputs:
+      result:
+        description: "Outcome of the upgrade test job: success, failure, cancelled, or skipped"
+        value: ${{ jobs.report.outputs.result }}
+
+permissions:
+  contents: read
+  packages: write   # required by testsuite e2e.yml for screenshot OCI push
+
+jobs:
+  upgrade-test:
+    name: Upgrade & rollback — ${{ inputs.image }}
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@4ca86c64f3ed92dabe24d31f5a08b82fe3a3df8a # main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ${{ inputs.image }}
+      suites: ${{ inputs.suites }}
+      skip_native_apps: ${{ inputs.skip_native_apps }}
+      screenshot_flatpaks: ${{ inputs.screenshot_flatpaks }}
+
+  report:
+    needs: upgrade-test
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ needs.upgrade-test.result }}
+    steps:
+      - run: echo "upgrade-test result=${{ needs.upgrade-test.result }}"

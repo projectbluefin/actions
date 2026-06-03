@@ -322,7 +322,6 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
-          PUSH_END=$(date +%s)
           # push-image action handles its own timing internally; we measure wall-clock from here
           echo "push_seconds=0" >> "$GITHUB_OUTPUT"
 

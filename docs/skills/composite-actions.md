@@ -206,7 +206,7 @@ Key design decisions:
 - `CHUNKAH_CONFIG_STR=$(sudo podman inspect "${SOURCE}")` passes existing OCI labels through so `containers.bootc=1` and other metadata are preserved.
 - Mandatory cleanup flags (`--prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-`) strip stale OSTree annotations and are hardcoded — they are correctness requirements, not tuning knobs.
 - `output-image` defaults to `source-image` (in-place rechunk).
-- `force-compression` input is optional and defaults to `false` (preserves existing compression). Use `true` for images that must migrate from existing registry compression (e.g. CentOS Stream bases transitioning from gzip to zstd:chunked).
+- `force-compression` input is optional and defaults to `false` (preserves existing compression). When `true`, passes `--compression-format zstd:chunked --force-compression` to `buildah build` — use for images that must migrate existing gzip layers (e.g. CentOS Stream bases transitioning from gzip to zstd:chunked). Fedora consumers must leave this at `false` because Fedora images are already zstd:chunked and forcing recompression strips `ostree.components` layer annotations.
 
 **Workarounds carried from consuming repos:**
 
@@ -406,6 +406,18 @@ When refactoring a consumer workflow to use shared actions, the real metric is "
 
 The `chunka` and `push-image` actions expose an optional `force-compression` input (default: `false`). This input exists for CentOS Stream 10 and other non-Fedora consumers that need to migrate existing registry layers from `gzip` to `zstd:chunked`. Fedora consumers should leave it at the default because Fedora images are already `zstd:chunked` and forcing recompression strips `ostree.components` layer annotations.
 
+In `chunka`, `force-compression: true` passes `--compression-format zstd:chunked --force-compression` to `buildah build`, which forces zstd:chunked on all intermediate layers built by buildah. In `push-image`, it passes `--force-compression` to `podman push`, which forces re-encoding of any remaining gzip layers on the registry side. For CentOS Stream bases, both flags are needed together.
+
+### Compression regression tests
+
+`tests/test-zstd-chunked.sh` contains static and functional tests verifying all compression invariants. Run locally with:
+
+```bash
+bash tests/test-zstd-chunked.sh
+```
+
+The `.github/workflows/test-zstd-chunked.yml` workflow runs these tests automatically on PRs and pushes touching `bootc-build/**` or `reusable-build.yml`.
+
 ### Consumer validation flow
 
 1. Land change on a **feature branch** in this repo
@@ -481,3 +493,5 @@ Never add a new inline `uses:` for a third-party action in a consumer workflow i
 | `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for `out.ociarchive` to survive to final stage |
 | `sudo rm -f out.ociarchive` | `chunka` | Containerfile.splitter leaves artifact in CWD; stale file breaks re-runs |
 | `sudo podman save \| podman load` | `chunka` | buildah (root) and podman (user) use separate container stores |
+| `reviewdog/action-actionlint` must be ≥ v1.72.0 | `actionlint.yml` | v1.9.0 bundles an actionlint binary that predates `workflow_call` support — all reusable workflows get false-positive errors; `filter_mode: added` hides it on existing files, surfacing only on new files |
+| Expose reusable-workflow job result via a `report` job | any `workflow_call` workflow | actionlint cannot model `jobs.<job>.result` in `workflow_call` outputs when the job calls a reusable workflow; add an `if: always()` `report` job that outputs `needs.<job>.result`, then reference `jobs.report.outputs.result` in `workflow_call` outputs |

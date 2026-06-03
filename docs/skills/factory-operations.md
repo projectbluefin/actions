@@ -108,7 +108,7 @@ These are the committed reference configs currently deployed in each repo's `.gi
 
 | Repo | `code-paths` | `skill-paths` |
 |---|---|---|
-| `projectbluefin/actions` | `'["bootc-build/**/action.yml", ".github/workflows/reusable-*.yml"]'` | `'["docs/skills/**"]'` |
+| `projectbluefin/actions` | `'["bootc-build/**/action.yml", ".github/workflows/reusable-*.yml", ".github/workflows/upgrade-*.yml"]'` | `'["docs/skills/**"]'` |
 | `projectbluefin/bluefin` | `'[".github/workflows/**", "build_files/**", "Justfile", "recipes/**"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
 | `projectbluefin/bluefin-lts` | `'[".github/workflows/**", "build_files/**", "Justfile"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
 | `projectbluefin/dakota` | `'[".github/workflows/**", "build_files/**", "Justfile", "elements/**"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
