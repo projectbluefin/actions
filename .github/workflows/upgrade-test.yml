@@ -53,6 +53,13 @@ on:
           test run. Leave empty to skip.
         type: string
         default: ""
+      chunked_enabled:
+        description: >
+          Enable @zstd_chunked scenarios in the lifecycle suite.
+          Set to true once the target image ships with zstd:chunked layer
+          compression (chunkah format).
+        type: boolean
+        default: false
 
     outputs:
       result:
@@ -75,6 +82,7 @@ jobs:
       suites: ${{ inputs.suites }}
       skip_native_apps: ${{ inputs.skip_native_apps }}
       screenshot_flatpaks: ${{ inputs.screenshot_flatpaks }}
+      chunked_enabled: ${{ inputs.chunked_enabled }}
 
   report:
     needs: upgrade-test
