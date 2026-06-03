@@ -128,11 +128,11 @@ Wraps `actions/cache/restore` and `actions/cache/save` for the buildah layer cac
 
 **Empty-glob guard (cold build):** the `chmod` loop must use `if [[ -d "$d" ]]; then ... fi` rather than `[[ -d "$d" ]] && cmd`. On a cold build where no `/var/tmp/buildah-cache-*` directory exists yet, bash expands the glob to the literal string, `[[ -d "..." ]]` returns false, and the `&&` chain propagates that as a non-zero exit even under `set -e`. The `if` form treats the false branch as a no-op.
 
-Restore behavior should include two fallback tiers: first `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.cache-name }}-` for partial matches within the same flavor/version family, then the broader `restore-keys: ${{ runner.os }}-${{ inputs.architecture }}-buildah-` fallback.
+Restore behavior should include two fallback tiers: first a flavor-scoped restore key (`${{ runner.os }}-${{ inputs.architecture }}-buildah-<flavor>-` when `image-flavor` is set, or `${{ runner.os }}-${{ inputs.architecture }}-buildah-<cache-name>-` otherwise) for partial matches within the same flavor/version family, then the broader `${{ runner.os }}-${{ inputs.architecture }}-buildah-` fallback.
 
 Save behavior should be guarded with `always() && !cancelled()` so failed builds still persist downloaded packages for the next retry.
 
-Cache key format: `Linux-<arch>-buildah-<cache-name>`.
+Cache key format: `Linux-<arch>-buildah-[<flavor>-]<cache-name>`. Pass `image-flavor` (e.g., `main`, `nvidia-open`) to partition caches per flavor and prevent cross-flavor pollution. The input is optional — callers that don't pass it fall back to the old format.
 
 ### `preflight`
 

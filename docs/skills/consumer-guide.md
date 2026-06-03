@@ -158,9 +158,11 @@ jobs:
 
       # 2. Restore cache
       - uses: projectbluefin/actions/bootc-build/dnf-cache@v1
+        id: dnf-cache-restore
         with:
           action: restore
           cache-name: my-image-42         # include Fedora/distro version in name
+          image-flavor: ${{ matrix.image_flavor }}  # partition cache per flavor (main, nvidia-open, etc.)
 
       # 3. Build (your build system here)
       - name: Build image
@@ -175,6 +177,7 @@ jobs:
         with:
           action: save
           cache-name: my-image-42
+          image-flavor: ${{ matrix.image_flavor }}
 
       # 5. Push (non-PR only)
       - if: github.event_name != 'pull_request'
