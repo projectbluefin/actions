@@ -17,13 +17,27 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
    ```yaml
    uses: projectbluefin/actions/.github/workflows/reusable-build.yml@<your-branch-sha>
    ```
-2. **Verify CI green**: Wait for the consumer PR's CI to pass completely
-3. **Link in your PR**: Add the consumer PR URL to your PR description
-4. **Merge actions first**: Merge this PR, then update the consumer PR to re-pin to the new `@v1` SHA
+2. **Verify CI green**: Wait for the consumer PR's CI to pass completely.
+3. **Fill the PR template evidence fields** in this repo:
+   - `Consumer PR: https://github.com/projectbluefin/<consumer>/pull/<number>`
+   - `Consumer CI run: https://github.com/projectbluefin/<consumer>/actions/runs/<id>`
+   - `Out-of-org consumer impact: <why aurora/bazzite are safe, or N/A>`
+4. **Keep the checklist honest**: Check the three consumer-validation boxes only after the linked PR and run exist.
+5. **Merge actions first**: Merge this PR, then update the consumer PR to re-pin to the new `@v1` SHA.
+
+## Automated PR check
+
+`.github/workflows/consumer-validation.yml` makes the protocol harder to skip:
+
+- It runs on PR open, sync, ready-for-review, and PR body edits.
+- It only enforces the evidence fields when the PR changes `bootc-build/**/action.yml` or `.github/workflows/reusable-*.yml`.
+- It fails if the PR body is missing a consumer PR URL, a consumer CI run URL, or an out-of-org impact note.
+
+Treat the check as evidence collection, not as a substitute for real validation. Fake links still violate policy and should be rejected in review.
 
 ## Out-of-org consumers
 
-For `aurora` and `bazzite`, you cannot open PRs directly. Verify that your change does not break the Justfile contract (recipe signatures listed in `docs/skills/consumer-guide.md`). If in doubt, ping `@castrojo` or `@hanthor`.
+For `aurora` and `bazzite`, you cannot open PRs directly. Verify that your change does not break the Justfile contract (recipe signatures listed in `docs/skills/consumer-guide.md`) and summarize that reasoning in `Out-of-org consumer impact:`. If in doubt, ping `@castrojo` or `@hanthor`.
 
 ## Why this matters
 

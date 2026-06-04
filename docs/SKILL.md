@@ -22,6 +22,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Understand when to use `generate-tags` vs `just generate-build-tags` | `docs/skills/composite-actions.md` → "generate-tags" + "Reusable workflow" |
 | Wire a consuming repo to the shared reusable workflow | `docs/skills/composite-actions.md` → "Reusable workflow" |
 | Validate action changes against consumers before merge | `docs/skills/consumer-validation.md` |
+| Understand the consumer-validation PR check | `docs/skills/consumer-validation.md` |
 | Add upgrade/rollback testing to a bootc image repo | `docs/skills/consumer-guide.md` → "Upgrade test" |
 | Use these actions in a new or external bootc image repo | `docs/skills/consumer-guide.md` |
 | Understand the Justfile contract for the reusable workflow | `docs/skills/consumer-guide.md` → "Justfile contract" |
