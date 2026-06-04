@@ -38,10 +38,10 @@ Before approving, check:
 - Is the change additive? Removing or renaming an input, or changing a default, requires a version bump and blast-radius note in the PR description.
 
 ### 2. Consumer validation (required before merging)
-Any action change must pass CI in at least one consuming repo before you merge here:
-1. Agent opens a draft PR in `projectbluefin/bluefin` pinned to the feature branch SHA (targeting `testing`, not `main`).
-2. Dispatch `build-image-testing.yml` manually if a full build smoke test is needed.
-3. CI green → safe to merge the feature branch to `main` here.
+Any action change must pass CI in at least one consuming repo before you merge here. Follow [`docs/skills/consumer-validation.md`](skills/consumer-validation.md):
+1. Open a draft PR in `projectbluefin/bluefin` pinned to the feature branch SHA.
+2. Wait for CI to pass completely.
+3. Link the consumer PR in the actions PR before merging.
 
 ### 3. Moving `@v1` (human-only)
 After verifying CI is green in the consumer:
@@ -80,8 +80,9 @@ Promotion workflows in bluefin, bluefin-lts, and dakota require **2 distinct hum
 |---|---|
 | [`AGENTS.md`](../AGENTS.md) | All hard rules, gates, namespace map, MCP servers |
 | [`docs/SKILL.md`](SKILL.md) | Task-to-skill routing table |
-| [`docs/skills/composite-actions.md`](skills/composite-actions.md) | Action authoring, rollout protocol, consumer validation |
+| [`docs/skills/composite-actions.md`](skills/composite-actions.md) | Action authoring and rollout protocol |
 | [`docs/skills/consumer-guide.md`](skills/consumer-guide.md) | Onboarding a new image repo |
+| [`docs/skills/consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius |
 | [`docs/skills/determinism.md`](skills/determinism.md) | SHA pinning, non-deterministic surfaces |
 | [`docs/skills/factory-operations.md`](skills/factory-operations.md) | Production gate, skill-drift check, weekly audit |
 | [`.github/CODEOWNERS`](../.github/CODEOWNERS) | Per-path review routing |

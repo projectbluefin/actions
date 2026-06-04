@@ -6,7 +6,7 @@ name: bootc Upgrade and Rollback Test
 #
 #   upgrade-test:
 #     needs: build
-#     uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@v1
+#     uses: projectbluefin/actions/.github/workflows/upgrade-test.yml@<pinned-ref>
 #     with:
 #       image: ghcr.io/your-org/your-image@${{ needs.build.outputs.digest }}
 #

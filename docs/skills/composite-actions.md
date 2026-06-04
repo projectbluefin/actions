@@ -382,8 +382,8 @@ When a consuming repo calls the workflow:
 - `actions/checkout` checks out the **caller's** code into `GITHUB_WORKSPACE`
 - `just` commands run against the **caller's** Justfile — this is intentional
 
-> **Critical: cross-repo action refs**  
-> When the reusable workflow is called cross-repo (e.g. from `projectbluefin/bluefin`), `uses: ./bootc-build/<name>` resolves to the **caller's** checked-out workspace — not the actions repo. This causes `Can't find action.yml` errors.  
+> **Critical: cross-repo action refs**
+> When the reusable workflow is called cross-repo (e.g. from `projectbluefin/bluefin`), `uses: ./bootc-build/<name>` resolves to the **caller's** checked-out workspace — not the actions repo. This causes `Can't find action.yml` errors.
 > Always use full SHA-pinned refs inside the reusable workflow:
 >
 > ```yaml
@@ -458,23 +458,7 @@ The `chunka` and `push-image` actions expose an optional `force-compression` inp
 
 ### Consumer validation flow
 
-1. Land change on a **feature branch** in this repo
-2. In one consumer repo (e.g. `projectbluefin/bluefin`), open a **draft PR** that pins `uses:` to the feature branch SHA
-   - Consumer PRs must target `testing` (the default branch) — **never `main`, `latest`, or `stable`**
-   - Targeting `testing` triggers `pr-validation.yml` (fast lint/check gate)
-   - For a full build smoke test, dispatch `build-image-testing.yml` manually on the feature branch:
-     ```bash
-     gh workflow run build-image-testing.yml \
-       --ref <your-feature-branch> \
-       --repo projectbluefin/bluefin
-     ```
-3. CI must pass on the consumer PR before the feature branch merges to `main` here
-4. After `main` merge, move the `@v1` tag forward:
-   ```bash
-   git tag -f v1
-   git push --force origin v1
-   ```
-5. Consumer PRs can then switch from the SHA pin to `@v1`
+See [`consumer-validation.md`](consumer-validation.md) for the required before-merge protocol, blast-radius table, and out-of-org consumer guidance.
 
 ### Breaking change policy
 

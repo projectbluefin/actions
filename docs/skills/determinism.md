@@ -65,7 +65,7 @@ A CI check enforces they match. This ensures:
 - `dnf cache` action mitigates by reusing cached layers
 - Latest-stable is the right policy for desktop OS (Bluefin)
 
-**Mitigation:** 
+**Mitigation:**
 - DNF cache in reusable workflow reduces re-download of unchanged packages
 - Document expected drift in release notes
 - Run weekly e2e testing to catch breakage early

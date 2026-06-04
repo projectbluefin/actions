@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: no-floating-action-tags
+        name: Block floating GitHub Action tags (@main, @v*)
+        language: pygrep
+        entry: 'uses:.*@(main|master|latest|v[0-9])'
+        types: [yaml]
+        files: '\.github/workflows/'

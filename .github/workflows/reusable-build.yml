@@ -1,7 +1,7 @@
 name: Reusable Build and Push
 # Reusable workflow for Fedora-based bootc image builds (bluefin, aurora, etc.).
 # Called by consuming repos with:
-#   uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
+#   uses: projectbluefin/actions/.github/workflows/reusable-build.yml@<pinned-ref>
 #
 # Context note: when called from a consuming repo, github.repository = the caller,
 # and actions/checkout checks out the CALLER's code. Local action refs

@@ -6,7 +6,7 @@ Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github
 
 These skills are the shared knowledge of 5 years of Universal Blue. The humans did such a good job that we were able to redo it with agents in a weekend. If you find an action here that should live in a CNCF or OpenSSF or any other upstream project and want to help, consider it your first quest!
 
-Bluefin has testing branches and a passionate developer community, if you're an OSS maintainer and want a piece of tooling in here to live upstream, take it and we'll commit to CI for you. Another logo in your ADOPTERS.md. 
+Bluefin has testing branches and a passionate developer community, if you're an OSS maintainer and want a piece of tooling in here to live upstream, take it and we'll commit to CI for you. Another logo in your ADOPTERS.md.
 
 
 Maintainers: see [docs/MAINTAINERS.md](docs/MAINTAINERS.md) for the agentic workflow, review gates, and on-call runbook.
@@ -42,18 +42,18 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: projectbluefin/actions/bootc-build/setup-runner@v1
         with:
           install-tools: '["just", "cosign", "oras"]'
-      
+
       - uses: projectbluefin/actions/bootc-build/dnf-cache@v1
         with:
           action: restore
           cache-name: my-image-42
-      
+
       - run: just build-ghcr
-      
+
       - uses: projectbluefin/actions/bootc-build/dnf-cache@v1
         with:
           action: save
