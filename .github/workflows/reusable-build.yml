@@ -446,7 +446,7 @@ jobs:
 
       - name: Sign, publish SBOM, and attest
         if: github.event_name != 'pull_request'
-        uses: projectbluefin/actions/bootc-build/sign-and-publish@1845e36f17f998e164b697c5518d3abc062e9ef9
+        uses: projectbluefin/actions/bootc-build/sign-and-publish@c1c064a8ad0266cc1b4348981dcde6b881b4fbfd
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
