@@ -125,7 +125,7 @@ Use individual actions when you need more control: different base distro (CentOS
 | `dnf-cache` | `bootc-build/dnf-cache@v1` | Restore/save buildah layer cache |
 | `preflight` | `bootc-build/preflight@v1` | Validate registry auth, normalize image refs |
 | `detect-changes` | `bootc-build/detect-changes@v1` | Detect changed paths, compute image-flavor build matrix |
-| `validate-pr` | `bootc-build/validate-pr@v1` | Run just check, shellcheck, hadolint, pre-commit |
+| `validate-pr` | `bootc-build/validate-pr@v1` | Run just check, shellcheck, hadolint, pre-commit. Optional: `system-files-shellcheck-glob` (shellcheck extra glob), `enable-desktop-file-validate` (validate `.desktop` files), `check-submodule-drift` (fail if submodule is dirty) |
 | `generate-tags` | `bootc-build/generate-tags@v1` | Generate shared Bluefin/Fedora OCI alias tags from version + event context |
 | `push-image` | `bootc-build/push-image@v1` | Push with retry, digest capture, skopeo alias tags |
 | `create-manifest` | `bootc-build/create-manifest@v1` | Multi-arch OCI manifest index assembly |
@@ -427,6 +427,23 @@ permissions:
 
 - File issues at [projectbluefin/actions](https://github.com/projectbluefin/actions/issues)
 - Working examples: [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) (Path 1) and [projectbluefin/bluefin-lts](https://github.com/projectbluefin/bluefin-lts) (Path 2 à la carte)
+
+---
+
+## Live Path 1 consumer: bluefin (extended validation)
+
+bluefin opts into all three optional `validate-pr` inputs:
+
+```yaml
+- uses: projectbluefin/actions/bootc-build/validate-pr@v1
+  with:
+    shellcheck-glob: "build_files/**/*.sh"
+    system-files-shellcheck-glob: "system_files/**/*.sh"
+    enable-desktop-file-validate: "true"
+    check-submodule-drift: "true"
+```
+
+Hook scripts that `source` a runtime-only path (e.g. `/usr/lib/ublue/setup-services/libsetup.sh`) must include `# shellcheck source=/dev/null` on the source line to silence SC1091 in CI.
 
 ---
 
