@@ -101,8 +101,13 @@ runs:
         DIGEST: ${{ inputs.digest }}
         GITHUB_REPOSITORY: ${{ github.repository }}
       run: |
+        # When signing runs inside a reusable workflow (e.g. projectbluefin/actions),
+        # the OIDC certificate identity reflects that workflow's repo, not the calling
+        # repo stored in GITHUB_REPOSITORY.  Match on the org prefix only so both
+        # direct and reusable-workflow invocations are accepted.
+        ORG="${GITHUB_REPOSITORY%%/*}"
         cosign verify \
-          --certificate-identity-regexp="https://github.com/${GITHUB_REPOSITORY}/" \
+          --certificate-identity-regexp="https://github.com/${ORG}/" \
           --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
           "${IMAGE}@${DIGEST}"
 
