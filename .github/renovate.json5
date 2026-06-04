@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices"
+  ],
+
+  "baseBranchPatterns": ["main"],
+
+  // Do not rebase when the default branch is updated
+  "rebaseWhen": "never",
+
+  "packageRules": [
+    {
+      "automerge": true,
+      "matchUpdateTypes": ["pin", "pinDigest"]
+    },
+    {
+      "automerge": true,
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["digest", "pinDigest"]
+    }
+  ]
+}
