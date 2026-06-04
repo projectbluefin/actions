@@ -438,7 +438,7 @@ jobs:
         with:
           name: image-digest-${{ inputs.stream_name }}-${{ matrix.base_name }}-${{ matrix.image_flavor }}-${{ matrix.architecture }}
           path: /tmp/digests/
-          retention-days: 1
+          retention-days: 7
 
       - name: Fix sigstore cache permissions
         if: github.event_name != 'pull_request'
