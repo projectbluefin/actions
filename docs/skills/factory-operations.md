@@ -184,10 +184,68 @@ No `skill-metrics.json` artifact is produced currently (future enhancement if ba
 
 ---
 
-## How the Three Systems Work Together
+## 4. Renovate — Automated Dependency Maintenance
+
+### What it does
+
+Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. With `.github/renovate.json5` in place, qualifying PRs auto-merge when CI passes — no human review needed.
+
+### Config
+
+File: `.github/renovate.json5`
+
+```json5
+{
+  "baseBranchPatterns": ["main"],
+  "rebaseWhen": "never",
+  "packageRules": [
+    { "automerge": true, "matchUpdateTypes": ["pin", "pinDigest"] },
+    { "automerge": true, "matchManagers": ["github-actions"], "matchUpdateTypes": ["digest", "pinDigest"] }
+  ]
+}
+```
+
+**What auto-merges:** GitHub Actions SHA pin and digest bumps (`pin`, `pinDigest`, `digest`). These are safe to auto-merge because they carry no behavior change — only the locked SHA changes.
+
+**What never auto-merges:** Major version bumps, any update you explicitly add to a `automerge: false` rule, and any PR that fails CI.
+
+### Validation workflow
+
+`.github/workflows/validate-renovate.yml` runs `renovate-config-validator --strict` on PRs and pushes that touch `renovate.json5`. Changes to the Renovate config that fail validation will be caught before merging.
+
+### Auto-merge repo setting
+
+The repository has `allow_auto_merge: true` enabled. Without this, GitHub ignores the `automerge` setting in `renovate.json5`.
+
+### Relationship to `@v1`
+
+Renovate keeps SHA pins current **in this repo**. Consumers don't see the updates until a maintainer moves the `@v1` tag:
+
+```bash
+git tag -f v1 && git push --force origin v1
+```
+
+The recommended cadence: move `@v1` periodically after a batch of Renovate bumps has landed and CI is green — not after every individual bump. This is a deliberate human gate because `@v1` affects all consumer repos simultaneously.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Renovate PR won't auto-merge | `allow_auto_merge` disabled on repo | `gh api -X PATCH repos/projectbluefin/actions -f allow_auto_merge=true` |
+| Renovate PR has merge conflict | Another bump landed first; branches diverged | Locally checkout the branch, `git rebase origin/main`, force-push |
+| Two Renovate PRs update the same action | Both opened before either merged | Close the older/lower version one; merge the newer |
+
+---
+
+## How the Four Systems Work Together
 
 ```
-PR opened
+Renovate detects stale SHA pin
+  └─▶ Opens bump PR
+        ├── CI (actionlint + skill-drift) passes → auto-merges
+        └── CI fails → stays open for human review
+
+PR opened (human or Renovate)
   └─▶ skill-drift-check.yml fires
         ├── code-paths changed + no skill-paths changed → ::warning:: annotation
         └── always exits 0 (never blocks)
@@ -201,9 +259,13 @@ Monday 09:00 UTC
 Human reviews warning / issue
   └─▶ Opens skill update PR
         └─▶ skill-drift-check passes cleanly (skill-paths changed)
+
+Batch of Renovate bumps land on main
+  └─▶ Human runs: git tag -f v1 && git push --force origin v1
+        └─▶ All consumer repos pick up updated SHA pins
 ```
 
-The PR check surfaces drift in real time; the audit catches anything that slips through and accumulates between PRs.
+Renovate keeps pins fresh automatically; the PR check and weekly audit keep knowledge current; the production gate and @v1 human authorization keep consumers safe.
 
 ---
 
