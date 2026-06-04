@@ -324,8 +324,11 @@ Steps executed in order:
 4. Restore `~/.cache/pre-commit` from GHA cache (keyed by `runner.os + runner.arch + hashFiles('.pre-commit-config.yaml')`)
 5. `just check`
 6. `shellcheck` over `inputs.shellcheck-glob`
-7. `hadolint/hadolint-action` with configurable dockerfile + config path
-8. `pre-commit run --all-files`
+7. Optional `shellcheck` over `inputs.system-files-shellcheck-glob`
+8. Optional `desktop-file-validate` over `system_files/**/*.desktop`
+9. Optional submodule drift check for paths listed in `inputs.check-submodule-drift`
+10. `hadolint/hadolint-action` with configurable dockerfile + config path
+11. `pre-commit run --all-files`
 
 Inputs:
 
@@ -334,9 +337,13 @@ Inputs:
 | `dockerfile` | `Containerfile` | Path to lint with hadolint |
 | `hadolint-config` | `.hadolint.yaml` | hadolint config file |
 | `shellcheck-glob` | `build_files/**/*.sh` | Shell scripts glob |
+| `system-files-shellcheck-glob` | `""` | Optional additional shell glob for `system_files` scripts |
+| `enable-desktop-file-validate` | `"false"` | Optional `desktop-file-validate` for `system_files/**/*.desktop` |
+| `check-submodule-drift` | `""` | Optional comma-separated submodule paths to diff for manual edits |
 
 **Consumer layout gotcha — `validate-pr` default glob is bluefin-specific:** The default `shellcheck-glob` is `build_files/**/*.sh`, which is the bluefin/aurora layout. Repos with different conventions must override:
 - `bluefin-lts`: uses `build_scripts/**/*.sh` (not `build_files`)
+- `bluefin` and `common` can opt into `system-files-shellcheck-glob`, `enable-desktop-file-validate`, and `check-submodule-drift` for stricter `system_files` validation without changing defaults for other consumers
 - Pass `hadolint-config: ""` if the repo has no `.hadolint.yaml`
 
 **Usage pattern:**

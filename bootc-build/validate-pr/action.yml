@@ -12,6 +12,15 @@ inputs:
   shellcheck-glob:
     description: "Glob for shell scripts to check (expanded with globstar in workspace root)"
     default: "build_files/**/*.sh"
+  system-files-shellcheck-glob:
+    description: "Additional glob for system_files shell scripts (e.g. system_files/**/*.sh). Empty = skip."
+    default: ""
+  enable-desktop-file-validate:
+    description: "Run desktop-file-validate on all .desktop files in the repo"
+    default: "false"
+  check-submodule-drift:
+    description: "Comma-separated list of submodule paths to check for manual edits (e.g. aurorafin-shared)"
+    default: ""
 
 runs:
   using: "composite"
@@ -49,6 +58,68 @@ runs:
         shopt -s globstar nullglob
         # shellcheck disable=SC2086
         shellcheck ${SHELLCHECK_GLOB}
+
+    - name: Shellcheck system_files scripts
+      if: ${{ inputs.system-files-shellcheck-glob != '' }}
+      shell: bash
+      env:
+        SHELLCHECK_GLOB: ${{ inputs.system-files-shellcheck-glob }}
+      run: |
+        set -euo pipefail
+        shopt -s globstar nullglob
+        files=()
+        # shellcheck disable=SC2086
+        for pattern in ${SHELLCHECK_GLOB}; do
+          for f in $pattern; do
+            [[ -f "$f" ]] && files+=("$f")
+          done
+        done
+        if [[ ${#files[@]} -eq 0 ]]; then
+          echo "No system_files shell scripts found matching: ${SHELLCHECK_GLOB}"
+        else
+          echo "Shellchecking ${#files[@]} system_files scripts..."
+          shellcheck "${files[@]}"
+        fi
+
+    - name: Install desktop-file-utils
+      if: ${{ inputs.enable-desktop-file-validate == 'true' }}
+      shell: bash
+      run: sudo apt-get install -y --no-install-recommends desktop-file-utils
+
+    - name: Validate desktop files
+      if: ${{ inputs.enable-desktop-file-validate == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s globstar nullglob
+        files=(system_files/**/*.desktop)
+        if [[ ${#files[@]} -eq 0 ]]; then
+          echo "No .desktop files found — skipping"
+          exit 0
+        fi
+        echo "Validating ${#files[@]} .desktop files..."
+        desktop-file-validate "${files[@]}"
+
+    - name: Check submodule drift
+      if: ${{ inputs.check-submodule-drift != '' }}
+      shell: bash
+      env:
+        SUBMODULE_PATHS: ${{ inputs.check-submodule-drift }}
+      run: |
+        set -euo pipefail
+        git submodule update --init --recursive
+        IFS=',' read -ra paths <<< "${SUBMODULE_PATHS}"
+        failed=0
+        for path in "${paths[@]}"; do
+          path="${path// /}"
+          [[ -z "$path" ]] && continue
+          echo "Checking submodule drift: $path"
+          if ! git diff --exit-code -- "$path"; then
+            echo "ERROR: $path has been manually edited — changes must go upstream via a submodule PR"
+            failed=1
+          fi
+        done
+        exit "$failed"
 
     - name: Lint Containerfile
       uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
