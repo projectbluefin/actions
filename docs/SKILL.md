@@ -11,6 +11,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Author or modify a composite action | `docs/skills/composite-actions.md` |
 | Add a new action to the repo | `docs/skills/composite-actions.md` → "Adding a new action" |
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
+| Configure or understand Renovate auto-merge | `docs/skills/factory-operations.md` → "Renovate" |
 | Update a pinned SHA | `docs/skills/composite-actions.md` → "SHA pinning" |
 | Understand the sign-and-publish flow | `docs/skills/composite-actions.md` → "sign-and-publish" |
 | Understand the push-image push + digest pattern | `docs/skills/composite-actions.md` → "push-image" |
@@ -41,4 +42,4 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`composite-actions.md`](skills/composite-actions.md) | Authoring conventions, known workarounds, action-by-action reference |
 | [`consumer-guide.md`](skills/consumer-guide.md) | Onboarding a new image repo: full reusable workflow and à la carte composite actions |
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
-| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, and scheduled skill audit |
+| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, scheduled skill audit, and Renovate auto-merge |

@@ -33,7 +33,7 @@ All `uses:` references to external actions **must** be pinned to a full commit S
 uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 ```
 
-Never use floating tags (`@main`, `@v3`, `@latest`). Renovate manages SHA bumps in consuming repos — but the canonical pins live here.
+Never use floating tags (`@main`, `@v3`, `@latest`). Renovate runs in **this repo** and auto-merges SHA pin and digest bumps when CI passes — the canonical pins live here and propagate to consumers when a maintainer moves `@v1`.
 
 The version comment must match a **released** version tag (e.g. `v3.10.1`, not just `v3`). If a repo has no releases or tags, use a descriptive comment instead:
 
