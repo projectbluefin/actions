@@ -70,7 +70,7 @@ runs:
 
     - name: Sign container image (keyless)
       if: inputs.signing-mode == 'keyless'
-      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+      uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
@@ -82,7 +82,7 @@ runs:
 
     - name: Sign container image (key-based)
       if: inputs.signing-mode == 'key'
-      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+      uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
@@ -172,7 +172,7 @@ runs:
 
     - name: Sign SBOM artifact
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'keyless'
-      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+      uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
         IMAGE: ${{ inputs.image }}
         SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
@@ -184,7 +184,7 @@ runs:
 
     - name: Sign SBOM artifact (key-based)
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'key'
-      uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08 # v3
+      uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
         IMAGE: ${{ inputs.image }}
         SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
