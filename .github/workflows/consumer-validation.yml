@@ -1,0 +1,97 @@
+name: Consumer Validation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+jobs:
+  consumer-validation:
+    name: Check consumer validation evidence
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Require consumer validation evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          changed_files="$(gh pr diff "${PR_NUMBER}" --repo "${GH_REPO}" --name-only)"
+          requires_validation=false
+
+          while IFS= read -r file; do
+            [ -z "${file}" ] && continue
+
+            case "${file}" in
+              bootc-build/*/action.yml|.github/workflows/reusable-*.yml)
+                echo "Consumer-facing change detected: ${file}"
+                requires_validation=true
+                break
+                ;;
+            esac
+          done <<< "${changed_files}"
+
+          if [ "${requires_validation}" != "true" ]; then
+            echo "No consumer-facing action changes detected; skipping."
+            exit 0
+          fi
+
+          body="$(gh pr view "${PR_NUMBER}" --repo "${GH_REPO}" --json body --jq .body | tr -d '\r')"
+          missing=0
+
+          require_line() {
+            local label="$1"
+            local regex="$2"
+            local hint="$3"
+            local line
+
+            line="$(printf '%s\n' "${body}" | grep -E "^${label}:" || true)"
+
+            if [ -z "${line}" ]; then
+              echo "::error::Missing '${label}:' line in the PR template. ${hint}"
+              missing=1
+              return
+            fi
+
+            if ! printf '%s\n' "${line}" | grep -Eq "${regex}"; then
+              echo "::error::${label} must contain ${hint}"
+              missing=1
+            fi
+          }
+
+          require_line \
+            "Consumer PR" \
+            '^Consumer PR:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/[0-9]+([[:space:]].*)?$' \
+            "a projectbluefin consumer PR URL (bluefin preferred)"
+
+          require_line \
+            "Consumer CI run" \
+            '^Consumer CI run:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota)/actions/runs/[0-9]+([[:space:]].*)?$' \
+            "a projectbluefin consumer Actions run URL"
+
+          impact_line="$(printf '%s\n' "${body}" | grep -E '^Out-of-org consumer impact:' || true)"
+
+          if [ -z "${impact_line}" ]; then
+            echo "::error::Missing 'Out-of-org consumer impact:' line in the PR template."
+            missing=1
+          else
+            impact_value="${impact_line#Out-of-org consumer impact:}"
+            impact_trimmed="$(printf '%s' "${impact_value}" | tr -d '[:space:]')"
+
+            if [ -z "${impact_trimmed}" ] || printf '%s' "${impact_value}" | grep -qE '<!--|TODO|TBD'; then
+              echo "::error::Out-of-org consumer impact must explain why aurora/bazzite are safe or explicitly say N/A."
+              missing=1
+            fi
+          fi
+
+          if [ "${missing}" -ne 0 ]; then
+            echo "::error::Consumer validation evidence is required for action or reusable workflow changes. See docs/skills/consumer-validation.md."
+            exit 1
+          fi
+
+          echo "Consumer validation evidence found."

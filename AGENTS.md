@@ -34,7 +34,7 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 **No breaking changes without a version signal:** Removing or renaming an input, or changing default behavior, requires coordinating with consuming repos. Document the blast radius in the PR description.
 
-**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. See `docs/skills/consumer-validation.md` for the full protocol.
+**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
 
 **Verification:** Every PR must confirm that the action change was exercised in a real workflow (link to a CI run or test job). No untested changes.
 

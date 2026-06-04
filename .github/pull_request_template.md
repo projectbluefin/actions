@@ -4,10 +4,15 @@
 
 ## Consumer validation
 
-Before merging any change to this repo, validate against a consuming repo:
+Required when this PR changes `bootc-build/**/action.yml` or `.github/workflows/reusable-*.yml`.
 
-- [ ] Opened a draft PR in `projectbluefin/bluefin` pinned to this branch SHA — CI is green
-- [ ] No breaking changes for out-of-org consumers (`ublue-os/aurora`, `ublue-os/bazzite`) — verified or N/A
+Consumer PR: <!-- https://github.com/projectbluefin/bluefin/pull/123 -->
+Consumer CI run: <!-- https://github.com/projectbluefin/bluefin/actions/runs/123456789 -->
+Out-of-org consumer impact: <!-- explain why aurora/bazzite are safe, or say N/A -->
+
+- [ ] Opened a draft consumer PR pinned to this branch SHA
+- [ ] Linked a passing consumer CI run that exercised this change
+- [ ] Evaluated out-of-org consumers (`ublue-os/aurora`, `ublue-os/bazzite`) and documented the impact above
 
 ## Checklist
 
