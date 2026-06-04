@@ -75,7 +75,7 @@ jobs:
 6. Generates alias tags via `just generate-build-tags`
 7. Pushes to `ghcr.io/<your-org>/<image_name>` with all alias tags
 8. Signs with cosign (keyless OIDC)
-9. Generates an SBOM (Syft → ORAS attach), skipped on `stream_name: testing`
+9. Generates an SBOM (Syft → ORAS attach) on all non-PR streams including `testing`
 10. Pushes GitHub Attestation
 11. Saves DNF cache
 
@@ -278,7 +278,7 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 | Justfile contract is strict | All 7 required recipes must exist with the exact expected signatures |
 | `aarch64` requires ARM runner | Self-hosted or GitHub-hosted `ubuntu-24.04-arm`; not included in the default free-tier |
 | Registry hardcoded to GHCR | The `IMAGE_REGISTRY` env var is `ghcr.io/${{ github.repository_owner }}`; override only via composite actions |
-| SBOM skipped on `testing` stream | By design — testing stream trades provenance for speed. Promoted images inherit the gap until signing is added pre-promotion |
+| SBOM on all non-PR streams | `testing` stream builds now include SBOM — weekly promotions retag testing digests to stable, so SBOM coverage is required end-to-end |
 
 ---
 
@@ -290,7 +290,7 @@ When your repo has multiple git remotes (e.g., forked from upstream), take care:
 - [ ] GHCR package visibility set to public, or `GITHUB_TOKEN` has write access
 - [ ] `stream_name` is one of `stable`, `latest`, `beta`, `testing`
 - [ ] `image_flavors` and `architecture` use double-quoted strings inside the JSON array: `'["main"]'` not `"['main']"`
-- [ ] Tested with `stream_name: testing` first (skips SBOM/signing/rechunk — faster feedback loop)
+- [ ] Tested with `stream_name: testing` first (faster feedback loop — skips rechunk but still runs signing and SBOM)
 - [ ] Opened a draft PR in your repo to validate the integration before merging
 - [ ] Added a `skill-drift.yml` wrapper calling `skill-drift-check.yml@v1` — see `docs/skills/factory-operations.md` → "Skill-Drift PR Check" for the 16-line template and path configs per repo type
 - [ ] Production promotion workflow gated behind `environment: production` with 2 required reviewers configured in GitHub Settings → Environments
