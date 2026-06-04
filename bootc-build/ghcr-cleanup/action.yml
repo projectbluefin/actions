@@ -23,7 +23,7 @@ runs:
   using: "composite"
   steps:
     - name: Clean up old GHCR images
-      uses: dataaxiom/ghcr-cleanup-action@cd0cdb900b85ee49ba34d2048b2ccb7c55efb9e1 # v1
+      uses: dataaxiom/ghcr-cleanup-action@f092b48ba3b604b2a83690dc4b2bbb3392e1045f # v1
       with:
         packages: ${{ inputs.packages }}
         older-than: ${{ inputs.older-than }}
