@@ -54,6 +54,29 @@ gh api repos/projectbluefin/actions/actions/runs/<run-id>/approve -X POST
 
 Treat the check as evidence collection, not as a substitute for real validation. Fake links still violate policy and should be rejected in review.
 
+## Consumer contract pre-commit check
+
+`docs/consumer-contract.yml` is a machine-readable snapshot of all required inputs
+consumed by external repos (`ublue-os/aurora`, `ublue-os/bazzite`) via `@v1`.
+
+`scripts/check-consumer-contract.py` validates the snapshot against live `action.yml` files:
+
+```bash
+python3 scripts/check-consumer-contract.py --verbose
+```
+
+The `.pre-commit-config.yaml` `check-consumer-contract` hook runs this automatically
+when `bootc-build/*/action.yml`, `reusable-*.yml`, or `consumer-contract.yml` change.
+
+### When to update the snapshot
+
+Update `docs/consumer-contract.yml` only when:
+- An intentional breaking change is versioned (new `@v2` tag shipped), OR
+- A new required input is added that consumers must explicitly adopt
+
+**Never** remove a required input from the snapshot to silence the check — that defeats
+the purpose. Instead, coordinate with aurora/bazzite maintainers and version the change.
+
 ## Out-of-org consumers
 
 For `aurora` and `bazzite`, you cannot open PRs directly. Verify that your change does not break the Justfile contract (recipe signatures listed in `docs/skills/consumer-guide.md`) and summarize that reasoning in `Out-of-org consumer impact:`. If in doubt, ping `@castrojo` or `@hanthor`.
