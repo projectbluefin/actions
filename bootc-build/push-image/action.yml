@@ -49,6 +49,7 @@ runs:
       if: inputs.fix-auth-permissions == 'true'
       shell: bash
       run: |
+        set -euo pipefail
         AUTH_DIR="/run/user/$(id -u)/containers"
         if [[ -d "${AUTH_DIR}" ]]; then
           sudo chown -R "$(id -u):$(id -g)" "${AUTH_DIR}"
@@ -61,6 +62,7 @@ runs:
         REGISTRY: ${{ inputs.registry }}
         GITHUB_ACTOR: ${{ github.actor }}
       run: |
+        set -euo pipefail
         echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
         echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin 2>/dev/null || true
 
