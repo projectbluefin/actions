@@ -22,3 +22,10 @@ repos:
         entry: 'uses:(?!.*projectbluefin/).*@(main|master|latest|v[0-9])'
         types: [yaml]
         files: '(^\.github/workflows/.*\.yml$|action\.yml$)'
+      - id: check-consumer-contract
+        name: Verify consumer contract inputs are intact
+        language: python
+        entry: python3 scripts/check-consumer-contract.py
+        pass_filenames: false
+        files: '(^bootc-build/.*/action\.yml$|^\.github/workflows/reusable-.*\.yml$|^docs/consumer-contract\.yml$)'
+        additional_dependencies: [pyyaml]
