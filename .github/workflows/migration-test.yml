@@ -1,0 +1,120 @@
+name: bootc Migration Test — ublue-os → projectbluefin
+# Reusable workflow: cross-registry migration gate that boots an ublue-os/bluefin
+# (or bluefin-lts) image in QEMU and validates the full migration scenario matrix
+# from projectbluefin/testsuite (the @migration tag group in the lifecycle suite).
+#
+# Covers the chunkah format boundary: legacy rpm-ostree rechunked layers (ublue-os)
+# to chunkah OCI-native layers (projectbluefin), via standard bootc switch and
+# --experimental-unified-storage lanes.
+#
+# Typical usage (non-LTS, gate on newly built digest):
+#
+#   migration-test:
+#     needs: build
+#     uses: projectbluefin/actions/.github/workflows/migration-test.yml@<pinned-ref>
+#     with:
+#       source_image: ghcr.io/ublue-os/bluefin:latest
+#       migration_target: ghcr.io/projectbluefin/bluefin@${{ needs.build.outputs.digest }}
+#
+# LTS variant:
+#
+#   migration-test:
+#     needs: build
+#     uses: projectbluefin/actions/.github/workflows/migration-test.yml@<pinned-ref>
+#     with:
+#       source_image: ghcr.io/ublue-os/bluefin-lts:lts
+#       migration_target: ghcr.io/projectbluefin/bluefin-lts@${{ needs.build.outputs.digest }}
+#
+# Gate promotion on the result:
+#
+#   promote:
+#     needs: migration-test
+#     if: needs.migration-test.outputs.result == 'success'
+#
+# Migration scenarios validated:
+#   - bootc switch → reboot → confirm landed on target
+#   - bootc rollback → confirm returns to source
+#   - system identity/health after migration (os-release, bootc status)
+#   - rollback deployment digest preserved across chunkah format boundary
+#   - unified storage lane (--experimental-unified-storage)
+#   - unified storage rollback lane
+#   - zstd:chunked lane (opt-in via chunked_enabled)
+# See: https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/migration.feature
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_image:
+        description: "Source image to migrate FROM (ublue-os/bluefin or ublue-os/bluefin-lts)"
+        required: true
+        default: "ghcr.io/ublue-os/bluefin:latest"
+      migration_target:
+        description: "Target image to migrate TO (leave blank for suite default: projectbluefin/bluefin:stable)"
+        type: string
+        default: ""
+      chunked_enabled:
+        description: "Run @zstd_chunked lane (enable when target ships zstd:chunked layers)"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      source_image:
+        description: >
+          Full OCI image reference to boot as the migration source — must be an
+          ublue-os/bluefin or ublue-os/bluefin-lts image.
+          Example (non-LTS): ghcr.io/ublue-os/bluefin:latest
+          Example (LTS):     ghcr.io/ublue-os/bluefin-lts:lts
+        required: true
+        type: string
+      migration_target:
+        description: >
+          Full OCI ref for the migration target — the projectbluefin image the source
+          will switch to. When empty the test suite falls back to its built-in default
+          (ghcr.io/projectbluefin/bluefin:stable). Pass a pinned digest to gate on a
+          specific freshly built image.
+          Example (non-LTS): ghcr.io/projectbluefin/bluefin:stable
+          Example (LTS):     ghcr.io/projectbluefin/bluefin-lts:stable
+          Example (digest):  ghcr.io/projectbluefin/bluefin-lts@sha256:abc123
+        type: string
+        default: ""
+      chunked_enabled:
+        description: >
+          Enable @zstd_chunked migration scenarios in the lifecycle suite.
+          Set to true once projectbluefin/bluefin ships with zstd:chunked layer
+          compression. Defaults to false so CI stays green until the image is ready.
+        type: boolean
+        default: false
+
+    outputs:
+      result:
+        description: "Outcome of the migration test job: success, failure, cancelled, or skipped"
+        value: ${{ jobs.report.outputs.result }}
+
+permissions:
+  contents: read
+  packages: write   # required by testsuite e2e.yml for screenshot OCI push
+
+jobs:
+  migration-test:
+    name: Migration — ${{ inputs.source_image }}
+    # NOTE: bump this SHA after merging projectbluefin/testsuite migration-target plumbing PR.
+    # The migration-target and extra-tags inputs require testsuite e2e.yml >= that merge.
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@89010b9222a8db2defd8e1ef77668cc221b15385 # main (includes migration-target + extra-tags inputs, PR #311)
+    permissions:
+      contents: read
+      packages: write
+    with:
+      image: ${{ inputs.source_image }}
+      suites: lifecycle
+      migration-target: ${{ inputs.migration_target }}
+      extra-tags: migration
+      chunked_enabled: ${{ inputs.chunked_enabled == true || inputs.chunked_enabled == 'true' }}
+
+  report:
+    needs: migration-test
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ needs.migration-test.result }}
+    steps:
+      - run: echo "migration-test result=${{ needs.migration-test.result }}"
