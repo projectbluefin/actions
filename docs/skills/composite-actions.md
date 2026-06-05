@@ -178,7 +178,9 @@ Outputs `registry-lowercase` and `image-ref` (if `image-name` was supplied).
 
 ### `push-image`
 
-Pushes with `zstd:chunked` compression using a **single** `sudo -E podman push` for the default tag. Default behavior must **not** pass `--force-compression`: rechunked Fedora images are already `zstd:chunked`, and forcing recompression strips `ostree.components` layer annotations.
+Pushes using a configurable `compression-format` (default `zstd:chunked`) via a **single** `sudo -E podman push` for the default tag. Default behavior must **not** pass `--force-compression`: rechunked Fedora images are already `zstd:chunked`, and forcing recompression strips `ostree.components` layer annotations.
+
+The `compression-format` input controls `--compression-format` on `podman push`. Use the default (`zstd:chunked`) for Fedora/rpm-ostree consumers. Use `zstd` for BST-based consumers like dakota that export plain OCI tarballs without chunked layer annotations.
 
 For chunkah-based images that need to migrate existing registry layers from `gzip` to `zstd:chunked` (for example bluefin-lts), expose a `force-compression` input and conditionally append `--force-compression` inside the push loop via an env-backed shell flag.
 

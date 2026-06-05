@@ -423,6 +423,57 @@ permissions:
 
 ---
 
+## Live Path 2 consumer: dakota (BST/BuildStream)
+
+dakota is structurally different from all other consumers — its image is produced by `bst build oci/bluefin.bst` inside a pinned `bst2` container, not `podman build` of a Containerfile. It is a **Path 2 only** consumer, permanently. The full reusable workflow (`reusable-build.yml`) will never apply.
+
+### What applies to dakota
+
+| Action | Status | Notes |
+|---|---|---|
+| `setup-runner` | **Adopted** | `update-podman: true`, `storage-backend: btrfs`, `install-tools: '["just"]'` |
+| `sign-and-publish` | **Adopted** | `generate-sbom: false` — dakota uses BST-native SBOM via `just sbom` |
+| `ghcr-cleanup` | **Adopted** | Weekly cron, packages: `dakota,dakota-nvidia` |
+| `push-image` | **Ready to adopt** | Replaces inline retry loop in `publish.yml`. Use `compression-format: zstd` (not the default `zstd:chunked`) |
+| `create-manifest` | **Ready to adopt** | Replaces inline `podman manifest create/push` in `build.yml`. Currently blocked on aarch64 build being disabled |
+| `dnf-cache` | **N/A** | Wrong cache model. BST uses `~/.cache/buildstream` + remote CAS at `cache.projectbluefin.io` |
+| `rechunk` | **N/A** | rpm-ostree/Fedora only |
+| `chunka` | **Optional** | Only if dakota decides to produce OTA-delta-friendly rechunked layers |
+
+### What must never be touched
+
+- BST-domain composites (`check-bst2-pin`, `generate-bst-ci-config`) remain local to dakota
+- BST remote CAS (`cache.projectbluefin.io`) is outside the shared caching model
+- `bst2` container SHA is pinned via `check-bst2-pin` — preserve this
+- Never attempt to fit dakota into `reusable-build.yml`
+- Never replace BST with rpm-ostree/Containerfile
+
+### Pre-condition for push-image wiring
+
+Before replacing dakota's inline push with `push-image@v1`, verify the push mechanism:
+
+```sh
+grep -n 'podman push\|skopeo\|podman load' dakota/.github/workflows/publish.yml | head -20
+```
+
+**Proceed only if** the push is a plain `podman push` of a locally-loaded image (exported from BST via `just export`, then tagged). The current `publish.yml` satisfies this — it does `sudo podman tag` then `sudo podman push` with a retry loop.
+
+**Do not proceed if** the push uses `skopeo copy` from BST CAS or requires a `bst artifact checkout` + `podman load` first. In that case, file a child issue describing the adapter needed.
+
+### Dakota push-image usage
+
+```yaml
+- uses: projectbluefin/actions/bootc-build/push-image@v1
+  id: push
+  with:
+    image-name: dakota          # or dakota-nvidia
+    tags: "${{ needs.setup.outputs.sha }}"
+    compression-format: zstd    # BST exports plain OCI, not zstd:chunked
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+---
+
 ## Getting help
 
 - File issues at [projectbluefin/actions](https://github.com/projectbluefin/actions/issues)
