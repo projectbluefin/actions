@@ -205,7 +205,7 @@ Assembles and pushes a multi-arch OCI manifest index from a JSON map of `platfor
 Population pattern:
 - create the manifest locally with `podman manifest create`
 - iterate `digests-json` with `jq` and add each digest using `podman manifest add ... --arch <platform>`
-- apply newline-separated OCI annotations with `podman manifest annotate --index --annotation`
+- apply newline-separated OCI annotations via `podman manifest annotate --index --annotation`; falls back to `buildah manifest annotate --annotation` when the runner ships podman < 5.0 (GitHub Actions runners ship 4.9.x and do not support `--index`)
 
 Push pattern:
 - push the **first** tag with `podman manifest push --all=false --digestfile ...` to capture the manifest-list digest
@@ -221,7 +221,7 @@ Two signing modes:
 
 SBOM flow (when `generate-sbom: true`): Syft generates SPDX JSON → ORAS attaches it to the registry → cosign signs the SBOM artifact itself.
 
-After the keyless image sign step, immediately run `cosign verify` with GitHub repository identity and the GitHub Actions OIDC issuer to fail fast if the signature was not applied as expected.
+After the keyless image sign step, immediately run `cosign verify` with the GitHub Actions OIDC issuer to fail fast if the signature was not applied as expected. The `--certificate-identity-regexp` matches on the **org prefix** (`https://github.com/<org>/`) rather than the full repository identity — this is required because when signing runs inside a reusable workflow (e.g. `projectbluefin/actions`), the OIDC certificate identity reflects the actions repo, not the calling consumer repo. Matching on the org prefix accepts both cases.
 
 **Retry policy:** All four `cosign sign` invocations (image keyless, image key-based, SBOM keyless, SBOM key-based) are wrapped with `nick-fields/retry` — 3 attempts, 30s wait between attempts, 5 min timeout per attempt. This reduces unsigned-image publishes from transient Rekor/TUF connectivity failures.
 

@@ -114,7 +114,14 @@ runs:
 
         while IFS= read -r label; do
           [[ -z "${label}" ]] && continue
-          podman manifest annotate --index --annotation "${label}" "${MANIFEST}"
+          # --index (annotate the manifest list itself) requires podman >= 5.0.
+          # GitHub Actions runners ship podman 4.9.x; fall back to buildah which
+          # supports index-level annotation on all relevant versions.
+          if podman manifest annotate --index --annotation "${label}" "${MANIFEST}" 2>/dev/null; then
+            :
+          else
+            buildah manifest annotate --annotation "${label}" "${MANIFEST}"
+          fi
         done <<< "${LABELS}"
 
     - name: Push manifest tags
