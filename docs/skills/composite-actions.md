@@ -296,7 +296,7 @@ Outputs:
 
 ```yaml
 detect-changes:
-  runs-on: ubuntu-latest
+  runs-on: ubuntu-24.04
   outputs:
     image_flavors: ${{ steps.detect.outputs.image_flavors }}
     should_build:  ${{ steps.detect.outputs.should_build }}
@@ -471,6 +471,8 @@ When a consuming repo calls the workflow:
 Inside the reusable workflow, cross-repo composite action calls must use fully qualified `projectbluefin/actions/bootc-build/<name>@<SHA>` refs, while the Justfile-driven build steps continue to run caller-specific logic from the checked-out consumer repo.
 
 **Keep self-refs in lockstep:** when bumping reusable workflow self-references, update **all** `projectbluefin/actions/bootc-build/*@<SHA>` entries in that workflow family to the same tested commit. Mixing self-ref SHAs means one pipeline can execute different generations of this repo's actions in a single run.
+
+Pin GitHub-hosted Linux jobs to explicit runner labels (`ubuntu-24.04` / `ubuntu-24.04-arm`) instead of `ubuntu-latest`, and set `timeout-minutes` on every lightweight helper job (`preflight`, `check`, `collect-digests`, release/validation/report jobs). The build matrix itself gets the longer explicit timeout because it can otherwise hold a runner indefinitely when podman or registry operations hang.
 
 ### Tag generation and manifest scope
 
