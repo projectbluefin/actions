@@ -425,7 +425,64 @@ permissions:
 
 ---
 
-## Live Path 2 consumer: dakota (BST/BuildStream)
+## Migration test
+
+A cross-registry migration gate for the `ublue-os/bluefin[-lts]` → `projectbluefin/bluefin[-lts]` transition. Boots the **source** image in QEMU, switches to the **target** via `bootc switch`, and validates the full `@migration` scenario matrix from `projectbluefin/testsuite`.
+
+Use this gate when validating that users migrating from the ublue-os registry to the projectbluefin registry land on a working system, including across the chunkah format boundary (legacy rpm-ostree rechunked layers → chunkah OCI-native layers).
+
+### Minimal wiring — build → migration gate → promote
+
+```yaml
+jobs:
+  build:
+    # ... your build steps ...
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+
+  migration-test:
+    needs: build
+    uses: projectbluefin/actions/.github/workflows/migration-test.yml@v1
+    permissions:
+      contents: read
+      packages: write
+    with:
+      source_image: ghcr.io/ublue-os/bluefin-lts:lts
+      migration_target: ghcr.io/projectbluefin/bluefin-lts@${{ needs.build.outputs.digest }}
+
+  promote:
+    needs: migration-test
+    if: needs.migration-test.outputs.result == 'success'
+    # ...
+```
+
+### Inputs reference
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `source_image` | **yes** | — | Full OCI ref to boot as the migration source (an `ublue-os/bluefin` or `ublue-os/bluefin-lts` image) |
+| `migration_target` | no | `""` | Full OCI ref to migrate TO. Empty = testsuite default (`projectbluefin/bluefin:stable`). Pass a pinned digest to gate on a specific freshly-built image |
+| `chunked_enabled` | no | `false` | Enable `@zstd_chunked` migration scenarios. Set `true` once the target image ships zstd:chunked layers |
+
+### Outputs reference
+
+| Output | Description |
+|---|---|
+| `result` | Job outcome: `success`, `failure`, `cancelled`, or `skipped` |
+
+### Migration scenarios validated
+
+| Scenario | Notes |
+|---|---|
+| `bootc switch` → reboot → confirm target | Core migration path |
+| `bootc rollback` → confirm source | Migration is reversible |
+| System identity/health after migration | `os-release`, `bootc status` |
+| Rollback digest preserved across chunkah boundary | No digest corruption |
+| Unified storage lane | `--experimental-unified-storage` |
+| Unified storage rollback | |
+| zstd:chunked lane | Only when `chunked_enabled: true` |
+
+Source: [`tests/lifecycle/features/migration.feature`](https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/migration.feature)
 
 dakota is structurally different from all other consumers — its image is produced by `bst build oci/bluefin.bst` inside a pinned `bst2` container, not `podman build` of a Containerfile. It is a **Path 2 only** consumer, permanently. The full reusable workflow (`reusable-build.yml`) will never apply.
 
