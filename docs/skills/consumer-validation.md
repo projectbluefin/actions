@@ -31,7 +31,26 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 
 - It runs on PR open, sync, ready-for-review, and PR body edits.
 - It only enforces the evidence fields when the PR changes `bootc-build/**/action.yml` or `.github/workflows/reusable-*.yml`.
-- It fails if the PR body is missing a consumer PR URL, a consumer CI run URL, or an out-of-org impact note.
+- It fails if any required field is missing or in the wrong format.
+
+**Bot/Renovate exemption:** PRs authored by a bot (login ending in `[bot]` or starting with `app/`, e.g. `renovate[bot]`, `mergeraptor[bot]`) are automatically exempt — they skip all three evidence checks. SHA pin bumps carry no behavior change and cannot provide consumer PR URLs.
+
+**N/A rules — which fields accept it:**
+
+| Field | Accepts "N/A"? | Requirement |
+|---|---|---|
+| `Consumer PR:` | ❌ No | Must be `https://github.com/projectbluefin/(bluefin\|bluefin-lts\|dakota)/pull/NNN` |
+| `Consumer CI run:` | ❌ No | Must be `.../actions/runs/NNN` |
+| `Out-of-org consumer impact:` | ✅ Yes | Any non-empty, non-`TODO`/`TBD` explanation (including "N/A — aurora/bazzite unaffected because...") |
+
+Even for additive-only changes (new optional input with a safe default), you still need to open a draft consumer PR and get a CI run number. The consumer CI run URL is what proves the action was exercised in a real workflow.
+
+**Cross-fork PRs:** External contributor PRs from forks need a maintainer to approve the pending workflow run before CI executes. Use:
+```bash
+gh api repos/projectbluefin/actions/actions/runs/<run-id>/approve -X POST
+```
+
+**After merging a fix to `consumer-validation.yml` itself:** `gh run rerun` re-executes the workflow from the HEAD branch's original commit — it ignores changes on `main`. To get a run using the updated workflow, push a new commit to the PR branch or admin-merge the PR directly.
 
 Treat the check as evidence collection, not as a substitute for real validation. Fake links still violate policy and should be rejected in review.
 

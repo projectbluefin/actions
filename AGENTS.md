@@ -38,6 +38,14 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 **Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
 
+**Consumer validation "N/A" rules (enforced by CI):** `Consumer PR:` and `Consumer CI run:` must be real GitHub URLs — `https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/NNN` and `.../actions/runs/NNN` respectively. "N/A" is **only** accepted for `Out-of-org consumer impact:`. Even additive-only changes need a draft consumer PR to get a run URL. Bot/Renovate PRs (author login ending in `[bot]` or starting with `app/`) are exempt automatically.
+
+**Consumer repos use `testing` as their active dev branch.** When opening consumer validation PRs or reading state in `projectbluefin/bluefin` or `projectbluefin/bluefin-lts`, always target `testing` — not `main`. Reading `main` gives stale state; PRs opened against `main` will need to be reverted.
+
+**`gh run rerun` does not pick up workflow changes from `main`.** After merging a fix to a workflow file (e.g. `consumer-validation.yml`), re-running an old failed run still executes the original workflow from the HEAD branch commit. To trigger a run with the updated workflow, push a new commit to the PR branch (triggering a `synchronize` event) or admin-merge the PR directly.
+
+**Skill files are procedures, not logs.** `docs/skills/` files must describe *how to do things* — patterns, commands, decision rules. Never record specific SHA hashes, PR numbers, current deployment status, or any point-in-time snapshot. Those become stale on the next commit and mislead future agents.
+
 **Verification:** Every PR must confirm that the action change was exercised in a real workflow (link to a CI run or test job). No untested changes.
 
 **Agents MUST NOT push directly to `main`.** All changes via PR from a feature branch. Branch protection enforces this; direct pushes are blocked for non-admins.

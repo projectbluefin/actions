@@ -113,16 +113,6 @@ These are the committed reference configs currently deployed in each repo's `.gi
 | `projectbluefin/bluefin-lts` | `'[".github/workflows/**", "build_files/**", "Justfile"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
 | `projectbluefin/dakota` | `'[".github/workflows/**", "build_files/**", "Justfile", "elements/**"]'` | `'["docs/skills/**", "docs/*.md", "AGENTS.md"]'` |
 
-### Current consumer deployment status
-
-The per-repo wrappers are no longer pending: all three consumer PRs merged on 2026-06-02, and the default branches now call `projectbluefin/actions/.github/workflows/skill-drift-check.yml@v1`.
-
-| Repo | PR | Branch | Status |
-|---|---|---|---|
-| `projectbluefin/bluefin` | [#239](https://github.com/projectbluefin/bluefin/pull/239) | `feat/skill-drift-wrapper` | Merged / deployed |
-| `projectbluefin/bluefin-lts` | [#24](https://github.com/projectbluefin/bluefin-lts/pull/24) | `feat/skill-drift-wrapper` | Merged / deployed |
-| `projectbluefin/dakota` | [#660](https://github.com/projectbluefin/dakota/pull/660) | `feat/skill-drift-wrapper` | Merged / deployed |
-
 ### Bypass
 
 Apply the label `skill-drift/no-update-needed` to the PR to silence the warning. This requires a CODEOWNER to apply it; the bypass is visible in the PR label history.
@@ -188,34 +178,43 @@ No `skill-metrics.json` artifact is produced currently (future enhancement if ba
 
 ### What it does
 
-Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. With `.github/renovate.json5` in place, qualifying PRs auto-merge when CI passes — no human review needed.
+Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes — no human review needed.
 
 ### Config
 
-File: `.github/renovate.json5`
+Two files co-exist:
+- `.github/renovate.json5` — base org config (inherited from `projectbluefin/renovate-config`)
+- `renovate.json` — repo-level overrides, including the `packageRules` automerge block
 
-```json5
+The effective automerge rule in `renovate.json`:
+
+```json
 {
-  "baseBranchPatterns": ["main"],
-  "rebaseWhen": "never",
   "packageRules": [
-    { "automerge": true, "matchUpdateTypes": ["pin", "pinDigest"] },
-    { "automerge": true, "matchManagers": ["github-actions"], "matchUpdateTypes": ["digest", "pinDigest"] }
+    {
+      "description": "Automerge chore dep updates (digest, pin, patch, minor) when CI passes",
+      "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr",
+      "automergeStrategy": "squash"
+    }
   ]
 }
 ```
 
-**What auto-merges:** GitHub Actions SHA pin and digest bumps (`pin`, `pinDigest`, `digest`). These are safe to auto-merge because they carry no behavior change — only the locked SHA changes.
+**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps — when all CI checks pass. These are safe to auto-merge because they carry no behavior change.
 
-**What never auto-merges:** Major version bumps, any update you explicitly add to a `automerge: false` rule, and any PR that fails CI.
+**What never auto-merges:** Major version bumps and any PR that fails CI.
+
+**Consumer-validation exemption:** Renovate PRs (author login ending in `[bot]` or starting with `app/`) are automatically exempt from the consumer PR + CI run evidence requirement, even when they touch action files. See `docs/skills/consumer-validation.md`.
 
 ### Validation workflow
 
-`.github/workflows/validate-renovate.yml` runs `renovate-config-validator --strict` on PRs and pushes that touch `renovate.json5`. Changes to the Renovate config that fail validation will be caught before merging.
+`.github/workflows/validate-renovate.yml` runs `renovate-config-validator --strict` on PRs and pushes that touch either Renovate config file. Changes that fail validation are caught before merging.
 
 ### Auto-merge repo setting
 
-The repository has `allow_auto_merge: true` enabled. Without this, GitHub ignores the `automerge` setting in `renovate.json5`.
+The repository has `allow_auto_merge: true` enabled. Without this, GitHub ignores the `automerge` setting regardless of config.
 
 ### Relationship to `@v1`
 
@@ -232,6 +231,7 @@ The recommended cadence: move `@v1` periodically after a batch of Renovate bumps
 | Symptom | Cause | Fix |
 |---|---|---|
 | Renovate PR won't auto-merge | `allow_auto_merge` disabled on repo | `gh api -X PATCH repos/projectbluefin/actions -f allow_auto_merge=true` |
+| Renovate PR consumer-validation fails | Bot exemption not firing | Verify author login ends in `[bot]` or starts with `app/` — check `gh pr view NNN --json author` |
 | Renovate PR has merge conflict | Another bump landed first; branches diverged | Locally checkout the branch, `git rebase origin/main`, force-push |
 | Two Renovate PRs update the same action | Both opened before either merged | Close the older/lower version one; merge the newer |
 
