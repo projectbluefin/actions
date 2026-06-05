@@ -21,6 +21,9 @@ inputs:
   retry-wait-seconds:
     description: "Seconds to wait between retries"
     default: "15"
+  compression-format:
+    description: "Podman push compression format (e.g. 'zstd:chunked', 'zstd', 'gzip')"
+    default: "zstd:chunked"
   force-compression:
     description: "Force recompression during podman push"
     default: "false"
@@ -72,6 +75,7 @@ runs:
         GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
         MAX_ATTEMPTS: ${{ inputs.max-attempts }}
         RETRY_WAIT: ${{ inputs.retry-wait-seconds }}
+        COMPRESSION_FORMAT: ${{ inputs.compression-format }}
         FORCE_COMPRESSION: ${{ inputs.force-compression }}
         DIGEST_FILE: ${{ runner.temp }}/push-digest
       run: |
@@ -99,7 +103,7 @@ runs:
           rm -f "${DIGEST_FILE}"
 
           sudo -E podman push \
-            --compression-format zstd:chunked \
+            --compression-format "${COMPRESSION_FORMAT}" \
             --compression-level 3 \
             ${FC_FLAG:+${FC_FLAG}} \
             --retry 5 --retry-delay 30s \
