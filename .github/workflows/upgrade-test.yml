@@ -84,7 +84,7 @@ permissions:
 jobs:
   upgrade-test:
     name: Upgrade & rollback — ${{ inputs.image }}
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@25c9ad0e8fe6ab13036646123d84641c00b7829b # main
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@fcbfd6aef2f3688056fbc758f9693f4f0953f2e5 # main
     permissions:
       contents: read
       packages: write
