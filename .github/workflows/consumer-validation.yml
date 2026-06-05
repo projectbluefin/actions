@@ -21,6 +21,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Renovate/bot PRs that only bump SHAs don't need consumer PR + CI run evidence.
+          pr_author="$(gh pr view "${PR_NUMBER}" --repo "${GH_REPO}" --json author --jq '.author.login')"
+          if printf '%s\n' "${pr_author}" | grep -qE '(\[bot\]$|^app/)'; then
+            echo "Bot PR detected (author: ${pr_author}); skipping consumer validation evidence check."
+            exit 0
+          fi
+
           changed_files="$(gh pr diff "${PR_NUMBER}" --repo "${GH_REPO}" --name-only)"
           requires_validation=false
 
