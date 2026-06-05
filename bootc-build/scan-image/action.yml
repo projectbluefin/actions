@@ -1,0 +1,41 @@
+name: "bootc-build/scan-image"
+description: "Scan a built OCI image for CVEs with Trivy. Run per-arch before push to gate on CRITICAL vulnerabilities."
+author: "projectbluefin"
+
+inputs:
+  image:
+    description: "Full image reference or local image name to scan (e.g. localhost/bluefin:latest)"
+    required: true
+  severity-threshold:
+    description: "Fail on this severity and above (CRITICAL, HIGH, MEDIUM, LOW). Set to CRITICAL to gate only on critical CVEs."
+    default: "CRITICAL"
+  exit-code:
+    description: "Exit code when vulnerabilities at or above threshold are found. Use '0' to report-only without failing (e.g. on PRs)."
+    default: "1"
+  ignore-unfixed:
+    description: "Ignore vulnerabilities that have no available fix"
+    default: "true"
+  github-token:
+    description: "Token for uploading SARIF results to GitHub Security tab"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Scan image with Trivy
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      with:
+        image-ref: ${{ inputs.image }}
+        format: sarif
+        output: trivy-results.sarif
+        severity: ${{ inputs.severity-threshold }}
+        exit-code: ${{ inputs.exit-code }}
+        ignore-unfixed: ${{ inputs.ignore-unfixed }}
+        vuln-type: os,library
+
+    - name: Upload SARIF to GitHub Security tab
+      if: always()
+      uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
+      with:
+        sarif_file: trivy-results.sarif
+        token: ${{ inputs.github-token }}

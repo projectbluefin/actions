@@ -36,10 +36,14 @@ runs:
 
         # Version pin — bump both CHUNKAH_SHA and CHUNKAH_VERSION together.
         # Containerfile.splitter is fetched from the matching release tag at build time.
+        # Version pin — bump CHUNKAH_VERSION, CHUNKAH_SHA, and bootc-build/chunka/Containerfile.splitter
+        # together in the same commit. The vendored Containerfile.splitter was fetched from the release
+        # at CHUNKAH_VERSION and verified: sha256:66d758ca7f6d3280d80c506e53d632391fb4150f1bc202fec876507d1d9b2ba7
+        # Do NOT fetch Containerfile.splitter from the network at build time — see docs/skills/supply-chain.md.
         CHUNKAH_VERSION="v0.5.0"
         CHUNKAH_SHA="sha256:352097f3d32186ac11082f8b74cd544678b00388b50c96ba5c8e79503a454fe3"
         CHUNKAH_REF="quay.io/coreos/chunkah:${CHUNKAH_VERSION}@${CHUNKAH_SHA}"
-        CONTAINERFILE_URL="https://github.com/coreos/chunkah/releases/download/${CHUNKAH_VERSION}/Containerfile.splitter"
+        CONTAINERFILE="${{ github.action_path }}/Containerfile.splitter"
 
         OUTPUT_TAG="${OUTPUT:-${SOURCE}}"
 
@@ -59,7 +63,7 @@ runs:
           -t "${OUTPUT_TAG}" \
           -v "$(pwd):/run/src" \
           --security-opt=label=disable \
-          "${CONTAINERFILE_URL}"
+          "${CONTAINERFILE}"
 
         sudo rm -f out.ociarchive
 
