@@ -32,6 +32,8 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 **SHA pinning:** Every `uses:` referencing a third-party action must be pinned to a full commit SHA with a version comment. PRs that introduce floating tags (`@main`, `@v3`) will be rejected.
 
+**Pre-commit guard:** `no-floating-action-tags` blocks third-party `@main`/`@v*` floating action tags in workflow and composite action files. This repo's own `@v1` refs in consumer repos are exempted from the guard in those repos — they are managed floating tags deliberately advanced by this repo's release process.
+
 **No breaking changes without a version signal:** Removing or renaming an input, or changing default behavior, requires coordinating with consuming repos. Document the blast radius in the PR description.
 
 **Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
