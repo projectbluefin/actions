@@ -1,5 +1,5 @@
 name: "bootc-build/scan-image"
-description: "Scan a built OCI image for CVEs with Trivy. Run per-arch before push to gate on CRITICAL vulnerabilities."
+description: "Scan a built OCI image for CVEs and secrets with Trivy. Scans OS packages, libraries, and OCI image config ENV layers for baked-in secrets. Run per-arch before push."
 author: "projectbluefin"
 
 inputs:
@@ -32,6 +32,10 @@ runs:
         exit-code: ${{ inputs.exit-code }}
         ignore-unfixed: ${{ inputs.ignore-unfixed }}
         vuln-type: os,library
+        # Scan filesystem layers for exposed secrets (API keys, tokens, credentials)
+        scanners: vuln,secret
+        # Scan OCI image config for secrets baked into ENV instructions
+        image-config-scanners: secret
 
     - name: Upload SARIF to GitHub Security tab
       if: always()
