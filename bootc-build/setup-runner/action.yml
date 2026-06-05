@@ -81,5 +81,6 @@ runs:
       id: podman-version
       shell: bash
       run: |
+        set -euo pipefail
         VERSION=$(podman --version 2>/dev/null | awk '{print $3}' || echo "unknown")
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"

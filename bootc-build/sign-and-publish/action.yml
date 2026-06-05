@@ -49,6 +49,7 @@ runs:
       if: inputs.signing-mode == 'keyless'
       shell: bash
       run: |
+        set -euo pipefail
         # id-token:write must be granted by the calling workflow
         # We check indirectly — if ACTIONS_ID_TOKEN_REQUEST_URL is unset, keyless will fail
         if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
@@ -62,6 +63,7 @@ runs:
       env:
         COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
       run: |
+        set -euo pipefail
         if [[ -z "${COSIGN_PRIVATE_KEY}" ]]; then
           echo "::error::signing-mode=key requires inputs.signing-key to be set."
           exit 1
@@ -107,6 +109,7 @@ runs:
         DIGEST: ${{ inputs.digest }}
         CERT_IDENTITY_REGEXP: ${{ inputs.certificate-identity-regexp }}
       run: |
+        set -euo pipefail
         cosign verify \
           --certificate-identity-regexp="${CERT_IDENTITY_REGEXP}" \
           --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
@@ -158,6 +161,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         GITHUB_ACTOR: ${{ github.actor }}
       run: |
+        set -euo pipefail
         echo "${GITHUB_TOKEN}" | oras login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
     - name: Attach SBOM via ORAS

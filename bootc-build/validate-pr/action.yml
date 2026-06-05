@@ -55,6 +55,7 @@ runs:
       env:
         SHELLCHECK_GLOB: ${{ inputs.shellcheck-glob }}
       run: |
+        set -euo pipefail
         shopt -s globstar nullglob
         # shellcheck disable=SC2086
         shellcheck ${SHELLCHECK_GLOB}

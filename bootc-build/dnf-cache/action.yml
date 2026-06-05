@@ -46,6 +46,7 @@ runs:
       if: inputs.action == 'save'
       shell: bash
       run: |
+        set -euo pipefail
         for d in /var/tmp/buildah-cache-*; do
           if [[ -d "$d" ]]; then
             sudo chmod 777 --recursive "$d"
