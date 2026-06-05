@@ -58,7 +58,7 @@ permissions: {}
 jobs:
   preflight:
     name: Preflight checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -76,6 +76,7 @@ jobs:
     name: image
     needs: [preflight]
     runs-on: ${{ matrix.architecture == 'x86_64' && 'ubuntu-24.04' || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 120
     env:
       DIGEST_FILE: ${{ github.workspace }}/.push-digest
     permissions:
@@ -499,7 +500,8 @@ jobs:
   check:
     name: Check all ${{ inputs.stream_name }} builds successful
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     needs: [build_container]
     steps:
       - name: Check Jobs
@@ -519,7 +521,8 @@ jobs:
 
   collect-digests:
     name: Collect image digests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs: [check]
     outputs:
       digests: ${{ steps.merge.outputs.digests || steps.empty.outputs.digests }}
