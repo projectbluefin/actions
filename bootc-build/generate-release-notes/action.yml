@@ -1,0 +1,38 @@
+name: "bootc-build/generate-release-notes"
+description: "Generate a structured Conventional Commits changelog with git-cliff. Wraps orhun/git-cliff-action."
+author: "projectbluefin"
+
+inputs:
+  tag:
+    description: "The release tag to generate notes for (e.g. v1.2.3). git-cliff uses this as the latest version."
+    required: true
+  output-file:
+    description: "Path to write the generated changelog markdown"
+    default: "CHANGELOG.md"
+  config:
+    description: "Path to cliff.toml config file. Defaults to cliff.toml in the repo root."
+    default: "cliff.toml"
+  github-token:
+    description: "GitHub token for API access (required for GitHub-flavored links in release notes)"
+    required: true
+
+outputs:
+  changelog:
+    description: "Path to the generated changelog file"
+    value: ${{ steps.generate.outputs.changelog }}
+  content:
+    description: "The generated changelog content (for use as release body)"
+    value: ${{ steps.generate.outputs.content }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate release notes with git-cliff
+      id: generate
+      uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
+      env:
+        OUTPUT: ${{ inputs.output-file }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      with:
+        config: ${{ inputs.config }}
+        args: --verbose --tag ${{ inputs.tag }}

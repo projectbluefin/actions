@@ -1,0 +1,61 @@
+name: Reusable Release
+# Reusable workflow for generating Conventional Commits release notes and creating a GitHub release.
+# Called by consuming repos with:
+#   uses: projectbluefin/actions/.github/workflows/reusable-release.yml@<pinned-ref>
+#
+# Requires the caller to push a semver tag (e.g. v1.2.3) to trigger release creation.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "The release tag to create (e.g. v1.2.3)"
+        required: true
+        type: string
+      draft:
+        description: "Create the release as a draft"
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark the release as a pre-release"
+        default: false
+        type: boolean
+      cliff-config:
+        description: "Path to cliff.toml config. Defaults to cliff.toml in the caller repo root."
+        default: "cliff.toml"
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  release:
+    name: Create release ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: release-notes
+        uses: projectbluefin/actions/bootc-build/generate-release-notes@f045e372410c02b4d3c4c059119b5e5540ffd023
+        with:
+          tag: ${{ inputs.tag }}
+          output-file: CHANGELOG.md
+          config: ${{ inputs.cliff-config }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          body: ${{ steps.release-notes.outputs.content }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
