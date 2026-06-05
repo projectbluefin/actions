@@ -404,6 +404,14 @@ Inside the reusable workflow, cross-repo composite action calls must use fully q
 
 `bootc-build/create-manifest` is also a Path 2 building block today. The reusable workflow builds and pushes per-architecture images and emits digests, but it does **not** assemble or push a multi-arch manifest index; callers that need a manifest job should add an explicit follow-on `create-manifest` step in their own workflow.
 
+### Digest output shape (multi-arch safe)
+
+The `digests` output is a nested JSON map: `{ "image-name": { "platform": "digest" } }`. Platform keys use OCI names (`amd64`, `arm64`), mapped from runner architecture names (`x86_64`, `aarch64`) during artifact writing. Single-arch builds produce one platform key per image; multi-arch builds produce one per architecture.
+
+This shape is directly compatible with `create-manifest`'s `digests-json` input — callers can iterate the outer map and pass each inner object to `create-manifest` without reshaping.
+
+The digest artifact files use pipe-delimited format (`image_name|oci_platform|digest`) so that the `collect-digests` job can build the nested structure without key collisions across architectures.
+
 ### JSON array inputs
 
 Any input consumed via `fromJson()` must be valid JSON. That means string items inside the array must use **double quotes**.
