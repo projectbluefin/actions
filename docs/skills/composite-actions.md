@@ -400,6 +400,8 @@ Inputs:
 
 Outputs: `changelog` (file path), `content` (markdown string suitable as a GitHub Release body).
 
+**Validate the tag input first:** before passing `inputs.tag` to git-cliff, add a small shell step that validates a semver-like tag pattern (for example `v1.2.3`, `1.2.3`, `v1.2.3-rc.1`). Pass the input through `env:` and fail with `::error::` on malformed values.
+
 **Fetch depth:** git-cliff needs full commit history. Call with `fetch-depth: 0` when checking out.
 
 Used by `reusable-release.yml` to automate GitHub Release creation on tag push. See "Reusable workflows" below.

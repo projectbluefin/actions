@@ -27,6 +27,18 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate tag format
+      shell: bash
+      env:
+        INPUT_TAG: ${{ inputs.tag }}
+      run: |
+        set -euo pipefail
+        # Validate tag matches semver-like format: v1.2.3, v1.2, 1.2.3, v1.2.3-rc.1, etc.
+        if ! [[ "${INPUT_TAG}" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9._-]+)?(\+[a-zA-Z0-9._-]+)?$ ]]; then
+          echo "::error::Invalid tag format '${INPUT_TAG}'. Expected semver format: v1.2.3, v1.2.3-rc.1, etc."
+          exit 1
+        fi
+
     - name: Generate release notes with git-cliff
       id: generate
       uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
