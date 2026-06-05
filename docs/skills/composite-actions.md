@@ -470,6 +470,8 @@ When a consuming repo calls the workflow:
 
 Inside the reusable workflow, cross-repo composite action calls must use fully qualified `projectbluefin/actions/bootc-build/<name>@<SHA>` refs, while the Justfile-driven build steps continue to run caller-specific logic from the checked-out consumer repo.
 
+**Keep self-refs in lockstep:** when bumping reusable workflow self-references, update **all** `projectbluefin/actions/bootc-build/*@<SHA>` entries in that workflow family to the same tested commit. Mixing self-ref SHAs means one pipeline can execute different generations of this repo's actions in a single run.
+
 ### Tag generation and manifest scope
 
 `reusable-build.yml` intentionally keeps tag generation in the caller repo by running `just generate-build-tags` instead of `bootc-build/generate-tags`. That is part of the Path 1 Justfile contract, alongside `image_name`, `generate-default-tag`, `build-ghcr`, and `tag-images`.

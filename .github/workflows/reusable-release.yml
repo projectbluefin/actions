@@ -44,7 +44,7 @@ jobs:
 
       - name: Generate release notes
         id: release-notes
-        uses: projectbluefin/actions/bootc-build/generate-release-notes@f045e372410c02b4d3c4c059119b5e5540ffd023
+        uses: projectbluefin/actions/bootc-build/generate-release-notes@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           tag: ${{ inputs.tag }}
           output-file: CHANGELOG.md

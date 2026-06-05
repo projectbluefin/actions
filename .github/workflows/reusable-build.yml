@@ -100,7 +100,7 @@ jobs:
           submodules: recursive
 
       - name: Setup runner
-        uses: projectbluefin/actions/bootc-build/setup-runner@1845e36f17f998e164b697c5518d3abc062e9ef9
+        uses: projectbluefin/actions/bootc-build/setup-runner@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           storage-backend: btrfs
           update-podman: "true"
@@ -148,7 +148,7 @@ jobs:
 
       - name: Restore DNF package cache
         id: dnf-cache-restore
-        uses: projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9
+        uses: projectbluefin/actions/bootc-build/dnf-cache@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           action: restore
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -197,7 +197,7 @@ jobs:
 
       - name: Save DNF package cache
         if: always() && !cancelled()
-        uses: projectbluefin/actions/bootc-build/dnf-cache@1845e36f17f998e164b697c5518d3abc062e9ef9
+        uses: projectbluefin/actions/bootc-build/dnf-cache@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           action: save
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -350,7 +350,7 @@ jobs:
                           "${ALIAS_TAGS}"
 
       - name: Scan image for vulnerabilities
-        uses: projectbluefin/actions/bootc-build/scan-image@a546169689d8746d53ac23041c13506171a09194
+        uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           image: ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           severity-threshold: ${{ inputs.scan-severity-threshold }}
@@ -361,7 +361,7 @@ jobs:
       - name: Push to GHCR
         id: push
         if: github.event_name != 'pull_request'
-        uses: projectbluefin/actions/bootc-build/push-image@1845e36f17f998e164b697c5518d3abc062e9ef9
+        uses: projectbluefin/actions/bootc-build/push-image@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           image-name: ${{ env.IMAGE_NAME }}
           tags: ${{ env.DEFAULT_TAG }} ${{ steps.generate-tags.outputs.alias_tags }}
@@ -470,7 +470,7 @@ jobs:
 
       - name: Sign, publish SBOM, and attest
         if: github.event_name != 'pull_request'
-        uses: projectbluefin/actions/bootc-build/sign-and-publish@c1c064a8ad0266cc1b4348981dcde6b881b4fbfd
+        uses: projectbluefin/actions/bootc-build/sign-and-publish@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
