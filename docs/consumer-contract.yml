@@ -1,0 +1,158 @@
+# Consumer Contract Snapshot — projectbluefin/actions
+#
+# This file records the interface surface consumed by external repos
+# (ublue-os/aurora, ublue-os/bazzite) via projectbluefin/actions@v1.
+#
+# Purpose: check-consumer-contract.py diffs this snapshot against the live
+# action.yml / reusable-build.yml files and fails if any required input that
+# external consumers depend on has been removed or renamed.
+#
+# Update this file ONLY when:
+#   a) A breaking change is intentionally versioned (new @v2 tag shipped), OR
+#   b) A new required input is added that consumers must adopt explicitly.
+#
+# Run: python3 scripts/check-consumer-contract.py
+# Or:  pre-commit run check-consumer-contract (via .pre-commit-config.yaml)
+#
+# Last verified against aurora/bazzite: 2026-06-05
+
+reusable_workflow:
+  path: .github/workflows/reusable-build.yml
+  # Inputs that aurora and bazzite pass by name. Renaming or removing any of
+  # these without a version bump will silently break out-of-org consumers.
+  required_inputs:
+    - stream_name
+  optional_inputs:
+    - brand_name
+    - image_flavors
+    - kernel_pin
+    - architecture
+    - pr_number
+
+composite_actions:
+  setup-runner:
+    path: bootc-build/setup-runner/action.yml
+    required_inputs: []
+    optional_inputs:
+      - storage-backend
+      - update-podman
+      - install-tools
+
+  preflight:
+    path: bootc-build/preflight/action.yml
+    required_inputs:
+      - github-token
+    optional_inputs:
+      - registry
+      - image-name
+      - required-secrets
+
+  validate-pr:
+    path: bootc-build/validate-pr/action.yml
+    required_inputs: []
+    optional_inputs:
+      - dockerfile
+      - hadolint-config
+      - shellcheck-glob
+      - system-files-shellcheck-glob
+      - enable-desktop-file-validate
+      - check-submodule-drift
+
+  detect-changes:
+    path: bootc-build/detect-changes/action.yml
+    required_inputs: []
+    optional_inputs:
+      - filters
+
+  dnf-cache:
+    path: bootc-build/dnf-cache/action.yml
+    required_inputs:
+      - action
+      - cache-name
+    optional_inputs:
+      - architecture
+      - image-flavor
+      - allow-write
+      - cache-path
+
+  generate-tags:
+    path: bootc-build/generate-tags/action.yml
+    required_inputs:
+      - base-name
+      - stream-name
+      - version-label
+      - event-name
+    optional_inputs:
+      - image-flavor
+      - kernel-pin
+      - pr-number
+
+  push-image:
+    path: bootc-build/push-image/action.yml
+    required_inputs:
+      - image-name
+      - tags
+      - github-token
+    optional_inputs:
+      - default-tag
+      - registry
+      - max-attempts
+      - retry-wait-seconds
+      - compression-format
+      - force-compression
+      - fix-auth-permissions
+
+  create-manifest:
+    path: bootc-build/create-manifest/action.yml
+    required_inputs:
+      - image-name
+      - digests-json
+      - tags
+      - github-token
+    optional_inputs:
+      - registry
+      - labels
+
+  sign-and-publish:
+    path: bootc-build/sign-and-publish/action.yml
+    required_inputs:
+      - image
+      - digest
+      - github-token
+    optional_inputs:
+      - signing-mode
+      - signing-key
+      - generate-sbom
+      - push-attestation
+      - syft-version
+      - image-name
+
+  chunka:
+    path: bootc-build/chunka/action.yml
+    required_inputs:
+      - source-image
+    optional_inputs:
+      - output-image
+      - max-layers
+      - force-compression
+
+  rechunk:
+    path: bootc-build/rechunk/action.yml
+    required_inputs:
+      - source-image
+    optional_inputs:
+      - output-image
+      - max-layers
+      - format-version
+      - previous-build
+      - bootc
+
+  ghcr-cleanup:
+    path: bootc-build/ghcr-cleanup/action.yml
+    required_inputs:
+      - packages
+      - github-token
+    optional_inputs:
+      - older-than
+      - keep-n-tagged
+      - keep-n-untagged
