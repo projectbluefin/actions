@@ -31,7 +31,9 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Understand zstd:chunked compression invariants or run regression tests | `docs/skills/composite-actions.md` → "Compression regression tests" |
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
 | Verify SHA pins are correct and comments are accurate | `docs/skills/determinism.md` → "Already pinned" |
-| Run a security audit of actions | `docs/skills/composite-actions.md` → "Shell steps" + "SHA Pinning" + `docs/skills/determinism.md` + `docs/skills/supply-chain.md` |
+| Add or scan an image for CVEs before push | `docs/skills/supply-chain.md` → "shift-left CVE scanning" + `docs/skills/composite-actions.md` → "scan-image" |
+| Generate release notes and create a GitHub Release | `docs/skills/composite-actions.md` → "generate-release-notes" + "reusable-release.yml" |
+| Enforce Conventional Commits PR title format | `docs/skills/composite-actions.md` → "validate-pr-title" |
 | Understand SLSA Build L2 posture and scope | `docs/skills/supply-chain.md` → "SLSA Build L2 posture" |
 | Verify a built image attestation | `docs/skills/supply-chain.md` → "Verification" |
 | Add or update cosign verify scoping | `docs/skills/supply-chain.md` → "scope cosign verify" |

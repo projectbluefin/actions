@@ -24,15 +24,24 @@ Maintainers: see [docs/MAINTAINERS.md](docs/MAINTAINERS.md) for the agentic work
 | [`bootc-build/generate-tags`](bootc-build/generate-tags/) | Generate OCI image tags from stream, version, and event context |
 | [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
 | [`bootc-build/create-manifest`](bootc-build/create-manifest/) | Assemble and push a multi-arch OCI image manifest index |
-| [`bootc-build/sign-and-publish`](bootc-build/sign-and-publish/) | Cosign sign + SBOM + attestation |
+| [`bootc-build/sign-and-publish`](bootc-build/sign-and-publish/) | Cosign sign + SBOM + SLSA Build L2 provenance attestation |
+| [`bootc-build/scan-image`](bootc-build/scan-image/) | Trivy CVE scan before push; uploads SARIF to GitHub Security tab |
 | [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
 | [`bootc-build/chunka`](bootc-build/chunka/) | chunkah rechunking (OCI-native, no rpm-ostree) |
+| [`bootc-build/generate-release-notes`](bootc-build/generate-release-notes/) | git-cliff Conventional Commits changelog |
 
-### P2 — Polish (coming soon)
+### Utility actions
 
 | Action | Purpose |
 |--------|---------|
-| `bootc-build/generate-release` | Changelog and GitHub release |
+| [`.github/actions/validate-pr-title`](.github/actions/validate-pr-title/) | Enforce Conventional Commits PR title format |
+
+## Reusable Workflows
+
+| Workflow | Purpose |
+|--------|---------|
+| [`.github/workflows/reusable-build.yml`](.github/workflows/reusable-build.yml) | Full Fedora bootc image build pipeline (Path 1) |
+| [`.github/workflows/reusable-release.yml`](.github/workflows/reusable-release.yml) | Changelog generation and GitHub Release creation |
 
 ## Quick Start
 
