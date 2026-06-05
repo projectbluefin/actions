@@ -431,6 +431,8 @@ The repo provides two reusable workflows:
 | `.github/workflows/reusable-build.yml` | Full Fedora bootc image build pipeline (Path 1) |
 | `.github/workflows/reusable-release.yml` | Changelog generation and GitHub Release creation |
 
+**Permissions hardening:** default reusable workflows to `permissions: {}` at the workflow level, then grant the minimum required scopes per job. Do not rely on workflow-level `packages: write`/`contents: write` unless every job in the file truly needs that access.
+
 ### `reusable-build.yml` — calling from a consuming repo
 
 ```yaml

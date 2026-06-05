@@ -77,9 +77,7 @@ on:
         description: "Outcome of the upgrade test job: success, failure, cancelled, or skipped"
         value: ${{ jobs.report.outputs.result }}
 
-permissions:
-  contents: read
-  packages: write   # required by testsuite e2e.yml for screenshot OCI push
+permissions: {}
 
 jobs:
   upgrade-test:
@@ -99,6 +97,8 @@ jobs:
     needs: upgrade-test
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       result: ${{ needs.upgrade-test.result }}
     steps:
