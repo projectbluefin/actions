@@ -12,7 +12,7 @@ on:
   workflow_call:
     outputs:
       digests:
-        description: "JSON map of image_name to digest"
+        description: "JSON map of image_name to platform-digest map, e.g. {\"bluefin-main\": {\"amd64\": \"sha256:...\"}}"
         value: ${{ jobs.collect-digests.outputs.digests }}
     inputs:
       image_flavors:
@@ -429,8 +429,18 @@ jobs:
           MATRIX_ARCHITECTURE: ${{ matrix.architecture }}
           PUSH_DIGEST: ${{ steps.push.outputs.digest }}
         run: |
+          set -euo pipefail
           mkdir -p /tmp/digests
-          echo "${IMAGE_NAME}=${PUSH_DIGEST}" >> "/tmp/digests/${MATRIX_IMAGE_FLAVOR}-${MATRIX_BASE_NAME}-${MATRIX_ARCHITECTURE}.txt"
+
+          # Map runner architecture names to OCI platform names for create-manifest
+          case "${MATRIX_ARCHITECTURE}" in
+            x86_64)  OCI_PLATFORM="amd64" ;;
+            aarch64) OCI_PLATFORM="arm64" ;;
+            *)       OCI_PLATFORM="${MATRIX_ARCHITECTURE}" ;;
+          esac
+
+          # Format: image_name|oci_platform|digest — one line per arch per image
+          echo "${IMAGE_NAME}|${OCI_PLATFORM}|${PUSH_DIGEST}" >> "/tmp/digests/${MATRIX_IMAGE_FLAVOR}-${MATRIX_BASE_NAME}-${MATRIX_ARCHITECTURE}.txt"
 
       - name: Upload digest artifact
         if: github.event_name != 'pull_request'
@@ -511,8 +521,22 @@ jobs:
       - name: Merge digests
         if: github.event_name != 'pull_request'
         id: merge
+        shell: bash
         run: |
-          DIGESTS=$(cat /tmp/digests/*.txt | jq -Rs 'split("\n") | map(select(length > 0)) | map(split("=")) | map({(.[0]): .[1]}) | add')
+          set -euo pipefail
+
+          # Each line is: image_name|oci_platform|digest
+          # Build nested JSON: { "image_name": { "platform": "digest", ... }, ... }
+          # Single-arch builds produce { "image_name": { "amd64": "sha256:..." } }
+          # Multi-arch builds produce { "image_name": { "amd64": "sha256:...", "arm64": "sha256:..." } }
+          DIGESTS=$(cat /tmp/digests/*.txt | jq -Rs '
+            split("\n")
+            | map(select(length > 0))
+            | map(split("|"))
+            | map(select(length == 3))
+            | reduce .[] as $row ({}; .[$row[0]][$row[1]] = $row[2])
+          ')
+
           {
             echo "digests<<EOF"
             echo "${DIGESTS}"

@@ -88,8 +88,10 @@ jobs:
 
 ```yaml
 outputs:
-  digests:   # JSON map: { "my-image-main": "sha256:abc..." }
+  digests:   # Nested JSON: { "my-image-main": { "amd64": "sha256:abc..." } }
 ```
+
+Each image name maps to a platform→digest object. Single-arch builds have one entry (e.g. `{"amd64": "sha256:..."}`); multi-arch builds have one per architecture. The platform keys use OCI names (`amd64`, `arm64`) and the digest objects are directly usable as `digests-json` input to `create-manifest@v1`.
 
 Consume downstream in a signing or release job:
 
