@@ -1,0 +1,49 @@
+name: "validate-pr-title"
+description: "Validate that a PR title follows Conventional Commits format. Fails with a clear error and examples on mismatch."
+author: "projectbluefin"
+
+inputs:
+  pr-title:
+    description: "The pull request title to validate"
+    required: true
+  custom-pattern:
+    description: >
+      Optional override for the validation regex. Defaults to the factory-wide Conventional
+      Commits pattern: ^(feat|fix|chore|docs|refactor|test|perf|ci|build|revert)(\(.+\))?: .+$
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate PR title
+      shell: bash
+      env:
+        PR_TITLE: ${{ inputs.pr-title }}
+        CUSTOM_PATTERN: ${{ inputs.custom-pattern }}
+      run: |
+        set -euo pipefail
+
+        PATTERN="${CUSTOM_PATTERN:-^(feat|fix|chore|docs|refactor|test|perf|ci|build|revert)(\(.+\))?: .+$}"
+
+        if echo "${PR_TITLE}" | grep -qP "${PATTERN}"; then
+          echo "✅ PR title follows Conventional Commits: '${PR_TITLE}'"
+        else
+          echo "::error::PR title does not follow Conventional Commits format."
+          echo ""
+          echo "  Title:    ${PR_TITLE}"
+          echo "  Pattern:  ${PATTERN}"
+          echo ""
+          echo "Expected format:  <type>[optional scope]: <description>"
+          echo ""
+          echo "Valid types:  feat  fix  chore  docs  refactor  test  perf  ci  build  revert"
+          echo ""
+          echo "Examples:"
+          echo "  feat: add Trivy CVE scanning action"
+          echo "  fix(chunka): vendor Containerfile.splitter"
+          echo "  chore(deps): bump actions/checkout to v4.2.0"
+          echo "  docs: document SLSA Build L2 scope"
+          echo "  ci: wire scan-image into reusable-build"
+          echo ""
+          echo "See: https://www.conventionalcommits.org/"
+          exit 1
+        fi
