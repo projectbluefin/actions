@@ -221,15 +221,22 @@ Two signing modes:
 - `keyless` (default): OIDC/Fulcio via `cosign sign -y`. **Requires** `id-token: write` in the calling job. Validated early — fails immediately if `ACTIONS_ID_TOKEN_REQUEST_URL` is unset.
 - `key`: `cosign sign -y --key env://COSIGN_PRIVATE_KEY`. Requires `inputs.signing-key` to be set.
 
-SBOM flow (when `generate-sbom: true`): Syft generates SPDX JSON → ORAS attaches it to the registry → cosign signs the SBOM artifact itself.
+**Step order (important):** gen-sbom → GitHub SBOM attestation → ORAS attach → sign SBOM artifact → SLSA provenance attestation.
 
-After the keyless image sign step, immediately run `cosign verify` with the GitHub Actions OIDC issuer to fail fast if the signature was not applied as expected. The `--certificate-identity-regexp` matches on the **org prefix** (`https://github.com/<org>/`) rather than the full repository identity — this is required because when signing runs inside a reusable workflow (e.g. `projectbluefin/actions`), the OIDC certificate identity reflects the actions repo, not the calling consumer repo. Matching on the org prefix accepts both cases.
+**SBOM flow** (when `generate-sbom: true`): Syft generates SPDX JSON → `actions/attest` with `sbom-path` creates a GitHub-native SBOM attestation in the attestation store → ORAS attaches the same SPDX JSON as an OCI referrer artifact → cosign signs the ORAS artifact digest. Both are needed: ORAS serves OCI-native consumers; the GitHub attestation store serves `gh attestation verify` and GitHub-native consumers.
+
+**SLSA Build L2 provenance:** `actions/attest-build-provenance` (when `push-attestation: true`) emits the `https://slsa.dev/provenance/v1` predicate automatically from the OIDC token — capturing workflow ref, git SHA, trigger event, and runner environment. This satisfies SLSA Build L2 on GitHub-hosted runners. Self-hosted runners are **explicitly out of scope** — see `docs/skills/supply-chain.md`.
+
+**Cosign verify scoping:** After the keyless image sign step, `cosign verify` runs immediately with `--certificate-identity-regexp` sourced from the `certificate-identity-regexp` input (default: `projectbluefin/(bluefin|bluefin-lts|aurora|actions)`). This is scoped to specific repos rather than the entire org to prevent a compromised org repo from passing verification. Callers outside the org must override the input with their own prefix.
 
 **Retry policy:** All four `cosign sign` invocations (image keyless, image key-based, SBOM keyless, SBOM key-based) are wrapped with `nick-fields/retry` — 3 attempts, 30s wait between attempts, 5 min timeout per attempt. This reduces unsigned-image publishes from transient Rekor/TUF connectivity failures.
 
 **Known workaround:** `sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore"` is needed before cosign operations — the sigstore cache directory sometimes has wrong ownership on GitHub-hosted runners.
 
-GitHub attestation pushed via `actions/attest` (always when `push-attestation: true`, regardless of signing mode).
+Verify attestations after a build with:
+```bash
+gh attestation verify oci://ghcr.io/projectbluefin/bluefin@<digest> --repo projectbluefin/bluefin
+```
 
 ### `rechunk`
 
@@ -241,10 +248,11 @@ Runs `rpm-ostree compose build-chunked-oci` **inside** the source image itself (
 
 ### `chunka`
 
-OCI-native rechunking via [chunkah](https://github.com/coreos/chunkah). Uses `buildah build` with the upstream `Containerfile.splitter` — no rpm-ostree required.
+OCI-native rechunking via [chunkah](https://github.com/coreos/chunkah). Uses `buildah build` with a **vendored** `Containerfile.splitter` — no rpm-ostree required.
 
 Key design decisions:
-- `CHUNKAH_VERSION` and `CHUNKAH_SHA` are defined once and derive both the image ref (`quay.io/coreos/chunkah:<VERSION>@<SHA>`) and the `Containerfile.splitter` URL. **Bump both together** when upgrading.
+- `CHUNKAH_VERSION`, `CHUNKAH_SHA`, and `bootc-build/chunka/Containerfile.splitter` are all version-pinned. **Bump all three together** when upgrading — see `docs/skills/supply-chain.md` for the step-by-step procedure.
+- `Containerfile.splitter` is vendored at `bootc-build/chunka/Containerfile.splitter` and referenced by local path (`${{ github.action_path }}/Containerfile.splitter`). It is **never fetched from the network at build time** — fetching from a mutable release URL is a supply-chain attack vector.
 - `CHUNKAH_CONFIG_STR=$(sudo podman inspect "${SOURCE}")` passes existing OCI labels through so `containers.bootc=1` and other metadata are preserved.
 - Mandatory cleanup flags (`--prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-`) strip stale OSTree annotations and are hardcoded — they are correctness requirements, not tuning knobs.
 - `output-image` defaults to `source-image` (in-place rechunk).
@@ -357,13 +365,73 @@ Inputs:
 
 **When updating hadolint or taiki-e/install-action SHA pins:** edit only the pin in `bootc-build/validate-pr/action.yml`. All consuming repos pick up the update automatically when their `projectbluefin/actions` Renovate bump PR merges.
 
+### `scan-image`
+
+Wraps `aquasecurity/trivy-action` to scan a locally built OCI image for CVEs **before push**. Uploads SARIF results to the GitHub Security tab unconditionally (always, whether the scan passes or fails) so findings appear as annotations.
+
+**Placement rule:** must run per-arch in the matrix build job, after `Tag Images` and **before** `Push to GHCR`. Scanning after push means shipping a known-critical image to the registry. This action is already wired into `reusable-build.yml` at the correct position.
+
+Inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `image` | required | Local image ref to scan (e.g. `localhost/bluefin:latest`) |
+| `severity-threshold` | `CRITICAL` | Fail on this severity and above |
+| `exit-code` | `1` | Set to `0` for report-only (no gate) — use on PR builds |
+| `ignore-unfixed` | `true` | Skip vulns with no available fix |
+| `github-token` | required | Token for SARIF upload |
+
+In `reusable-build.yml`, `exit-code` is automatically `0` on `pull_request` events and `1` on push events. The `scan-severity-threshold` workflow input lets callers override the threshold (default: `CRITICAL`).
+
+**Permission required:** the calling job needs `security-events: write` for SARIF upload. This is already set on the `build_container` job in `reusable-build.yml`.
+
+### `generate-release-notes`
+
+Wraps `orhun/git-cliff-action` to parse Conventional Commits and generate structured markdown changelogs. Requires a `cliff.toml` in the repo root (a factory-wide config is provided at the root of this repo and can be copied).
+
+Inputs:
+
+| Input | Default | Description |
+|---|---|---|
+| `tag` | required | Release tag to generate notes for (e.g. `v1.2.3`) |
+| `output-file` | `CHANGELOG.md` | Path to write the changelog |
+| `config` | `cliff.toml` | Path to cliff.toml |
+| `github-token` | required | For GitHub-flavored commit links |
+
+Outputs: `changelog` (file path), `content` (markdown string suitable as a GitHub Release body).
+
+**Fetch depth:** git-cliff needs full commit history. Call with `fetch-depth: 0` when checking out.
+
+Used by `reusable-release.yml` to automate GitHub Release creation on tag push. See "Reusable workflows" below.
+
+### `validate-pr-title`
+
+Validates that a PR title matches the Conventional Commits format required across all factory repos. Lives at `.github/actions/validate-pr-title/action.yml` (not `bootc-build/`).
+
+Pattern enforced: `^(feat|fix|chore|docs|refactor|test|perf|ci|build|revert)(\(.+\))?: .+$`
+
+Accepts an optional `custom-pattern` input for repos with stricter conventions. On failure, emits a clear error showing the failing title, the pattern, all valid types, and 5 concrete examples.
+
+Consumer usage (call from any PR validation workflow):
+
+```yaml
+- uses: projectbluefin/actions/.github/actions/validate-pr-title@v1
+  with:
+    pr-title: ${{ github.event.pull_request.title }}
+```
+
 ---
 
-## Reusable workflow
+## Reusable workflows
 
-The repo provides a complete reusable workflow at `.github/workflows/reusable-build.yml` for Fedora-based bootc image builds (bluefin, aurora, etc.).
+The repo provides two reusable workflows:
 
-### Calling from a consuming repo
+| Workflow | Purpose |
+|---|---|
+| `.github/workflows/reusable-build.yml` | Full Fedora bootc image build pipeline (Path 1) |
+| `.github/workflows/reusable-release.yml` | Changelog generation and GitHub Release creation |
+
+### `reusable-build.yml` — calling from a consuming repo
 
 ```yaml
 jobs:
@@ -440,6 +508,24 @@ The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/
 
 SBOM generation and upload should run for every non-PR build, including the `testing` stream. Weekly promotions retag testing digests directly to production tags, so skipping SBOM on testing leaves promoted images without signed SBOM referrers.
 
+### `reusable-release.yml` — calling from a consuming repo
+
+```yaml
+jobs:
+  release:
+    uses: projectbluefin/actions/.github/workflows/reusable-release.yml@v1
+    secrets: inherit
+    with:
+      tag: ${{ github.ref_name }}   # e.g. v1.2.3
+      # draft: false                # optional
+      # prerelease: false           # optional
+      # cliff-config: cliff.toml   # optional; defaults to repo root
+```
+
+The workflow checks out with `fetch-depth: 0` (required by git-cliff), runs `generate-release-notes`, and creates a GitHub Release with the generated body. The caller's repo needs `contents: write` — this is already granted in the workflow via `permissions: { contents: write }` on the `release` job.
+
+**`cliff.toml` requirement:** a `cliff.toml` must exist in the caller's repo root (or override via `cliff-config` input). A factory-wide config is available at the root of this repo and can be copied verbatim.
+
 ---
 
 ## Rollout strategy
@@ -485,10 +571,11 @@ Document the blast radius (which repos, which inputs change) in the PR descripti
 1. Create `bootc-build/<name>/action.yml`.
 2. Pin all external `uses:` to commit SHAs with version comments.
 3. Use the `env:` block pattern for all inputs passed to shell.
-4. Add the action to the table in `README.md`.
-5. Add a row to the skill routing table in `docs/SKILL.md`.
-6. Add an entry to the action-by-action reference section above.
-7. Add the action to the catalog table in `docs/skills/consumer-guide.md`.
+4. If the action downloads or references any external file (Containerfile, script, config) at runtime, vendor it or verify its SHA-256 — see `docs/skills/supply-chain.md`.
+5. Add the action to the table in `README.md`.
+6. Add a row to the skill routing table in `docs/SKILL.md`.
+7. Add an entry to the action-by-action reference section above.
+8. Add the action to the catalog table in `docs/skills/consumer-guide.md`.
 
 ---
 

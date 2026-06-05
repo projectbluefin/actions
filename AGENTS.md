@@ -30,6 +30,8 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 **Skill contribution (enforced):** If you discover a pattern, fix a recurring mistake, or learn something that would help future agents — update the relevant file in `docs/skills/` in the **same PR** as your change. If no skill file exists for the area, create one and add it to the routing table in `docs/SKILL.md`. Skills live here, not in per-agent configs.
 
+**Supply chain gates:** Every action that downloads external files (Containerfiles, scripts, configs) at build time must vendor those files into the action directory or verify their SHA-256 before use. Never pass a mutable URL directly to `buildah build` or `bash`. See `docs/skills/supply-chain.md` for the full pattern and the chunkah `Containerfile.splitter` vendoring procedure.
+
 **SHA pinning:** Every `uses:` referencing a third-party action must be pinned to a full commit SHA with a version comment. PRs that introduce floating tags (`@main`, `@v3`) will be rejected.
 
 **Pre-commit guard:** `no-floating-action-tags` blocks third-party `@main`/`@v*` floating action tags in workflow and composite action files. This repo's own `@v1` refs in consumer repos are exempted from the guard in those repos — they are managed floating tags deliberately advanced by this repo's release process.
