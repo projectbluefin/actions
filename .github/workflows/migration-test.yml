@@ -99,7 +99,7 @@ jobs:
     name: Migration — ${{ inputs.source_image }}
     # NOTE: bump this SHA after merging projectbluefin/testsuite migration-target plumbing PR.
     # The migration-target and extra-tags inputs require testsuite e2e.yml >= that merge.
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@89010b9222a8db2defd8e1ef77668cc221b15385 # main (includes migration-target + extra-tags inputs, PR #311)
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@20fb066e50c81d62d15cf84633d36c260c4115db # main (includes migration-target + extra-tags inputs, PR #311)
     permissions:
       contents: read
       packages: write
