@@ -31,7 +31,12 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Understand zstd:chunked compression invariants or run regression tests | `docs/skills/composite-actions.md` → "Compression regression tests" |
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
 | Verify SHA pins are correct and comments are accurate | `docs/skills/determinism.md` → "Already pinned" |
-| Run a security audit of actions | `docs/skills/composite-actions.md` → "Shell steps" + "SHA Pinning" + `docs/skills/determinism.md` |
+| Run a security audit of actions | `docs/skills/composite-actions.md` → "Shell steps" + "SHA Pinning" + `docs/skills/determinism.md` + `docs/skills/supply-chain.md` |
+| Understand SLSA Build L2 posture and scope | `docs/skills/supply-chain.md` → "SLSA Build L2 posture" |
+| Verify a built image attestation | `docs/skills/supply-chain.md` → "Verification" |
+| Add or update cosign verify scoping | `docs/skills/supply-chain.md` → "scope cosign verify" |
+| Add or update Trivy CVE scanning | `docs/skills/supply-chain.md` → "shift-left CVE scanning" |
+| Vendor or hash-verify an external build file | `docs/skills/supply-chain.md` → "vendor external build instruction files" |
 | Understand or configure the production gate (2-human approval) | `docs/skills/factory-operations.md` → "Production Gate" |
 | Understand the skill-drift PR check | `docs/skills/factory-operations.md` → "Skill-Drift PR Check" |
 | Understand the weekly skill audit | `docs/skills/factory-operations.md` → "Skill Audit" |
@@ -46,3 +51,4 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius before merge |
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
 | [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, scheduled skill audit, and Renovate auto-merge |
+| [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |

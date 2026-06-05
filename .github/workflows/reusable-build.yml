@@ -40,6 +40,11 @@ on:
         default: ""
         required: false
         type: string
+      scan-severity-threshold:
+        description: "Trivy CVE severity threshold for scan-image. Builds fail on this severity and above. Default: CRITICAL."
+        default: "CRITICAL"
+        required: false
+        type: string
 
 env:
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -78,7 +83,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-      artifact-metadata: write
+      security-events: write
     continue-on-error: false
     strategy:
       fail-fast: false
@@ -343,6 +348,15 @@ jobs:
           sudo -E "$(command -v just)" tag-images "${IMAGE_NAME}" \
                           "${DEFAULT_TAG}" \
                           "${ALIAS_TAGS}"
+
+      - name: Scan image for vulnerabilities
+        uses: projectbluefin/actions/bootc-build/scan-image@a546169689d8746d53ac23041c13506171a09194
+        with:
+          image: ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          severity-threshold: ${{ inputs.scan-severity-threshold }}
+          # PRs scan in report-only mode (exit-code 0); push events gate the build.
+          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
         id: push

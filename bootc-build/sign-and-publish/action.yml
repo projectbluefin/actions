@@ -1,5 +1,5 @@
 name: "bootc-build/sign-and-publish"
-description: "Sign image, generate SBOM, attach via ORAS, and create attestation"
+description: "Sign image, generate SBOM, attach via ORAS, create GitHub SBOM attestation, and emit SLSA Build L2 provenance (GitHub-hosted runners only)"
 author: "projectbluefin"
 
 inputs:
@@ -30,6 +30,12 @@ inputs:
   image-name:
     description: "Short image name for SBOM file path (e.g. bluefin)"
     default: ""
+  certificate-identity-regexp:
+    description: >
+      Regexp for cosign verify --certificate-identity-regexp. Defaults to known signing
+      workflows in the projectbluefin org. Callers outside the org must override this with
+      their own org prefix (e.g. 'https://github.com/myorg/(myrepo|actions)/').
+    default: "https://github.com/projectbluefin/(bluefin|bluefin-lts|aurora|actions)/.github/workflows/"
 
 outputs:
   sbom-digest:
@@ -99,15 +105,10 @@ runs:
       env:
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
+        CERT_IDENTITY_REGEXP: ${{ inputs.certificate-identity-regexp }}
       run: |
-        # When signing runs inside a reusable workflow (e.g. projectbluefin/actions),
-        # the OIDC certificate identity reflects that workflow's repo, not the calling
-        # repo stored in GITHUB_REPOSITORY.  Match on the org prefix only so both
-        # direct and reusable-workflow invocations are accepted.
-        ORG="${GITHUB_REPOSITORY%%/*}"
         cosign verify \
-          --certificate-identity-regexp="https://github.com/${ORG}/" \
+          --certificate-identity-regexp="${CERT_IDENTITY_REGEXP}" \
           --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
           "${IMAGE}@${DIGEST}"
 
@@ -136,6 +137,15 @@ runs:
         echo "sbom-path=${SBOM_DIR}/sbom.json" >> "$GITHUB_OUTPUT"
         echo "sbom-dir=${SBOM_DIR}" >> "$GITHUB_OUTPUT"
         echo "image-name=${NAME}" >> "$GITHUB_OUTPUT"
+
+    - name: GitHub SBOM Attestation
+      if: inputs.generate-sbom == 'true' && inputs.push-attestation == 'true'
+      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      with:
+        subject-name: ${{ inputs.image }}
+        subject-digest: ${{ inputs.digest }}
+        sbom-path: ${{ steps.gen-sbom.outputs.sbom-path }}
+        push-to-registry: true
 
     - name: Install ORAS
       if: inputs.generate-sbom == 'true'
@@ -200,9 +210,9 @@ runs:
         retry_wait_seconds: 30
         command: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
 
-    - name: GitHub Attestation
+    - name: GitHub Build Provenance Attestation
       if: inputs.push-attestation == 'true'
-      uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+      uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
       with:
         subject-name: ${{ inputs.image }}
         subject-digest: ${{ inputs.digest }}
