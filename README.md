@@ -2,6 +2,8 @@
 
 Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github.com/projectbluefin/bluefin), [aurora](https://github.com/ublue-os/aurora), and [bazzite](https://github.com/ublue-os/bazzite).
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/projectbluefin/actions/badge)](https://scorecard.dev/viewer/?uri=github.com/projectbluefin/actions)
+
 # DESIGNED FOR UPSTREAM ADOPTION
 
 These skills are the shared knowledge of 5 years of Universal Blue. The humans did such a good job that we were able to redo it with agents in a weekend. If you find an action here that should live in a CNCF or OpenSSF or any other upstream project and want to help, consider it your first quest!
@@ -10,6 +12,8 @@ Bluefin has testing branches and a passionate developer community, if you're an 
 
 
 Maintainers: see [docs/MAINTAINERS.md](docs/MAINTAINERS.md) for the agentic workflow, review gates, and on-call runbook.
+
+For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
 ## Available Actions
 
