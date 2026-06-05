@@ -365,6 +365,8 @@ Inputs:
 
 **When updating hadolint or taiki-e/install-action SHA pins:** edit only the pin in `bootc-build/validate-pr/action.yml`. All consuming repos pick up the update automatically when their `projectbluefin/actions` Renovate bump PR merges.
 
+**Pinning rule for PR tooling:** treat `.pre-commit-config.yaml` hook repos and `validate-pr` package installs with the same supply-chain discipline as `uses:` lines. External pre-commit hook repos must use full commit SHAs with inline release comments, `pre-commit` must be installed at an exact version while clearing inherited `PIP_CONSTRAINT` values from consumer repos, and `shellcheck` must be pinned to the Ubuntu 24.04 package version used by GitHub runners.
+
 ### `scan-image`
 
 Wraps `aquasecurity/trivy-action` to scan a locally built OCI image for CVEs **before push**. Uploads SARIF results to the GitHub Security tab unconditionally (always, whether the scan passes or fails) so findings appear as annotations.
