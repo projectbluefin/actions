@@ -149,3 +149,22 @@ Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
 ```
 
 The `build_container` job must have `security-events: write` permission for SARIF upload.
+
+### Secret scanning
+
+`scan-image` also runs Trivy's secret scanner in two modes:
+
+- **`scanners: vuln,secret`** — scans all filesystem layers for accidentally committed secrets
+  (API keys, tokens, private keys, credential files).
+- **`image-config-scanners: secret`** — scans the OCI image config for secrets baked into
+  `ENV` instructions (e.g. `ENV SECRET_KEY=...` in a Containerfile). These survive layer
+  squashing and are visible to anyone who pulls the image.
+
+Both are additive to the existing vuln scan and use the same `exit-code` setting (report-only
+on PRs, gating on push). Secret findings appear as SARIF annotations in the GitHub Security tab
+alongside CVEs.
+
+**Important:** secret scanning is best-effort — Trivy detects high-entropy strings and known
+secret patterns, but cannot catch all credential types. The primary defence against secrets
+in images remains not putting them there (`detect-private-key` pre-commit hook +
+`secrets:` block in Containerfiles replaced by runtime injection).
