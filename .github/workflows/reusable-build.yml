@@ -513,7 +513,7 @@ jobs:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
           signing-mode: keyless
-          generate-sbom: "true"
+          generate-sbom: ${{ inputs.stream_name != 'testing' && 'true' || 'false' }}
           push-attestation: "true"
           github-token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
