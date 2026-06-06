@@ -506,6 +506,7 @@ jobs:
 
       - name: Sign, publish SBOM, and attest
         if: github.event_name != 'pull_request'
+        continue-on-error: true  # Never block image publishing — signing/SBOM failures are non-fatal
         uses: projectbluefin/actions/bootc-build/sign-and-publish@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
