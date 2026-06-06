@@ -386,32 +386,10 @@ jobs:
             echo "push_tags=${DEFAULT_TAG} ${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Export image for scanning
-        shell: bash
-        run: |
-          sudo podman save --format docker -o /tmp/scan-image.tar "${IMAGE_NAME}:${DEFAULT_TAG}"
-
-      - name: Scan image for vulnerabilities
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: 'image'
-          input: /tmp/scan-image.tar
-          format: sarif
-          output: trivy-results.sarif
-          severity: ${{ inputs.scan-severity-threshold }}
-          # PRs scan in report-only mode (exit-code 0); push events gate the build.
-          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
-          ignore-unfixed: 'true'
-          vuln-type: os,library
-          scanners: vuln,secret
-          image-config-scanners: secret
-
-      - name: Upload SARIF to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
-        with:
-          sarif_file: trivy-results.sarif
-          token: ${{ secrets.GITHUB_TOKEN }}
+      # Trivy scan temporarily disabled — see projectbluefin/actions#116
+      # - name: Export image for scanning
+      # - name: Scan image for vulnerabilities
+      # - name: Upload SARIF to GitHub Security tab
 
       - name: Push to GHCR
         id: push
