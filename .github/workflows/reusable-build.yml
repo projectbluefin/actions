@@ -45,6 +45,11 @@ on:
         default: "CRITICAL"
         required: false
         type: string
+      publish_stream_tag:
+        description: "Push the stream tag (:testing/:stable) at build time. Set false to gate :testing behind a post-build e2e step."
+        default: "true"
+        required: false
+        type: string
 
 env:
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -350,6 +355,32 @@ jobs:
                           "${DEFAULT_TAG}" \
                           "${ALIAS_TAGS}"
 
+      - name: Compute push tags
+        id: compute-push-tags
+        shell: bash
+        env:
+          DEFAULT_TAG: ${{ env.DEFAULT_TAG }}
+          ALIAS_TAGS: ${{ steps.generate-tags.outputs.alias_tags }}
+          PUBLISH_STREAM_TAG: ${{ inputs.publish_stream_tag }}
+        run: |
+          set -euo pipefail
+          if [[ "${PUBLISH_STREAM_TAG}" == "false" ]]; then
+            # Exclude the stream tag (:testing) — it will be promoted to :testing
+            # by post-build-e2e.yml only after smoke+common suites pass.
+            # Use the first alias tag as the primary push target.
+            read -r -a ALIAS_ARR <<< "${ALIAS_TAGS}"
+            if [[ ${#ALIAS_ARR[@]} -eq 0 ]]; then
+              echo "::error::publish_stream_tag=false but no alias tags are available — cannot push"
+              exit 1
+            fi
+            echo "push_default=${ALIAS_ARR[0]}" >> "$GITHUB_OUTPUT"
+            echo "push_tags=${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
+            echo "Stream tag (${DEFAULT_TAG}) excluded — will be promoted after e2e gate"
+          else
+            echo "push_default=${DEFAULT_TAG}" >> "$GITHUB_OUTPUT"
+            echo "push_tags=${DEFAULT_TAG} ${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Scan image for vulnerabilities
         uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
@@ -365,8 +396,8 @@ jobs:
         uses: projectbluefin/actions/bootc-build/push-image@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
           image-name: ${{ env.IMAGE_NAME }}
-          tags: ${{ env.DEFAULT_TAG }} ${{ steps.generate-tags.outputs.alias_tags }}
-          default-tag: ${{ env.DEFAULT_TAG }}
+          tags: ${{ steps.compute-push-tags.outputs.push_tags }}
+          default-tag: ${{ steps.compute-push-tags.outputs.push_default }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Record push duration
@@ -454,7 +485,10 @@ jobs:
             *)       OCI_PLATFORM="${MATRIX_ARCHITECTURE}" ;;
           esac
 
-          # Format: image_name|oci_platform|digest — one line per arch per image
+          # Write in both formats:
+          # 1. Legacy `=` format consumed by weekly-testing-promotion.yml and post-testing-e2e.yml
+          # 2. New `|` format for multi-arch manifest creation in collect-digests
+          echo "${IMAGE_NAME}=${PUSH_DIGEST}" >> "/tmp/digests/${MATRIX_IMAGE_FLAVOR}-${MATRIX_BASE_NAME}-${MATRIX_ARCHITECTURE}.txt"
           echo "${IMAGE_NAME}|${OCI_PLATFORM}|${PUSH_DIGEST}" >> "/tmp/digests/${MATRIX_IMAGE_FLAVOR}-${MATRIX_BASE_NAME}-${MATRIX_ARCHITECTURE}.txt"
 
       - name: Upload digest artifact
