@@ -342,7 +342,7 @@ jobs:
                      "${MATRIX_IMAGE_FLAVOR}" \
                      "${INPUT_KERNEL_PIN}" \
                      "1" \
-                     "$(podman inspect "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
+                     "$(sudo podman inspect "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
                      "${EFFECTIVE_EVENT}" \
                      "${EFFECTIVE_NUMBER}")"
 
