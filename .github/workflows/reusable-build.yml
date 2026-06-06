@@ -176,7 +176,7 @@ jobs:
 
       - name: Build Image
         id: build-image
-        shell: bash
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v2.9.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_CACHE_WRITE: ${{ github.event_name != 'pull_request' && '1' || '0' }}
@@ -185,12 +185,17 @@ jobs:
           MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
           INPUT_KERNEL_PIN: ${{ inputs.kernel_pin }}
           REPO_ORGANIZATION: ${{ github.repository_owner }}
-        run: |
-          sudo -E "$(command -v just)" repo_organization="${REPO_ORGANIZATION}" \
-                    build-ghcr "${MATRIX_BASE_NAME}" \
-                               "${MATRIX_STREAM_NAME}" \
-                               "${MATRIX_IMAGE_FLAVOR}" \
-                               "${INPUT_KERNEL_PIN}"
+        with:
+          timeout_minutes: 120
+          max_attempts: 3
+          retry_wait_seconds: 300
+          new_command_on_retry: ''
+          command: |
+            sudo -E "$(command -v just)" repo_organization="${REPO_ORGANIZATION}" \
+                      build-ghcr "${MATRIX_BASE_NAME}" \
+                                 "${MATRIX_STREAM_NAME}" \
+                                 "${MATRIX_IMAGE_FLAVOR}" \
+                                 "${INPUT_KERNEL_PIN}"
 
       - name: Record build duration
         id: build-duration
