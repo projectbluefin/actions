@@ -32,7 +32,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
 | Verify SHA pins are correct and comments are accurate | `docs/skills/determinism.md` → "Already pinned" |
 | Add or scan an image for CVEs before push | `docs/skills/supply-chain.md` → "shift-left CVE scanning" + `docs/skills/composite-actions.md` → "scan-image" |
-| Generate release notes and create a GitHub Release | `docs/skills/composite-actions.md` → "generate-release-notes" + "reusable-release.yml" |
+| Generate release notes and create a GitHub Release (git-cliff / Conventional Commits) | `docs/skills/composite-actions.md` → "generate-release-notes" + "reusable-release.yml" |
+| Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions.md` → "create-release" |
 | Enforce Conventional Commits PR title format | `docs/skills/composite-actions.md` → "validate-pr-title" |
 | Understand SLSA Build L2 posture and scope | `docs/skills/supply-chain.md` → "SLSA Build L2 posture" |
 | Verify a built image attestation | `docs/skills/supply-chain.md` → "Verification" |

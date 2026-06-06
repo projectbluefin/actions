@@ -1,0 +1,312 @@
+name: "bootc-build/create-release"
+description: >
+  Diff two SPDX-JSON SBOMs, render a release card (light + dark PNG), generate
+  supply-chain release notes with full package inventory and CNCF verification
+  instructions, then create a GitHub Release.
+author: "projectbluefin"
+
+inputs:
+  sbom-path:
+    description: >
+      Path to the current image SPDX-JSON SBOM on disk (produced by Syft via
+      sign-and-publish, or by `just sbom` in the BST pipeline).
+    required: true
+  tag:
+    description: "Release tag to create (e.g. 2026-05-14-abc1234 or v1.2.3)"
+    required: true
+  title:
+    description: "GitHub Release title"
+    required: true
+  image:
+    description: >
+      Full image reference without tag (e.g. ghcr.io/projectbluefin/bluefin).
+      Used in verification instructions and the release card footer.
+    required: true
+  digest:
+    description: "Image digest (sha256:...) for verification instructions"
+    required: true
+  repo:
+    description: >
+      GitHub repository slug (org/repo). Used to construct release asset URLs
+      and supply chain verification commands.
+    required: true
+  notable-packages:
+    description: >
+      JSON array of packages to highlight on the release card and in the key
+      components table. Each element: {"sbom_name": "linux", "label": "Kernel"}.
+      Optional "spdxid_filter" field disambiguates packages with multiple SPDX
+      entries (e.g. the kernel in BST SBOMs).
+    required: true
+  cert-identity-regexp:
+    description: >
+      cosign --certificate-identity-regexp value for image signature and
+      attestation verification instructions.
+    required: true
+  project-name:
+    description: "Display name shown on the release card (e.g. Bluefin, Bluefin LTS)"
+    default: "Bluefin"
+  accent-color:
+    description: "CSS colour for the release card accent stripe and chips"
+    default: "#0ea5e9"
+  badge-label:
+    description: "Badge text on the release card (e.g. Stable, LTS, Alpha)"
+    default: "Stable"
+  docs-url:
+    description: "URL linked from the card footer and supply chain section"
+    default: "https://docs.projectbluefin.io/changelogs"
+  sbom-filename:
+    description: >
+      Filename for the SBOM asset attached to the release
+      (e.g. bluefin.spdx.json). Defaults to the basename of sbom-path.
+    default: ""
+  draft:
+    description: "Create the release as a draft"
+    default: "false"
+  prerelease:
+    description: "Mark the release as a pre-release"
+    default: "false"
+  github-token:
+    description: "GitHub token — needs contents:write to create releases"
+    required: true
+
+outputs:
+  release-url:
+    description: "URL of the created GitHub Release"
+    value: ${{ steps.create-release.outputs.url }}
+
+runs:
+  using: "composite"
+  steps:
+
+    # ── Validate SBOM ─────────────────────────────────────────────────────────
+    - name: Validate SBOM
+      shell: bash
+      env:
+        SBOM_PATH: ${{ inputs.sbom-path }}
+      run: |
+        set -euo pipefail
+        if [[ ! -f "${SBOM_PATH}" ]]; then
+          echo "::error::SBOM not found at '${SBOM_PATH}'"
+          exit 1
+        fi
+        # Verify it is valid SPDX-JSON (has spdxVersion key)
+        if ! python3 -c "
+        import json, sys
+        with open('${SBOM_PATH}') as f:
+            d = json.load(f)
+        if 'spdxVersion' not in d:
+            print('Missing spdxVersion — not a valid SPDX document', file=sys.stderr)
+            sys.exit(1)
+        print(f'SPDX {d[\"spdxVersion\"]} — {len(d.get(\"packages\", []))} packages')
+        "; then
+          echo "::error::${SBOM_PATH} is not a valid SPDX-JSON document"
+          exit 1
+        fi
+
+    # ── Fetch previous SBOM from latest GitHub Release ────────────────────────
+    - name: Fetch previous SBOM
+      id: prev-sbom
+      shell: bash
+      env:
+        GH_TOKEN:  ${{ inputs.github-token }}
+        REPO:      ${{ inputs.repo }}
+        SBOM_PATH: ${{ inputs.sbom-path }}
+      run: |
+        set -euo pipefail
+        PREV_TAG=$(gh release list \
+          --repo "${REPO}" \
+          --limit 1 \
+          --json tagName \
+          --jq '.[0].tagName' 2>/dev/null || true)
+
+        if [[ -z "${PREV_TAG}" ]]; then
+          echo "No previous release — first release, skipping diff."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        mkdir -p _sbom_prev
+        # Accept any .spdx.json asset from the previous release
+        if gh release download "${PREV_TAG}" \
+            --repo "${REPO}" \
+            --pattern "*.spdx.json" \
+            --dir _sbom_prev 2>/dev/null; then
+          PREV_FILE=$(ls _sbom_prev/*.spdx.json | head -n1)
+          echo "found=true"          >> "$GITHUB_OUTPUT"
+          echo "path=${PREV_FILE}"   >> "$GITHUB_OUTPUT"
+          echo "tag=${PREV_TAG}"     >> "$GITHUB_OUTPUT"
+          echo "Previous SBOM: ${PREV_FILE} (from ${PREV_TAG})"
+        else
+          echo "::warning::No .spdx.json asset in release ${PREV_TAG} — skipping diff"
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # ── Write notable-packages spec to disk ───────────────────────────────────
+    - name: Write notable-packages spec
+      shell: bash
+      env:
+        NOTABLE_JSON: ${{ inputs.notable-packages }}
+      run: |
+        set -euo pipefail
+        echo "${NOTABLE_JSON}" > _notable_packages.json
+
+    # ── Diff SBOMs ────────────────────────────────────────────────────────────
+    - name: Diff SBOMs
+      shell: bash
+      env:
+        SBOM_PATH:   ${{ inputs.sbom-path }}
+        PREV_FOUND:  ${{ steps.prev-sbom.outputs.found }}
+        PREV_PATH:   ${{ steps.prev-sbom.outputs.path }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        PREV_ARGS=()
+        if [[ "${PREV_FOUND}" == "true" && -n "${PREV_PATH:-}" && -f "${PREV_PATH}" ]]; then
+          PREV_ARGS=(--previous "${PREV_PATH}")
+        fi
+        python3 "${ACTION_PATH}/scripts/sbom_diff.py" \
+          --current          "${SBOM_PATH}" \
+          "${PREV_ARGS[@]}" \
+          --notable-packages _notable_packages.json \
+          --output           _versions.json
+
+    # ── Install Playwright + Chromium ─────────────────────────────────────────
+    - name: Install Playwright and Chromium
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m pip install playwright --break-system-packages --quiet
+        python3 -m playwright install chromium --with-deps
+
+    # ── Render release card ───────────────────────────────────────────────────
+    - name: Render release card
+      shell: bash
+      env:
+        TAG:          ${{ inputs.tag }}
+        PROJECT_NAME: ${{ inputs.project-name }}
+        ACCENT_COLOR: ${{ inputs.accent-color }}
+        BADGE_LABEL:  ${{ inputs.badge-label }}
+        IMAGE:        ${{ inputs.image }}
+        DOCS_URL:     ${{ inputs.docs-url }}
+        ACTION_PATH:  ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        # Extract date and sha7 from tag.
+        # Supports: YYYY-MM-DD-SHA7 (date+sha tags used by dakota/bluefin-lts)
+        # Falls back to today's date and last 7 chars of the tag for semver tags.
+        if [[ "${TAG}" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})-([0-9a-f]{7,})$ ]]; then
+          DATE="${BASH_REMATCH[1]}"
+          SHA7="${BASH_REMATCH[2]:0:7}"
+        else
+          DATE="$(date -u +%Y-%m-%d)"
+          SHA7="${TAG: -7}"
+        fi
+
+        python3 "${ACTION_PATH}/scripts/render_card.py" \
+          --versions     _versions.json \
+          --tag          "${TAG}" \
+          --date         "${DATE}" \
+          --sha7         "${SHA7}" \
+          --project-name "${PROJECT_NAME}" \
+          --accent-color "${ACCENT_COLOR}" \
+          --badge-label  "${BADGE_LABEL}" \
+          --image-ref    "${IMAGE}" \
+          --docs-url     "${DOCS_URL}" \
+          --output       release-card.png
+
+    # ── Render release notes ──────────────────────────────────────────────────
+    - name: Render release notes
+      shell: bash
+      env:
+        SBOM_PATH:     ${{ inputs.sbom-path }}
+        TAG:           ${{ inputs.tag }}
+        TITLE:         ${{ inputs.title }}
+        IMAGE:         ${{ inputs.image }}
+        DIGEST:        ${{ inputs.digest }}
+        REPO:          ${{ inputs.repo }}
+        PROJECT_NAME:  ${{ inputs.project-name }}
+        CERT_REGEXP:   ${{ inputs.cert-identity-regexp }}
+        DOCS_URL:      ${{ inputs.docs-url }}
+        SBOM_FILENAME: ${{ inputs.sbom-filename }}
+        ACTION_PATH:   ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        python3 "${ACTION_PATH}/scripts/render_notes.py" \
+          --versions       _versions.json \
+          --sbom           "${SBOM_PATH}" \
+          --tag            "${TAG}" \
+          --title          "${TITLE}" \
+          --image          "${IMAGE}" \
+          --digest         "${DIGEST}" \
+          --repo           "${REPO}" \
+          --project-name   "${PROJECT_NAME}" \
+          --cert-regexp    "${CERT_REGEXP}" \
+          --docs-url       "${DOCS_URL}" \
+          --sbom-filename  "${SBOM_FILENAME}" \
+          --output         release-notes.md
+
+    # ── Resolve SBOM asset filename ───────────────────────────────────────────
+    - name: Resolve SBOM filename
+      id: sbom-name
+      shell: bash
+      env:
+        SBOM_PATH:     ${{ inputs.sbom-path }}
+        SBOM_FILENAME: ${{ inputs.sbom-filename }}
+      run: |
+        set -euo pipefail
+        if [[ -n "${SBOM_FILENAME}" ]]; then
+          TARGET="${SBOM_FILENAME}"
+        else
+          TARGET="$(basename "${SBOM_PATH}")"
+        fi
+        # Copy SBOM to cwd with target filename so it's easy to attach
+        cp "${SBOM_PATH}" "${TARGET}"
+        echo "filename=${TARGET}" >> "$GITHUB_OUTPUT"
+
+    # ── Create GitHub Release ─────────────────────────────────────────────────
+    - name: Create GitHub Release
+      id: create-release
+      shell: bash
+      env:
+        GH_TOKEN:      ${{ inputs.github-token }}
+        REPO:          ${{ inputs.repo }}
+        TAG:           ${{ inputs.tag }}
+        TITLE:         ${{ inputs.title }}
+        DRAFT:         ${{ inputs.draft }}
+        PRERELEASE:    ${{ inputs.prerelease }}
+        SBOM_FILENAME: ${{ steps.sbom-name.outputs.filename }}
+      run: |
+        set -euo pipefail
+
+        # Idempotent: skip if this tag already exists
+        if gh release view "${TAG}" --repo "${REPO}" &>/dev/null; then
+          echo "Release ${TAG} already exists — skipping."
+          URL=$(gh release view "${TAG}" --repo "${REPO}" --json url --jq '.url')
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        DRAFT_FLAG=""
+        [[ "${DRAFT}" == "true" ]]      && DRAFT_FLAG="--draft"
+        PRERELEASE_FLAG=""
+        [[ "${PRERELEASE}" == "true" ]] && PRERELEASE_FLAG="--prerelease"
+
+        URL=$(gh release create "${TAG}" \
+          --repo           "${REPO}" \
+          --title          "${TITLE}" \
+          --notes-file     release-notes.md \
+          ${DRAFT_FLAG} \
+          ${PRERELEASE_FLAG} \
+          release-card.png \
+          release-card-dark.png \
+          "${SBOM_FILENAME}" \
+          | tail -n1)
+
+        echo "url=${URL}" >> "$GITHUB_OUTPUT"
+        echo "Created release: ${URL}"
+
+    # ── Cleanup temp files ────────────────────────────────────────────────────
+    - name: Cleanup
+      if: always()
+      shell: bash
+      run: rm -f _versions.json _notable_packages.json
