@@ -45,7 +45,7 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 | Workflow | Purpose |
 |--------|---------|
 | [`.github/workflows/reusable-build.yml`](.github/workflows/reusable-build.yml) | Full Fedora bootc image build pipeline (Path 1) |
-| [`.github/workflows/reusable-release.yml`](.github/workflows/reusable-release.yml) | Changelog generation and GitHub Release creation |
+| [`.github/workflows/reusable-release.yml`](.github/workflows/reusable-release.yml) | Image stable-release orchestration and Conventional Commits GitHub Release creation |
 
 ## Quick Start
 

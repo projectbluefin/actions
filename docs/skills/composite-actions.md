@@ -556,7 +556,7 @@ The repo provides two reusable workflows:
 | Workflow | Purpose |
 |---|---|
 | `.github/workflows/reusable-build.yml` | Full Fedora bootc image build pipeline (Path 1) |
-| `.github/workflows/reusable-release.yml` | Changelog generation and GitHub Release creation |
+| `.github/workflows/reusable-release.yml` | Image stable-release orchestration and Conventional Commits GitHub Release creation |
 
 **Permissions hardening:** default reusable workflows to `permissions: {}` at the workflow level, then grant the minimum required scopes per job. Do not rely on workflow-level `packages: write`/`contents: write` unless every job in the file truly needs that access.
 
@@ -643,19 +643,41 @@ SBOM generation and upload should run for every non-PR build, including the `tes
 
 ### `reusable-release.yml` — calling from a consuming repo
 
+**Image stable-release mode**
+
 ```yaml
 jobs:
   release:
     uses: projectbluefin/actions/.github/workflows/reusable-release.yml@v1
-    secrets: inherit
+    secrets:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+    with:
+      stream_name: stable
+      build_workflow: build-image-stable.yml
+      build_branch: stable
+      image: ghcr.io/projectbluefin/bluefin
+      project_name: Bluefin
+      cert_identity_regexp: ^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/
+```
+
+This mode finds the latest successful build run for the requested stream, downloads the uploaded SBOM artifact, resolves the current image digest, and calls `bootc-build/create-release` to publish the GitHub Release. The reusable workflow owns the `production` environment gate and grants only `contents: write` plus `actions: read` to the image release job.
+
+**Legacy semver mode**
+
+```yaml
+jobs:
+  release:
+    uses: projectbluefin/actions/.github/workflows/reusable-release.yml@v1
+    secrets:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
     with:
       tag: ${{ github.ref_name }}   # e.g. v1.2.3
       # draft: false                # optional
       # prerelease: false           # optional
-      # cliff-config: cliff.toml   # optional; defaults to repo root
+      # cliff-config: cliff.toml    # optional; defaults to repo root
 ```
 
-The workflow checks out with `fetch-depth: 0` (required by git-cliff), runs `generate-release-notes`, and creates a GitHub Release with the generated body. The caller's repo needs `contents: write` — this is already granted in the workflow via `permissions: { contents: write }` on the `release` job.
+The legacy semver mode checks out with `fetch-depth: 0` (required by git-cliff), runs `generate-release-notes`, and creates a GitHub Release with the generated body.
 
 **`cliff.toml` requirement:** a `cliff.toml` must exist in the caller's repo root (or override via `cliff-config` input). A factory-wide config is available at the root of this repo and can be copied verbatim.
 
