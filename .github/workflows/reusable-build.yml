@@ -384,7 +384,7 @@ jobs:
       - name: Export image for scanning
         shell: bash
         run: |
-          sudo podman save --format oci-archive -o /tmp/scan-image.tar "${IMAGE_NAME}:${DEFAULT_TAG}"
+          sudo podman save --format docker -o /tmp/scan-image.tar "${IMAGE_NAME}:${DEFAULT_TAG}"
 
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
