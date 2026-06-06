@@ -381,10 +381,15 @@ jobs:
             echo "push_tags=${DEFAULT_TAG} ${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Export image for scanning
+        shell: bash
+        run: |
+          sudo podman save --format oci-archive -o /tmp/scan-image.tar "${IMAGE_NAME}:${DEFAULT_TAG}"
+
       - name: Scan image for vulnerabilities
         uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
-          image: ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          image: oci-archive:/tmp/scan-image.tar
           severity-threshold: ${{ inputs.scan-severity-threshold }}
           # PRs scan in report-only mode (exit-code 0); push events gate the build.
           exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
