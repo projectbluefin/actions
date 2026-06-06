@@ -408,6 +408,129 @@ Outputs: `changelog` (file path), `content` (markdown string suitable as a GitHu
 
 Used by `reusable-release.yml` to automate GitHub Release creation on tag push. See "Reusable workflows" below.
 
+### `create-release`
+
+Creates a GitHub Release backed by a full supply chain story: SBOM diff,
+release card (light + dark PNG), and step-by-step user-facing verification
+instructions using CNCF / OpenSSF tools.
+
+**This is the factory-standard release action for bluefin, bluefin-lts, and
+dakota.** It replaces the per-repo `changelogs.py`, `hanthor/changelog-action`,
+and `sbom_diff.py + render_card.py` scripts.
+
+#### Flow
+
+```
+calling workflow
+  └─ download current SBOM artifact (already produced by sign-and-publish)
+       └─ bootc-build/create-release
+            1. validate SBOM (spdxVersion check)
+            2. fetch previous SBOM from last GitHub Release (*.spdx.json asset)
+            3. sbom_diff.py  → versions.json  (added / changed / removed)
+            4. render_card.py → release-card.png + release-card-dark.png
+            5. render_notes.py → release-notes.md
+                 • key components table (notable packages)
+                 • collapsible full SPDX package inventory
+                 • supply chain section (cosign, oras, slsa-verifier)
+            6. gh release create (attaches card PNGs + SBOM)
+```
+
+#### Inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `sbom-path` | ✅ | — | Path to current SPDX-JSON SBOM on disk |
+| `tag` | ✅ | — | Release tag to create |
+| `title` | ✅ | — | Release title |
+| `image` | ✅ | — | Full image ref (no tag), e.g. `ghcr.io/projectbluefin/bluefin` |
+| `digest` | ✅ | — | Image digest (`sha256:...`) for verification instructions |
+| `repo` | ✅ | — | `org/repo` slug |
+| `notable-packages` | ✅ | — | JSON array: `[{"sbom_name":"linux","label":"Kernel"},...]` |
+| `cert-identity-regexp` | ✅ | — | cosign `--certificate-identity-regexp` for user-facing instructions |
+| `github-token` | ✅ | — | Token with `contents: write` |
+| `project-name` | | `Bluefin` | Display name on the release card |
+| `accent-color` | | `#0ea5e9` | CSS colour for the card accent stripe |
+| `badge-label` | | `Stable` | Badge text on the card (e.g. `LTS`, `Alpha`) |
+| `docs-url` | | `https://docs.projectbluefin.io/changelogs` | Footer and supply chain link |
+| `sbom-filename` | | basename of `sbom-path` | Asset filename attached to the release |
+| `draft` | | `false` | Create as draft |
+| `prerelease` | | `false` | Mark as pre-release |
+
+Outputs: `release-url` (URL of the created release).
+
+#### Supply chain verification section (user-facing)
+
+The generated `release-notes.md` always includes a **Supply chain** section
+with four numbered steps, each using a CNCF / OpenSSF tool:
+
+1. **`cosign verify`** — image keyless signature (Sigstore)
+2. **`oras discover` + `oras pull`** — SBOM OCI referrer (CNCF ORAS, graduated)
+3. **`cosign verify-attestation --type https://spdx.dev/Document`** — GitHub SBOM attestation
+4. **`slsa-verifier verify-image`** — SLSA Build L2 provenance (OpenSSF) +
+   `cosign verify-attestation --type slsaprovenance1` as the Sigstore path
+
+All install via `brew install cosign oras slsa-verifier`.
+
+#### Per-repo `notable-packages` examples
+
+**bluefin / bluefin-lts:**
+```json
+[
+  {"sbom_name": "kernel", "label": "Kernel"},
+  {"sbom_name": "gnome-shell", "label": "GNOME"},
+  {"sbom_name": "mesa-filesystem", "label": "Mesa"},
+  {"sbom_name": "podman", "label": "Podman"},
+  {"sbom_name": "nvidia-driver", "label": "Nvidia"}
+]
+```
+
+**dakota (BST — uses `spdxid_filter` to pick the right linux entry):**
+```json
+[
+  {"sbom_name": "linux", "label": "Kernel", "spdxid_filter": "components-linux.bst"},
+  {"sbom_name": "gnome-shell", "label": "GNOME"},
+  {"sbom_name": "mesa", "label": "Mesa"},
+  {"sbom_name": "podman", "label": "Podman"},
+  {"sbom_name": "bootc", "label": "bootc"},
+  {"sbom_name": "ghostty", "label": "ghostty"}
+]
+```
+
+#### Calling from a consumer workflow
+
+The caller is responsible for downloading the SBOM artifact produced by the
+build job before calling this action:
+
+```yaml
+- name: Download current SBOM
+  uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+  with:
+    name: sbom-${{ env.IMAGE_NAME }}
+    path: sbom-current
+
+- name: Create release
+  uses: projectbluefin/actions/bootc-build/create-release@v1
+  with:
+    sbom-path:             sbom-current/sbom.json
+    tag:                   ${{ steps.meta.outputs.tag }}
+    title:                 ${{ steps.meta.outputs.title }}
+    image:                 ghcr.io/projectbluefin/bluefin
+    digest:                ${{ steps.build.outputs.digest }}
+    repo:                  ${{ github.repository }}
+    notable-packages:      '[{"sbom_name":"kernel","label":"Kernel"},...]'
+    cert-identity-regexp:  '^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/'
+    project-name:          Bluefin
+    accent-color:          "#0ea5e9"
+    badge-label:           Stable
+    sbom-filename:         bluefin.spdx.json
+    github-token:          ${{ secrets.GITHUB_TOKEN }}
+```
+
+**Accent colours by repo:**
+- bluefin: `#0ea5e9` (sky blue)
+- bluefin-lts: `#0ea5e9` (sky blue)
+- dakota: `#7c3aed` (purple)
+
 ### `validate-pr-title`
 
 Validates that a PR title matches the Conventional Commits format required across all factory repos. Lives at `.github/actions/validate-pr-title/action.yml` (not `bootc-build/`).
