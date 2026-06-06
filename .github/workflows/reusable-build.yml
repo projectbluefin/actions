@@ -170,7 +170,7 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: echo "${GITHUB_TOKEN}" | sudo podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
@@ -342,7 +342,7 @@ jobs:
                      "${MATRIX_IMAGE_FLAVOR}" \
                      "${INPUT_KERNEL_PIN}" \
                      "1" \
-                     "$(podman inspect "${IMAGE_NAME}:${DEFAULT_TAG}" | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
+                     "$(podman inspect "localhost/${IMAGE_NAME}:${DEFAULT_TAG}" | jq -r '.[].Config.Labels["org.opencontainers.image.version"]')" \
                      "${EFFECTIVE_EVENT}" \
                      "${EFFECTIVE_NUMBER}")"
 
@@ -399,7 +399,7 @@ jobs:
           image-name: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.compute-push-tags.outputs.push_tags }}
           default-tag: ${{ steps.compute-push-tags.outputs.push_default }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Record push duration
         id: push-duration
@@ -446,10 +446,10 @@ jobs:
             WALL_CLOCK_S=$(( SUMMARY_END - BUILD_START ))
           fi
 
-          IMAGE_SIZE=$(sudo podman image inspect "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+          IMAGE_SIZE=$(sudo podman image inspect "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
             --format '{{.Size}}' 2>/dev/null || echo "0")
           IMAGE_SIZE_MB=$(( IMAGE_SIZE / 1024 / 1024 ))
-          LAYER_COUNT=$(sudo podman image inspect "${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
+          LAYER_COUNT=$(sudo podman image inspect "localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}" \
             --format '{{len .RootFS.Layers}}' 2>/dev/null || echo "?")
 
           {
@@ -513,7 +513,7 @@ jobs:
           signing-mode: keyless
           generate-sbom: "true"
           push-attestation: "true"
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
 
       - name: Verify rechunk metadata preserved
