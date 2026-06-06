@@ -18,9 +18,11 @@ projectbluefin/actions  ←── shared CI building blocks
 
 **Path 1** (full reusable workflow): consumer calls `reusable-build.yml@v1` and satisfies the Justfile contract. Used by bluefin and aurora.
 
-**Path 2** (à la carte composite actions): consumer calls individual actions. Used by bluefin-lts (CentOS Stream 10 base, multi-arch, `chunka` not `rechunk`) and dakota (BST build engine — partial adoption, see issue #16).
+**Path 2** (à la carte composite actions): consumer calls individual actions. Used by bluefin-lts (CentOS Stream 10 base, multi-arch, `chunka` not `rechunk`) and dakota (BST build engine — `create-release` and `sign-and-publish` adopted; see issue #16 for remaining actions).
 
 Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaking changes to an action require a version bump and coordinated update across all consuming repos.
+
+**Release path:** all three repos (bluefin, bluefin-lts, dakota) use `bootc-build/create-release` as the factory-standard release action. It reads the SPDX-JSON SBOM already produced by `sign-and-publish`/`just sbom`, diffs it against the previous release, renders a release card (light + dark PNG), and generates supply-chain release notes with CNCF verification instructions (cosign, oras, slsa-verifier). bluefin-lts is stubbed pending SBOM artifact upload — see issue bluefin-lts#74.
 
 ---
 
@@ -53,6 +55,8 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 **Agents MUST NOT push directly to `main`.** All changes via PR from a feature branch. Branch protection enforces this; direct pushes are blocked for non-admins.
 
 **`@v1` tag moves require human authorization.** Force-pushing the shared tag affects every consumer repo simultaneously. A human must run `git tag -f v1 && git push --force origin v1` after verifying CI is green. Do not initiate this as an agent action. Recommended cadence: after a batch of Renovate SHA pin bumps has landed on `main`, not after every individual merge.
+
+**SBOM alignment:** the factory standard is Syft → SPDX-JSON, attached via ORAS and stored as a GitHub Actions artifact. `sign-and-publish` handles this for Fedora-based images. BST/dakota uses `just sbom` (also SPDX-JSON). All release notes must be generated from these SBOMs — never from separate container inspection scripts. bluefin-lts is the exception until issue bluefin-lts#74 is resolved.
 
 **Production promotion in consumer repos is 2-human gated.** The `environment: production` gate on promotion/release workflows cannot be bypassed by changing actions here. Any change that could affect the promotion path requires explicit maintainer review. Admin bypasses are permanently logged in the Environment deployment history.
 
