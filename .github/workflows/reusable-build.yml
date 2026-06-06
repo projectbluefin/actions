@@ -218,14 +218,15 @@ jobs:
 
       - name: Setup Syft
         id: setup-syft
-        # Run SBOM for all non-PR builds so promoted testing digests keep signed SBOM referrers.
-        if: github.event_name != 'pull_request'
+        # Skip SBOM for testing stream — sign-and-publish is also skipped for testing,
+        # so generating SBOMs there serves no purpose and was causing runner timeouts.
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           syft-version: v1.44.0
 
       - name: Generate SBOM
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         id: generate-sbom
         env:
           MATRIX_BASE_NAME: ${{ matrix.base_name }}
@@ -239,13 +240,13 @@ jobs:
                             "${SYFT_CMD}"
 
       - name: Stage SBOM for release artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         run: |
           mkdir -p /tmp/sbom-upload
           cp "sbom_out/${{ env.IMAGE_NAME }}/sbom.json" "/tmp/sbom-upload/${{ env.IMAGE_NAME }}.sbom.json"
 
       - name: Upload SBOM artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-${{ env.IMAGE_NAME }}
