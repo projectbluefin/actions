@@ -107,6 +107,7 @@ on:
         default: ""
         required: false
         type: string
+    secrets: {}
 permissions: {}
 
 jobs:
