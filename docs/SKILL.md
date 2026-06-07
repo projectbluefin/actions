@@ -2,10 +2,15 @@
 
 Agent entry point for `projectbluefin/actions`. Load only the skill relevant to your task.
 
+> **Two skill locations:** `docs/skills/` is for the Copilot CLI agent. `.github/skills/` is for the
+> Cloud Agent. For `projectbluefin/actions`, learnings must be written to **both** locations.
+> Skill format reference: [`.github/skills/skill-improvement/SKILL.md`](../.github/skills/skill-improvement/SKILL.md)
+
 ## Task → Skill
 
 | I need to... | Load |
 |---|---|
+| Create or update a skill file (format, frontmatter, structure) | `.github/skills/skill-improvement/SKILL.md` |
 | Detect changed paths for PR build matrix | `docs/skills/composite-actions.md` → "detect-changes" |
 | Validate a PR (just check, shellcheck, hadolint, pre-commit) | `docs/skills/composite-actions.md` → "validate-pr" |
 | Author or modify a composite action | `docs/skills/composite-actions.md` |
@@ -49,6 +54,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 
 | Skill | Covers |
 |---|---|
+| [`.github/skills/skill-improvement/SKILL.md`](../.github/skills/skill-improvement/SKILL.md) | Canonical skill file format, frontmatter spec, progressive disclosure, self-improvement mandate |
 | [`composite-actions.md`](skills/composite-actions.md) | Authoring conventions, known workarounds, action-by-action reference |
 | [`consumer-guide.md`](skills/consumer-guide.md) | Onboarding a new image repo: full reusable workflow and à la carte composite actions |
 | [`consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius before merge |

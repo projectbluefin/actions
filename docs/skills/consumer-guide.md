@@ -1,6 +1,28 @@
+---
+name: consumer-guide
+description: Onboards a new bootc image repo to use projectbluefin/actions. Covers Path 1 (full reusable-build.yml workflow) and Path 2 (à la carte composite actions), Justfile contract, SHA pinning strategy, upgrade testing, migration testing, and live consumer reference patterns (bluefin, bluefin-lts).
+metadata:
+  type: reference
+---
+
 # Consumer Guide — Using These Actions in Your Own bootc Image
 
 How to wire `projectbluefin/actions` into a custom Fedora-based bootc image repo.
+
+## Contents
+- [Two paths](#two-paths)
+- [Path 1 — Full reusable workflow](#path-1--full-reusable-workflow)
+- [Path 2 — Composite actions à la carte](#path-2--composite-actions-à-la-carte)
+- [Versioning and SHA pinning](#versioning-and-sha-pinning)
+- [Image registry](#image-registry)
+- [Multi-repo consumers: known pitfalls](#multi-repo-consumers-known-pitfalls)
+- [Known constraints](#known-constraints)
+- [Checklist before going live](#checklist-before-going-live)
+- [Upgrade test](#upgrade-test)
+- [Migration test](#migration-test)
+- [Getting help](#getting-help)
+- [Live Path 1 consumer: bluefin](#live-path-1-consumer-bluefin-extended-validation)
+- [Live Path 2 consumer: bluefin-lts](#live-path-2-consumer-bluefin-lts)
 
 ---
 

@@ -1,3 +1,10 @@
+---
+name: consumer-validation
+description: Enforces the required consumer validation protocol before merging any action change. Covers blast radius table, draft consumer PR procedure, automated CI check behavior, N/A rules, bot exemptions, and cross-fork approval flow.
+metadata:
+  type: reference
+---
+
 # Consumer Validation Protocol — projectbluefin/actions
 
 Any change to this repo affects ALL consumers simultaneously via the `@v1` floating tag.

@@ -1,8 +1,27 @@
+---
+name: composite-actions
+description: Authors, modifies, and debugs composite GitHub Actions in projectbluefin/actions. Covers action structure, SHA pinning, shell best practices, action-by-action reference (detect-changes, validate-pr, setup-runner, push-image, sign-and-publish, chunka, rechunk, scan-image, generate-tags, create-manifest, create-release, generate-release-notes, validate-pr-title), reusable workflow conventions, rollout strategy, and known CI workarounds.
+metadata:
+  type: reference
+---
+
 # Composite Actions — Authoring Skill
 
 Reference for writing and maintaining composite GitHub Actions in this repo.
 
 **Update this file** when you discover a new pattern, workaround, or convention — in the same PR as your change.
+
+## Contents
+- [Structure](#structure)
+- [SHA Pinning](#sha-pinning)
+- [Shell steps](#shell-steps)
+- [Action-by-action reference](#action-by-action-reference)
+- [Reusable workflow (`reusable-build.yml`)](#reusable-workflow-reusable-buildyml)
+- [Rollout strategy](#rollout-strategy)
+- [Adding a new action](#adding-a-new-action)
+- [Common editing pitfalls](#common-editing-pitfalls)
+- [CI-fix-first workflow (for agents)](#ci-fix-first-workflow-for-agents)
+- [Known workarounds](#known-workarounds)
 
 ---
 

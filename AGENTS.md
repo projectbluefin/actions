@@ -1,8 +1,57 @@
 # AGENTS.md — projectbluefin/actions
 
+> **Part of an agentic operating system, built by agentic workflows.**
+> This repo is the canonical CI skills hub for the projectbluefin org. Every agent session here
+> compounds the knowledge of all future agents. See the org-wide operating model:
+> [`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md)
+
 Shared composite GitHub Actions for bootc image builders (bluefin, aurora, bazzite).
 
 Load **[docs/SKILL.md](docs/SKILL.md)** before modifying any action.
+
+---
+
+## The Self-Improvement Loop
+
+> **This is the core operating model. Read it before starting any task.**
+
+Every agent session here produces two outputs:
+1. **The work** — the PR, fix, or improvement.
+2. **The learning** — what you discovered that a future agent should know.
+
+Output 1 without Output 2 leaves the system no smarter. **The loop only compounds if agents write back.**
+
+```
+Agent works on task
+  └─ discovers pattern / workaround / convention
+       └─ writes it to the relevant skill file
+            └─ commits in the same PR
+                 └─ next agent starts smarter
+                      └─ loop
+```
+
+### Skill-improvement checklist — complete before requesting review
+
+- [ ] Did I discover any workaround, non-obvious pattern, or convention?
+- [ ] Is there a skill file for the area I worked in?
+- [ ] If yes — did I update it?
+- [ ] If no — did I create one and added it to `docs/SKILL.md`?
+- [ ] Is the skill file committed in this same PR?
+
+### What counts as a learning worth writing back
+
+**Write it:**
+- A workaround for an upstream bug (include component + issue link)
+- A non-obvious pattern required for correctness
+- A convention that isn't obvious from the code
+- Something you had to discover by trial and error
+
+**Don't write it:**
+- One-off task notes ("use commit message X for this PR")
+- Obvious things any developer would know
+- Ephemeral state ("currently broken, fix pending")
+
+---
 
 ## Org pipeline — projectbluefin
 
@@ -23,6 +72,21 @@ projectbluefin/actions  ←── shared CI building blocks
 Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaking changes to an action require a version bump and coordinated update across all consuming repos.
 
 **Release path:** all three repos (bluefin, bluefin-lts, dakota) use `bootc-build/create-release` as the factory-standard release action. It reads the SPDX-JSON SBOM already produced by `sign-and-publish`/`just sbom`, diffs it against the previous release, renders a release card (light + dark PNG), and generates supply-chain release notes with CNCF verification instructions (cosign, oras, slsa-verifier). bluefin-lts is stubbed pending SBOM artifact upload — see issue bluefin-lts#74.
+
+---
+
+## Human Decision Points — Stop and Ask
+
+Agents implement autonomously **except** at these gates. Stop and request human input:
+
+| Gate | When |
+|---|---|
+| **Design Gate** | Architecture changes, new subsystem design, behavioral changes visible to consumers |
+| **Security Gate** | Auth, signing, supply chain, secrets handling, SHA pinning for security-critical actions |
+| **Breakage Gate** | Cross-repo breaking changes — removing/renaming inputs, changing defaults that affect consuming repos |
+| **Merge Gate** | Final PR approval and merge — always human |
+
+When in doubt, open a draft PR with your implementation and ask explicitly.
 
 ---
 
@@ -62,6 +126,20 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 ---
 
+## 🚫 Absolute prohibition — ublue-os org
+
+**NEVER create issues, pull requests, comments, forks, webhook calls, API writes, automated reports, or any other programmatic action targeting any `ublue-os/*` repository.**
+
+This applies in every situation, without exception:
+- Issues, comments, PRs, forks → **BANNED**
+- Automated reports (CI notifications, diagnostic uploads) → **BANNED**
+- `workflow_dispatch` or `repository_dispatch` calls to `ublue-os/*` → **BANNED**
+- Any `gh` CLI command that writes to `ublue-os/*` → **BANNED**
+
+If a task seems to require touching an upstream `ublue-os` repo → **stop and tell the human to report it manually.**
+
+---
+
 ## PR Comment Policy
 
 **One comment per PR event, max.** Combine all findings into a single comment.
@@ -72,9 +150,39 @@ Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaki
 
 ---
 
+## Development Standards
+
+### Commit format (required)
+
+[Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>): <description>`
+
+Common types: `feat` `fix` `docs` `ci` `refactor` `chore` `build`
+
+### AI attribution (required on every commit)
+
+```
+feat(actions): add container build optimization
+
+Optimize multi-stage build to reduce image size.
+
+Assisted-by: Claude Sonnet 4.6 via GitHub Copilot
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+```
+
+Both trailers are required when an AI agent authors or substantially revises a commit.
+
+---
+
 ## Knowledge routing
 
-**All learnings go to `docs/skills/`** — never to `.github/copilot-instructions.md` (that file is a pointer-only wrapper, read-only), and never to a personal agent config outside this repo.
+**All learnings go to `docs/skills/`** (Copilot CLI) **AND `.github/skills/`** (Cloud Agent) — never to `.github/copilot-instructions.md` (pointer-only wrapper, read-only), and never to a personal agent config outside this repo.
+
+| You are working in... | Write to |
+|---|---|
+| `projectbluefin/actions` | `docs/skills/` **and** `.github/skills/` |
+| Any other projectbluefin repo | That repo's `docs/skills/` (create if absent) |
+| ublue-os repos (aurora, bazzite) | **NEVER write to these repos** — see prohibition above |
+| Cross-cutting (affects multiple repos) | Local first, then open propagation issue in `projectbluefin/actions` |
 
 After editing a skill file, commit it in the same PR as the triggering change.
 

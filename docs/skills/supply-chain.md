@@ -1,3 +1,10 @@
+---
+name: supply-chain
+description: Secures the bootc image build supply chain. Covers vendoring external build files (Containerfiles, scripts), SLSA Build L2 posture and verification, cosign verify scoping, shift-left CVE scanning with Trivy (including secret scanning), and SBOM attestation patterns.
+metadata:
+  type: reference
+---
+
 # Supply Chain Security
 
 Authoring and verification reference for the shared bootc-build action toolkit.
