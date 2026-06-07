@@ -30,13 +30,18 @@ Agent works on task
                       └─ loop
 ```
 
-### Skill-improvement checklist — complete before requesting review
+### Skill-improvement mandate — applies to every repo in this org
+
+**Before marking your work complete / before requesting final review:**
 
 - [ ] Did I discover any workaround, non-obvious pattern, or convention?
 - [ ] Is there a skill file for the area I worked in?
 - [ ] If yes — did I update it?
-- [ ] If no — did I create one and added it to `docs/SKILL.md`?
+- [ ] If no — did I create one?
 - [ ] Is the skill file committed in this same PR?
+
+For the full skill file format and where to write things, see:
+[`projectbluefin/actions/.github/skills/skill-improvement/SKILL.md`](https://github.com/projectbluefin/actions/blob/main/.github/skills/skill-improvement/SKILL.md)
 
 ### What counts as a learning worth writing back
 
@@ -87,6 +92,16 @@ Agents implement autonomously **except** at these gates. Stop and request human 
 | **Merge Gate** | Final PR approval and merge — always human |
 
 When in doubt, open a draft PR with your implementation and ask explicitly.
+
+---
+
+## Verification — Agents Implement and Verify; Humans Approve and Merge
+
+Do not request review without evidence. Before opening a PR for review:
+
+- Link to a CI run, workflow run, or test output that exercises your change
+- If no automated test exists, describe how you manually verified the change
+- Skill file update must be committed in the same PR (not a follow-up)
 
 ---
 
