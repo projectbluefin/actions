@@ -1,6 +1,6 @@
 ---
 name: factory-operations
-description: Production gate (2-human approval), skill-drift PR check, and scheduled skill audit — how the self-improving factory loop works and how to configure it.
+description: Production gate (2-human approval), skill-drift PR check, and scheduled skill audit — how the self-improving factory loop works and how to configure it. Use when configuring production approval gates, diagnosing skill-drift CI warnings, setting up the weekly skill audit, or managing Renovate auto-merge behavior.
 metadata:
   type: reference
 ---

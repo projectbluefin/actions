@@ -11,6 +11,48 @@ Load **[docs/SKILL.md](docs/SKILL.md)** before modifying any action.
 
 ---
 
+## The System You Are Part Of
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  KubeStellar Hive  https://kubestellar.io/live/hive/bluefin/    │
+│  AI-native Continuous Maturity Model (ACMM) orchestration       │
+│  Agents run at increasing autonomy levels — you are one of them │
+└────────────────────────┬────────────────────────────────────────┘
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                             ▼
+┌─────────────────────┐     ┌──────────────────────────┐
+│  bonedigger         │     │  kubestellar-bot          │
+│  (client + bot)     │     │  (repo automation)        │
+│                     │     │                           │
+│  ujust report       │     │  Processes issues from    │
+│  └─ agent collects  │────▶│  bonedigger pipeline      │
+│     system state    │     │  Implements fixes, ships  │
+│     humans can't    │     │  improvements back to     │
+│  └─ files issue to  │     │  the image                │
+│     image repo      │     │                           │
+└─────────────────────┘     └──────────────────────────┘
+         ▲                             │
+         │                             │
+         └─────────── ships ───────────┘
+              better OS → better bonedigger → loop
+```
+
+**bonedigger** ([projectbluefin/bonedigger](https://github.com/projectbluefin/bonedigger)) is the
+client + lifecycle bot. Users run `ujust report` — an agent collects system diagnostics, scrubs PII
+on-device, and files an issue to the image repo. The bonedigger GitHub Actions lifecycle bot then
+manages the pipeline: `filed → approved → queued → claimed → done`.
+
+**kubestellar-bot** is the repo automation layer built on
+[KubeStellar Hive](https://kubestellar.io/live/hive/bluefin/). It picks up queued issues,
+dispatches agents to implement fixes and improvements, and ships them back.
+
+**You** are an agent in this system. Your work compounds. Keep workflows deterministic and
+repeatable for humans via Just.
+
+---
+
 ## The Self-Improvement Loop
 
 > **This is the core operating model. Read it before starting any task.**
@@ -40,8 +82,8 @@ Agent works on task
 - [ ] If no — did I create one?
 - [ ] Is the skill file committed in this same PR?
 
-For the full skill file format and where to write things, see:
-[`projectbluefin/actions/.github/skills/skill-improvement/SKILL.md`](https://github.com/projectbluefin/actions/blob/main/.github/skills/skill-improvement/SKILL.md)
+For the full skill file format and where to write things, see the org-wide:
+[`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md)
 
 ### What counts as a learning worth writing back
 
@@ -190,11 +232,11 @@ Both trailers are required when an AI agent authors or substantially revises a c
 
 ## Knowledge routing
 
-**All learnings go to `docs/skills/`** (Copilot CLI) **AND `.github/skills/`** (Cloud Agent) — never to `.github/copilot-instructions.md` (pointer-only wrapper, read-only), and never to a personal agent config outside this repo.
+**All learnings go to `docs/skills/`** — never to `.github/copilot-instructions.md` (pointer-only wrapper, read-only), and never to a personal agent config outside this repo.
 
 | You are working in... | Write to |
 |---|---|
-| `projectbluefin/actions` | `docs/skills/` **and** `.github/skills/` |
+| `projectbluefin/actions` | `docs/skills/` |
 | Any other projectbluefin repo | That repo's `docs/skills/` (create if absent) |
 | ublue-os repos (aurora, bazzite) | **NEVER write to these repos** — see prohibition above |
 | Cross-cutting (affects multiple repos) | Local first, then open propagation issue in `projectbluefin/actions` |
@@ -202,3 +244,38 @@ Both trailers are required when an AI agent authors or substantially revises a c
 After editing a skill file, commit it in the same PR as the triggering change.
 
 > **Why:** Skills in this repo are the canonical reference. Personal agent configs are ephemeral and siloed. A fix discovered here belongs to every future agent working in this repo — not just the one that found it.
+
+---
+
+## Repositories
+
+### Core repos in scope for this actions library
+
+| Repo | Role |
+|---|---|
+| [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) | Main OS image (Path 1 — reusable-build.yml) |
+| [projectbluefin/bluefin-lts](https://github.com/projectbluefin/bluefin-lts) | LTS variant on CentOS Stream 10 (Path 2 — à la carte) |
+| [projectbluefin/dakota](https://github.com/projectbluefin/dakota) | BuildStream image build (Path 2, partial adoption) |
+| [projectbluefin/actions](https://github.com/projectbluefin/actions) | **This repo** — shared CI actions + canonical skills hub |
+| [ublue-os/aurora](https://github.com/ublue-os/aurora) | KDE variant (Path 1, external — read-only) |
+| [ublue-os/bazzite](https://github.com/ublue-os/bazzite) | Gaming variant (external — read-only) |
+
+### Infrastructure
+
+| Repo | Role |
+|---|---|
+| [projectbluefin/testsuite](https://github.com/projectbluefin/testsuite) | QA pipeline — Argo + KubeVirt + AT-SPI |
+| [projectbluefin/bonedigger](https://github.com/projectbluefin/bonedigger) | Client reporting + issue lifecycle bot |
+| [projectbluefin/housekeeping](https://github.com/projectbluefin/housekeeping) | Org-wide maintenance workflows |
+
+---
+
+## Build Tools
+
+- **Just** — command runner (`just build`, `just test`, `just validate`, `just sbom`)
+- **Podman / Buildah** — container building and layer manipulation
+- **GitHub Actions** — CI/CD via composite actions and reusable workflows
+- **Renovate** — automated dependency updates (SHA pins, digest bumps) — inherits from [projectbluefin/renovate-config](https://github.com/projectbluefin/renovate-config)
+- **cosign** — keyless signing + attestation verification
+- **syft / oras** — SBOM generation and OCI referrer attachment
+- **Trivy** — CVE scanning before push

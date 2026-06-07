@@ -2,15 +2,13 @@
 
 Agent entry point for `projectbluefin/actions`. Load only the skill relevant to your task.
 
-> **Two skill locations:** `docs/skills/` is for the Copilot CLI agent. `.github/skills/` is for the
-> Cloud Agent. For `projectbluefin/actions`, learnings must be written to **both** locations.
-> Skill format reference: [`.github/skills/skill-improvement/SKILL.md`](../.github/skills/skill-improvement/SKILL.md)
+> Skill format reference: [`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md)
 
 ## Task → Skill
 
 | I need to... | Load |
 |---|---|
-| Create or update a skill file (format, frontmatter, structure) | `.github/skills/skill-improvement/SKILL.md` |
+| Create or update a skill file (format, frontmatter, structure) | [`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md) |
 | Detect changed paths for PR build matrix | `docs/skills/composite-actions/action-reference.md` → "detect-changes" |
 | Validate a PR (just check, shellcheck, hadolint, pre-commit) | `docs/skills/composite-actions/action-reference.md` → "validate-pr" |
 | Author or modify a composite action | `docs/skills/composite-actions.md` |
@@ -56,7 +54,6 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 
 | Skill | Covers |
 |---|---|
-| [`.github/skills/skill-improvement/SKILL.md`](../.github/skills/skill-improvement/SKILL.md) | Canonical skill file format, frontmatter spec, progressive disclosure, self-improvement mandate |
 | [`composite-actions.md`](skills/composite-actions.md) | Authoring conventions, action catalog, rollout strategy, CI-fix-first workflow, known workarounds |
 | [`composite-actions/action-reference.md`](skills/composite-actions/action-reference.md) | Full action-by-action reference for all bootc-build composite actions |
 | [`composite-actions/reusable-workflow.md`](skills/composite-actions/reusable-workflow.md) | reusable-build.yml and reusable-release.yml details, cross-repo refs, digest shape |

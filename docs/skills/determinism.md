@@ -1,6 +1,6 @@
 ---
 name: determinism
-description: Non-deterministic surfaces in the projectbluefin factory — classification, mitigations, and open investigations.
+description: Non-deterministic surfaces in the projectbluefin factory — classification, mitigations, and open investigations. Use when auditing build reproducibility, verifying SHA pins are accurate, or investigating why two builds from the same source produce different artifacts.
 metadata:
   type: reference
 ---
