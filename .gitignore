@@ -1,0 +1,5 @@
+# Local git worktrees (never commit these)
+*-work/
+*-worktree/
+actions/
+agent-build-timeout/
