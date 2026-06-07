@@ -1,0 +1,78 @@
+name: Reusable Renovate Auto-merge
+
+# Centralised Renovate auto-merge logic for projectbluefin image repos.
+# Each image repo keeps its own workflow_run trigger (which must reference
+# the repo-specific CI workflow name) but delegates the PR lookup + merge
+# logic here to avoid duplication.
+#
+# Usage in the caller workflow:
+#
+#   on:
+#     workflow_run:
+#       workflows: ["<repo-specific CI workflow name>"]
+#       types: [completed]
+#   permissions:
+#     contents: write
+#     pull-requests: write
+#   jobs:
+#     automerge:
+#       if: github.event.workflow_run.conclusion == 'success'
+#       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@<sha> # v1
+#       with:
+#         head_sha: ${{ github.event.workflow_run.head_sha }}
+
+on:
+  workflow_call:
+    inputs:
+      head_sha:
+        description: "Head SHA of the completed workflow run"
+        type: string
+        required: true
+      base_branch:
+        description: "Base branch to search for Renovate PRs targeting"
+        type: string
+        default: "testing"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Auto-merge Renovate PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Renovate PR for this commit
+        id: find-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --base "$BASE_BRANCH" \
+            --state open \
+            --json number,headRefOid,author \
+            --jq ".[] | select(.headRefOid == \"$HEAD_SHA\") | select(.author.login == \"renovate[bot]\" or .author.login == \"app/mergeraptor\") | .number" \
+            | head -1)
+
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open Renovate/Mergeraptor PR found for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          else
+            echo "Found Renovate/Mergeraptor PR #$PR_NUMBER"
+            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable auto-merge
+        if: steps.find-pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
+            --auto \
+            --squash \
+            --repo "${{ github.repository }}"
+          echo "✅ Auto-merge enabled on PR #${{ steps.find-pr.outputs.pr_number }}"
