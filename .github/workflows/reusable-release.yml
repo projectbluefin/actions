@@ -107,10 +107,6 @@ on:
         default: ""
         required: false
         type: string
-    secrets:
-      github_token:
-        required: true
-
 permissions: {}
 
 jobs:
@@ -193,7 +189,7 @@ jobs:
         id: build_run
         if: inputs.generate_sbom_inline == false
         env:
-          GH_TOKEN: ${{ secrets.github_token }}
+          GH_TOKEN: ${{ github.token }}
           BUILD_WORKFLOW: ${{ inputs.build_workflow }}
           BUILD_BRANCH: ${{ inputs.build_branch }}
           REPOSITORY: ${{ github.repository }}
@@ -293,7 +289,7 @@ jobs:
         with:
           name: ${{ inputs.sbom_artifact }}
           run-id: ${{ steps.build_run.outputs.run_id }}
-          github-token: ${{ secrets.github_token }}
+          github-token: ${{ github.token }}
           path: sbom-current
 
       - name: Create release
@@ -312,7 +308,7 @@ jobs:
           cert-identity-regexp: ${{ inputs.cert_identity_regexp }}
           notable-packages: ${{ inputs.notable_packages }}
           docs-url: ${{ inputs.docs_url }}
-          github-token: ${{ secrets.github_token }}
+          github-token: ${{ github.token }}
 
   semver-release:
     name: Create release ${{ inputs.tag }}
@@ -335,7 +331,7 @@ jobs:
           tag: ${{ inputs.tag }}
           output-file: CHANGELOG.md
           config: ${{ inputs.cliff-config }}
-          github-token: ${{ secrets.github_token }}
+          github-token: ${{ github.token }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
