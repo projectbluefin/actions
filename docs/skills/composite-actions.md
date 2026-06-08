@@ -254,6 +254,29 @@ When you change only the SHA or comment on a `uses:` line, it's easy to accident
 
 Always verify the `with:` block is still present after editing a `uses:` line. Actionlint enforces this but only on push — not in local editors.
 
+### Multi-line strings in `run:` blocks
+
+A double-quoted multi-line string inside a YAML `run:` block breaks shellcheck (and therefore
+actionlint). The newlines inside the YAML block scalar cause the parser to see subsequent lines as
+stray YAML keys rather than shell string content.
+
+```yaml
+# ❌ broken — shellcheck sees an unclosed double-quoted string
+- run: |
+    git commit -m "subject line
+
+Assisted-by: foo
+Co-authored-by: bar"   # actionlint: SC1072 / SC1073 / unexpected YAML key
+
+# ✅ correct — use ANSI-C quoting ($'...') to embed newlines
+- run: |
+    msg="subject line"$'\n\n'"Assisted-by: foo"$'\n'"Co-authored-by: bar"
+    git commit -m "${msg}"
+```
+
+Use `$'...\n...'` concatenation whenever a shell string must contain literal newlines inside a
+YAML block scalar. Heredocs are also acceptable for longer messages.
+
 ---
 
 ## CI-fix-first workflow (for agents)
@@ -286,6 +309,6 @@ Never add a new inline `uses:` for a third-party action in a consumer workflow i
 | `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |
-| `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for `out.ociarchive` to survive to final stage |
-| `sudo rm -f out.ociarchive` | `chunka` | Containerfile.splitter leaves artifact in CWD; stale file breaks re-runs |
+| `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for the OCI output dir (`out/`) to survive to the final stage |
+| `sudo rm -rf out` | `chunka` | Containerfile.splitter leaves `out/` dir in CWD (v0.6.0+; was `out.ociarchive` in v0.5.0); stale dir breaks re-runs |
 | `sudo podman save \| podman load` | `chunka` | buildah (root) and podman (user) use separate container stores |

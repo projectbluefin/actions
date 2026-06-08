@@ -51,6 +51,40 @@ single follow-up commit on the Renovate branch before merging.
 
 ---
 
+## Pattern: pin OCI images to the manifest index digest, not a platform digest
+
+When pinning a container image to a SHA-256 digest (e.g. `CHUNKAH_SHA` in `chunka`), always
+use the **manifest index (multi-arch) digest**, not a platform-specific digest.
+
+**Why this matters:**
+
+- Renovate's `docker` datasource tracks the manifest index digest. If the code uses a
+  platform-specific digest, Renovate will immediately open a follow-up PR to "upgrade" the same
+  version — the digests differ even though the image hasn't changed.
+- The index digest works across architectures: `podman`/`buildah` resolve it to the correct
+  platform automatically. A platform-specific digest fails on a different arch.
+
+**How to get the correct digest:**
+
+```bash
+# Gets the index digest (correct)
+skopeo inspect --no-tags docker://quay.io/coreos/chunkah:v0.6.0 | jq -r .Digest
+# or via curl:
+curl -sI "https://quay.io/v2/coreos/chunkah/manifests/v0.6.0" \
+  -H "Accept: application/vnd.oci.image.index.v1+json" | grep -i docker-content-digest
+```
+
+**How to spot the wrong digest:**
+
+```bash
+# Shows the index + per-platform digests
+curl -s "https://quay.io/v2/coreos/chunkah/manifests/v0.6.0" \
+  -H "Accept: application/vnd.oci.image.index.v1+json" | jq '.manifests[] | {platform, digest}'
+# If your pinned SHA matches one of these platform entries, you have a platform digest — fix it.
+```
+
+---
+
 ## Pattern: use `actions/attest-build-provenance` for SLSA provenance
 
 Use `actions/attest-build-provenance` (not the generic `actions/attest`) for SLSA-compliant
