@@ -22,11 +22,6 @@
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash"
-    },
-    {
-      "description": "Disable automerge for chunkah — Containerfile.splitter must be vendored manually alongside the version bump (see docs/skills/supply-chain.md)",
-      "matchPackageNames": ["quay.io/coreos/chunkah"],
-      "automerge": false
     }
   ]
 }

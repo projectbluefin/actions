@@ -34,23 +34,20 @@ same commit on every version update.
 references it by local path (`${{ github.action_path }}/Containerfile.splitter`) so no network
 fetch happens at build time. The expected SHA-256 is recorded in a comment in `action.yml`.
 
-**Renovate tracking:** `renovate.json` has a custom regex manager that watches `bootc-build/chunka/action.yml`
-and opens a PR when a new `quay.io/coreos/chunkah` digest/tag is available. Automerge is disabled for
-this package because `Containerfile.splitter` must also be updated — Renovate cannot do that automatically.
+**Renovate tracking (fully automated):** `renovate.json` has a custom regex manager that watches
+`bootc-build/chunka/action.yml` and opens a PR when a new `quay.io/coreos/chunkah` digest/tag
+is available. The `.github/workflows/vendor-chunka-files.yml` workflow automatically downloads
+the matching `Containerfile.splitter` from the chunkah GitHub release, updates the SHA-256
+comment in `action.yml`, and commits both back to the Renovate branch. When CI passes, the PR
+automerges.
 
-When a Renovate PR for chunkah lands, complete it by adding the vendored file update:
+**No manual steps are required for routine chunkah upgrades.**
 
-1. Download the new `Containerfile.splitter` from the corresponding GitHub release:
-   ```
-   curl -fsSL https://github.com/coreos/chunkah/releases/download/<NEW_VERSION>/Containerfile.splitter \
-     -o bootc-build/chunka/Containerfile.splitter
-   ```
-2. Verify the SHA-256 matches the release notes / upstream checksum:
-   ```
-   sha256sum bootc-build/chunka/Containerfile.splitter
-   ```
-3. Update the SHA-256 comment in `bootc-build/chunka/action.yml` to match.
-4. Commit both files (the action.yml Renovate already updated + the new Containerfile.splitter) together.
+If the `Containerfile.splitter` changes in a way that requires coordinated changes to `action.yml`
+(e.g. a new output format — this happened between v0.5.0 and v0.6.0 where `oci-archive:out.ociarchive`
+became `oci:out`), the vendor workflow will commit the new file but CI may fail, signalling that
+`action.yml` also needs a manual update. The skill file change and action.yml fix should be done in a
+single follow-up commit on the Renovate branch before merging.
 
 ---
 
