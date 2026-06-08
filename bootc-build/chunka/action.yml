@@ -40,7 +40,7 @@ runs:
         # at CHUNKAH_VERSION and verified: sha256:46f328cf9098370ab1634748e84949b994416cbb36931126c794018484361279
         # Do NOT fetch Containerfile.splitter from the network at build time — see docs/skills/supply-chain.md.
         CHUNKAH_VERSION="v0.6.0"
-        CHUNKAH_SHA="sha256:f812b02f304ac192cdfa722a7043fd775fa03ed48fa047ff8213c1fe1c4637ab"
+        CHUNKAH_SHA="sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708"
         CHUNKAH_REF="quay.io/coreos/chunkah:${CHUNKAH_VERSION}@${CHUNKAH_SHA}"
         CONTAINERFILE="${{ github.action_path }}/Containerfile.splitter"
 
