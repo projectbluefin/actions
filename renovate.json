@@ -3,6 +3,18 @@
   "extends": [
     "local>projectbluefin/renovate-config"
   ],
+  "customManagers": [
+    {
+      "description": "Track chunkah OCI image version and digest pinned as shell variables in chunka/action.yml",
+      "customType": "regex",
+      "managerFilePatterns": ["bootc-build/chunka/action.yml"],
+      "matchStrings": [
+        "CHUNKAH_VERSION=\"(?<currentValue>[^\"]+)\"[\\s\\S]*?CHUNKAH_SHA=\"(?<currentDigest>sha256:[a-f0-9]+)\""
+      ],
+      "depNameTemplate": "quay.io/coreos/chunkah",
+      "datasourceTemplate": "docker"
+    }
+  ],
   "packageRules": [
     {
       "description": "Automerge chore dep updates (digest, pin, patch, minor) when CI passes",
@@ -10,6 +22,11 @@
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash"
+    },
+    {
+      "description": "Disable automerge for chunkah — Containerfile.splitter must be vendored manually alongside the version bump (see docs/skills/supply-chain.md)",
+      "matchPackageNames": ["quay.io/coreos/chunkah"],
+      "automerge": false
     }
   ]
 }

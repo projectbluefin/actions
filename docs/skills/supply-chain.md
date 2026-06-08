@@ -34,13 +34,23 @@ same commit on every version update.
 references it by local path (`${{ github.action_path }}/Containerfile.splitter`) so no network
 fetch happens at build time. The expected SHA-256 is recorded in a comment in `action.yml`.
 
-When bumping `CHUNKAH_VERSION`:
+**Renovate tracking:** `renovate.json` has a custom regex manager that watches `bootc-build/chunka/action.yml`
+and opens a PR when a new `quay.io/coreos/chunkah` digest/tag is available. Automerge is disabled for
+this package because `Containerfile.splitter` must also be updated — Renovate cannot do that automatically.
 
-1. Download the new `Containerfile.splitter` from the corresponding GitHub release.
-2. Verify the SHA-256 matches the release notes / upstream checksum.
-3. Replace `bootc-build/chunka/Containerfile.splitter` with the new file.
-4. Update the SHA-256 comment in `bootc-build/chunka/action.yml`.
-5. Bump `CHUNKAH_VERSION` and `CHUNKAH_SHA` in the same commit.
+When a Renovate PR for chunkah lands, complete it by adding the vendored file update:
+
+1. Download the new `Containerfile.splitter` from the corresponding GitHub release:
+   ```
+   curl -fsSL https://github.com/coreos/chunkah/releases/download/<NEW_VERSION>/Containerfile.splitter \
+     -o bootc-build/chunka/Containerfile.splitter
+   ```
+2. Verify the SHA-256 matches the release notes / upstream checksum:
+   ```
+   sha256sum bootc-build/chunka/Containerfile.splitter
+   ```
+3. Update the SHA-256 comment in `bootc-build/chunka/action.yml` to match.
+4. Commit both files (the action.yml Renovate already updated + the new Containerfile.splitter) together.
 
 ---
 
