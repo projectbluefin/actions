@@ -293,7 +293,7 @@ jobs:
           path: sbom-current
 
       - name: Create release
-        uses: projectbluefin/actions/bootc-build/create-release@v1
+        uses: projectbluefin/actions/bootc-build/create-release@d290241b8b7a6721be8855d1d94cdb8209652080 # v1
         with:
           sbom-path: sbom-current/${{ steps.image_name.outputs.image_name }}.sbom.json
           tag: ${{ steps.meta.outputs.tag }}
