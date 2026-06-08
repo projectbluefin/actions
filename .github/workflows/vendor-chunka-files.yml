@@ -50,9 +50,8 @@ jobs:
           if git diff --exit-code; then
             echo "Containerfile.splitter is already up to date for ${{ steps.version.outputs.version }}"
           else
-            git commit -am "chore(chunka): vendor Containerfile.splitter for ${{ steps.version.outputs.version }}
-
-Assisted-by: GitHub Actions
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            version="${{ steps.version.outputs.version }}"
+            msg="chore(chunka): vendor Containerfile.splitter for ${version}"$'\n\n'"Assisted-by: GitHub Actions"$'\n'"Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            git commit -am "${msg}"
             git push
           fi
