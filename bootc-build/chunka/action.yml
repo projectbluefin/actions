@@ -31,29 +31,33 @@ runs:
         SOURCE: ${{ inputs.source-image }}
         OUTPUT: ${{ inputs.output-image }}
         MAX_LAYERS: ${{ inputs.max-layers }}
+        FORCE_COMPRESSION: ${{ inputs.force-compression }}
       run: |
         set -euo pipefail
 
-        # Version pin — bump both CHUNKAH_SHA and CHUNKAH_VERSION together.
-        # Containerfile.splitter is fetched from the matching release tag at build time.
         # Version pin — bump CHUNKAH_VERSION, CHUNKAH_SHA, and bootc-build/chunka/Containerfile.splitter
         # together in the same commit. The vendored Containerfile.splitter was fetched from the release
-        # at CHUNKAH_VERSION and verified: sha256:66d758ca7f6d3280d80c506e53d632391fb4150f1bc202fec876507d1d9b2ba7
+        # at CHUNKAH_VERSION and verified: sha256:46f328cf9098370ab1634748e84949b994416cbb36931126c794018484361279
         # Do NOT fetch Containerfile.splitter from the network at build time — see docs/skills/supply-chain.md.
-        CHUNKAH_VERSION="v0.5.0"
-        CHUNKAH_SHA="sha256:352097f3d32186ac11082f8b74cd544678b00388b50c96ba5c8e79503a454fe3"
+        CHUNKAH_VERSION="v0.6.0"
+        CHUNKAH_SHA="sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708"
         CHUNKAH_REF="quay.io/coreos/chunkah:${CHUNKAH_VERSION}@${CHUNKAH_SHA}"
         CONTAINERFILE="${{ github.action_path }}/Containerfile.splitter"
 
         OUTPUT_TAG="${OUTPUT:-${SOURCE}}"
+
+        FC_FLAG=""
+        if [[ "${FORCE_COMPRESSION}" == "true" ]]; then
+          FC_FLAG="--force-compression"
+        fi
 
         # CHUNKAH_CONFIG_STR passes existing OCI labels (containers.bootc=1, etc.)
         # into chunkah so they are preserved on the rechunked image.
         CHUNKAH_CONFIG_STR="$(sudo podman inspect "${SOURCE}")"
 
         # -v and --security-opt are required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x).
-        # The bind-mount of /run/src keeps out.ociarchive in the host CWD so that the final
-        # `FROM oci-archive:out.ociarchive` stage in Containerfile.splitter can find it.
+        # The bind-mount of /run/src keeps the OCI output dir in the host CWD so that the
+        # final `FROM oci:out` stage in Containerfile.splitter can find it.
         sudo buildah build \
           --skip-unused-stages=false \
           --from "${SOURCE}" \
@@ -63,9 +67,10 @@ runs:
           -t "${OUTPUT_TAG}" \
           -v "$(pwd):/run/src" \
           --security-opt=label=disable \
+          ${FC_FLAG:+${FC_FLAG}} \
           "${CONTAINERFILE}"
 
-        sudo rm -f out.ociarchive
+        sudo rm -rf out
 
         # Transfer rechunked image from root (buildah) storage to user (podman) storage.
         # buildah runs as root, so its container store is separate from the runner-user's

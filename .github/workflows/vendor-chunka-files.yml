@@ -1,0 +1,57 @@
+---
+name: Vendor chunkah Containerfile.splitter
+
+# Runs on Renovate PRs that bump bootc-build/chunka/action.yml.
+# Downloads the matching Containerfile.splitter from the chunkah GitHub release,
+# updates the SHA-256 comment in action.yml, and commits both back to the
+# Renovate branch so the PR is fully self-contained and ready to automerge.
+
+on:
+  pull_request:
+    paths:
+      - bootc-build/chunka/action.yml
+    types: [opened, synchronize]
+
+permissions: {}
+
+jobs:
+  vendor-containerfile-splitter:
+    if: startsWith(github.head_ref, 'renovate/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract CHUNKAH_VERSION from action.yml
+        id: version
+        run: |
+          version=$(grep -oP 'CHUNKAH_VERSION="\K[^"]+' bootc-build/chunka/action.yml)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download Containerfile.splitter for ${{ steps.version.outputs.version }}
+        run: |
+          curl --no-progress-meter -fSL \
+            "https://github.com/coreos/chunkah/releases/download/${{ steps.version.outputs.version }}/Containerfile.splitter" \
+            -o bootc-build/chunka/Containerfile.splitter
+
+      - name: Update SHA-256 comment in action.yml
+        run: |
+          sha=$(sha256sum bootc-build/chunka/Containerfile.splitter | awk '{print $1}')
+          sed -Ei "s|# sha256:[a-f0-9]{64}|# sha256:${sha}|" bootc-build/chunka/action.yml
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --exit-code; then
+            echo "Containerfile.splitter is already up to date for ${{ steps.version.outputs.version }}"
+          else
+            version="${{ steps.version.outputs.version }}"
+            msg="chore(chunka): vendor Containerfile.splitter for ${version}"$'\n\n'"Assisted-by: GitHub Actions"$'\n'"Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            git commit -am "${msg}"
+            git push
+          fi
