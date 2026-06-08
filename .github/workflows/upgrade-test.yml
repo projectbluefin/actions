@@ -82,7 +82,7 @@ permissions: {}
 jobs:
   upgrade-test:
     name: Upgrade & rollback — ${{ inputs.image }}
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@e2b36dc75ad91a6da7321c3ce86d3e1d250f5c4a # main
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@f71d58d592b18d2722f7903e77dea8a3aa9d687f # main — includes ghcr.io/ prefix fix (PR #412)
     permissions:
       contents: read
       packages: write
