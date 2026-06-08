@@ -21,13 +21,13 @@ outputs:
     description: "'true' if any image-affecting path changed"
     value: ${{ steps.filter.outputs.image }}
   nvidia_changed:
-    description: "'true' if a path that requires the nvidia-open flavor changed"
+    description: "'true' if a path that requires the nvidia flavor changed"
     value: ${{ steps.filter.outputs.nvidia }}
   should_build:
     description: "Alias for image_changed — 'true' when a build is needed"
     value: ${{ steps.filter.outputs.image }}
   image_flavors:
-    description: "JSON array of image flavors to build: '[\"main\"]' or '[\"main\",\"nvidia-open\"]'"
+    description: "JSON array of image flavors to build: '[\"main\"]' or '[\"main\",\"nvidia\"]'"
     value: ${{ steps.matrix.outputs.image_flavors }}
 
 runs:
@@ -47,7 +47,7 @@ runs:
       run: |
         set -euo pipefail
         if [[ "${NVIDIA_CHANGED}" == "true" ]]; then
-          echo 'image_flavors=["main","nvidia-open"]' >> "$GITHUB_OUTPUT"
+          echo 'image_flavors=["main","nvidia"]' >> "$GITHUB_OUTPUT"
         else
           echo 'image_flavors=["main"]' >> "$GITHUB_OUTPUT"
         fi

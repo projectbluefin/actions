@@ -13,7 +13,7 @@ inputs:
     description: "Runner architecture (x86_64 or aarch64)"
     default: "x86_64"
   image-flavor:
-    description: "Image flavor to scope the cache key (e.g. 'main', 'nvidia-open'). When set, caches are partitioned per-flavor to prevent cross-flavor pollution."
+    description: "Image flavor to scope the cache key (e.g. 'main', 'nvidia'). When set, caches are partitioned per-flavor to prevent cross-flavor pollution."
     default: ""
   allow-write:
     description: "Whether saving the cache is permitted"
