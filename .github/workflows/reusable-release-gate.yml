@@ -7,6 +7,16 @@ on:
         description: Repository name in owner/repo format for concurrency and API calls
         required: true
         type: string
+      pr_number:
+        description: PR number to post status on (overrides event context; required for workflow_dispatch callers)
+        required: false
+        default: ''
+        type: string
+      head_sha:
+        description: PR head SHA for e2e lookup (overrides event context; required for workflow_dispatch callers)
+        required: false
+        default: ''
+        type: string
       registry:
         description: GHCR registry prefix
         required: false
@@ -202,7 +212,7 @@ jobs:
         env:
           E2E_SUITES: ${{ inputs.e2e_suites }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
           REPO: ${{ inputs.repo }}
         run: |
           set -euo pipefail
@@ -295,6 +305,7 @@ jobs:
           E2E_DETAILS: ${{ steps.e2e.outputs.details }}
           E2E_STATE: ${{ steps.e2e.outputs.state }}
           E2E_SUMMARY: ${{ steps.e2e.outputs.summary }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           READY: ${{ steps.aggregate.outputs.ready }}
           RESOLVE_OK: ${{ steps.resolve.outputs.ok }}
           RESOLVE_SUMMARY: ${{ steps.resolve.outputs.summary }}
@@ -310,7 +321,7 @@ jobs:
             const gateEnd = '<!-- release-gate-end -->';
             const reminderStart = '<!-- release-reminder-start -->';
             const reminderEnd = '<!-- release-reminder-end -->';
-            const prNumber = context.payload.pull_request.number;
+            const prNumber = parseInt(process.env.INPUT_PR_NUMBER) || context.payload.pull_request?.number;
             const ready = process.env.READY === 'true';
             const now = new Date().toISOString();
             const digests = JSON.parse(process.env.DIGESTS_JSON || '{}');
@@ -418,10 +429,11 @@ jobs:
       - name: Set release readiness label
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           READY: ${{ steps.aggregate.outputs.ready }}
         with:
           script: |
-            const prNumber = context.payload.pull_request.number;
+            const prNumber = parseInt(process.env.INPUT_PR_NUMBER) || context.payload.pull_request?.number;
             const ready = process.env.READY === 'true';
             const desired = ready ? 'release/ready' : 'release/blocked';
             const undesired = ready ? 'release/blocked' : 'release/ready';
