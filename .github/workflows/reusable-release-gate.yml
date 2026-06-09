@@ -1,0 +1,483 @@
+name: Reusable Release Gate
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: Repository name in owner/repo format for concurrency and API calls
+        required: true
+        type: string
+      registry:
+        description: GHCR registry prefix
+        required: false
+        default: ghcr.io/projectbluefin
+        type: string
+      variants:
+        description: JSON array of image variants with "image" key
+        required: true
+        type: string
+      cosign_identity_regexp:
+        description: Regular expression for cosign certificate identity verification
+        required: true
+        type: string
+      target_tag:
+        description: Source tag to resolve digests from
+        required: false
+        default: testing
+        type: string
+      run_e2e:
+        description: Whether to require a recent post-testing-e2e result for the PR head SHA
+        required: false
+        default: true
+        type: boolean
+      e2e_suites:
+        description: Comma-separated suite list for caller documentation and status output
+        required: false
+        default: smoke,common
+        type: string
+      e2e_image:
+        description: Full image ref associated with the e2e gate; if empty, e2e is skipped
+        required: false
+        default: ''
+        type: string
+    outputs:
+      ready:
+        description: Whether all gate checks passed
+        value: ${{ jobs.gate.outputs.ready }}
+      digests:
+        description: JSON map of resolved image digests
+        value: ${{ jobs.gate.outputs.digests }}
+
+permissions: {}
+
+concurrency:
+  group: release-gate-${{ inputs.repo }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      packages: read
+      pull-requests: write
+    outputs:
+      ready: ${{ steps.aggregate.outputs.ready }}
+      digests: ${{ steps.resolve.outputs.digests }}
+    steps:
+      - name: Authenticate to GHCR for skopeo reads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_HOST: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          registry_host="${REGISTRY_HOST#docker://}"
+          registry_host="${registry_host%%/*}"
+          echo "$GH_TOKEN" | skopeo login "$registry_host" --username "${{ github.actor }}" --password-stdin
+
+      - name: Resolve digests
+        id: resolve
+        shell: bash
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          TARGET_TAG: ${{ inputs.target_tag }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          digests='{}'
+          rows=''
+          failed=0
+          count=0
+
+          while IFS= read -r variant; do
+            [ -n "$variant" ] || continue
+            image=$(jq -r '.image' <<<"$variant")
+            count=$((count + 1))
+            ref="${REGISTRY}/${image}:${TARGET_TAG}"
+
+            if digest=$(skopeo inspect --format '{{.Digest}}' "docker://${ref}" 2>/dev/null); then
+              digests=$(jq -c --arg image "$image" --arg digest "$digest" '. + {($image): $digest}' <<<"$digests")
+              rows+="${image}|${digest}"$'\n'
+            else
+              failed=1
+              rows+="${image}|ERROR"$'\n'
+            fi
+          done < <(jq -c '.[]' <<<"$VARIANTS_JSON")
+
+          if [ "$failed" -eq 0 ]; then
+            ok=true
+            summary="Resolved ${count} digest(s) from ${TARGET_TAG}."
+          else
+            ok=false
+            summary="Failed to resolve one or more digests from ${TARGET_TAG}."
+          fi
+
+          {
+            echo "ok=${ok}"
+            echo "summary=${summary}"
+            echo "digests=${digests}"
+            echo 'rows<<EOF'
+            printf '%s' "$rows"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify cosign signatures
+        id: verify
+        shell: bash
+        env:
+          DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
+          IDENTITY_REGEXP: ${{ inputs.cosign_identity_regexp }}
+          REGISTRY: ${{ inputs.registry }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          results='{}'
+          rows=''
+          failed=0
+
+          if [ '${{ steps.resolve.outputs.ok }}' != 'true' ]; then
+            {
+              echo 'ok=false'
+              echo 'summary=Skipped signature verification because digest resolution failed.'
+              echo 'results={}'
+              echo 'rows<<EOF'
+              echo 'EOF'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          while IFS= read -r variant; do
+            [ -n "$variant" ] || continue
+            image=$(jq -r '.image' <<<"$variant")
+            digest=$(jq -r --arg image "$image" '.[$image] // empty' <<<"$DIGESTS_JSON")
+
+            if [ -z "$digest" ]; then
+              failed=1
+              results=$(jq -c --arg image "$image" '. + {($image): "failed"}' <<<"$results")
+              rows+="${image}|failed|digest missing"$'\n'
+              continue
+            fi
+
+            ref="${REGISTRY}/${image}@${digest}"
+            if cosign verify \
+              --certificate-identity-regexp "$IDENTITY_REGEXP" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$ref" >/dev/null 2>&1; then
+              results=$(jq -c --arg image "$image" '. + {($image): "passed"}' <<<"$results")
+              rows+="${image}|passed|signature verified"$'\n'
+            else
+              failed=1
+              results=$(jq -c --arg image "$image" '. + {($image): "failed"}' <<<"$results")
+              rows+="${image}|failed|signature verification failed"$'\n'
+            fi
+          done < <(jq -c '.[]' <<<"$VARIANTS_JSON")
+
+          if [ "$failed" -eq 0 ]; then
+            ok=true
+            summary='All resolved digests passed cosign verification.'
+          else
+            ok=false
+            summary='One or more digests failed cosign verification.'
+          fi
+
+          {
+            echo "ok=${ok}"
+            echo "summary=${summary}"
+            echo "results=${results}"
+            echo 'rows<<EOF'
+            printf '%s' "$rows"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check post-testing-e2e status for PR head SHA
+        id: e2e
+        shell: bash
+        env:
+          E2E_SUITES: ${{ inputs.e2e_suites }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPO: ${{ inputs.repo }}
+        run: |
+          set -euo pipefail
+
+          if [ '${{ inputs.run_e2e }}' != 'true' ]; then
+            {
+              echo 'ok=true'
+              echo 'state=skipped'
+              echo 'summary=E2E check disabled by caller.'
+              echo 'details=Caller disabled the E2E gate.'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ -z '${{ inputs.e2e_image }}' ]; then
+            {
+              echo 'ok=true'
+              echo 'state=skipped'
+              echo 'summary=E2E image not set; E2E gate skipped.'
+              echo 'details=Caller left e2e_image empty.'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          runs=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100")
+
+          selected=$(jq -c '
+            [
+              .workflow_runs[]
+              | select(
+                  ((.path // "") | endswith("post-testing-e2e.yml"))
+                  or (((.name // "") | ascii_downcase) | contains("post-testing-e2e"))
+                  or (((.name // "") | ascii_downcase) | contains("post merge e2e"))
+                )
+            ]
+            | sort_by(.created_at)
+            | reverse
+            | .[0] // empty
+          ' <<<"$runs")
+
+          if [ -z "$selected" ]; then
+            {
+              echo 'ok=false'
+              echo 'state=failed'
+              echo "summary=No completed post-testing-e2e run found for suites ${E2E_SUITES} on this PR head SHA."
+              echo 'details=Expected a successful post-testing-e2e run for the promotion commit.'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          conclusion=$(jq -r '.conclusion // "unknown"' <<<"$selected")
+          run_url=$(jq -r '.html_url // empty' <<<"$selected")
+          run_name=$(jq -r '.name // .display_title // "post-testing-e2e"' <<<"$selected")
+
+          if [ "$conclusion" = 'success' ]; then
+            {
+              echo 'ok=true'
+              echo 'state=passed'
+              echo "summary=Recent ${run_name} run passed for suites ${E2E_SUITES} on this PR head SHA."
+              echo "details=${run_url}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'ok=false'
+              echo 'state=failed'
+              echo "summary=Recent ${run_name} run did not pass for suites ${E2E_SUITES} on this PR head SHA."
+              echo "details=${run_url}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Aggregate gate result
+        id: aggregate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=false
+          if [ '${{ steps.resolve.outputs.ok }}' = 'true' ] \
+            && [ '${{ steps.verify.outputs.ok }}' = 'true' ] \
+            && [ '${{ steps.e2e.outputs.ok }}' = 'true' ]; then
+            ready=true
+          fi
+          echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+
+      - name: Post or update sticky release status comment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
+          E2E_DETAILS: ${{ steps.e2e.outputs.details }}
+          E2E_STATE: ${{ steps.e2e.outputs.state }}
+          E2E_SUMMARY: ${{ steps.e2e.outputs.summary }}
+          READY: ${{ steps.aggregate.outputs.ready }}
+          RESOLVE_OK: ${{ steps.resolve.outputs.ok }}
+          RESOLVE_SUMMARY: ${{ steps.resolve.outputs.summary }}
+          TARGET_TAG: ${{ inputs.target_tag }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+          VERIFY_OK: ${{ steps.verify.outputs.ok }}
+          VERIFY_RESULTS_JSON: ${{ steps.verify.outputs.results }}
+          VERIFY_SUMMARY: ${{ steps.verify.outputs.summary }}
+        with:
+          script: |
+            const marker = '<!-- release-status-marker -->';
+            const gateStart = '<!-- release-gate-start -->';
+            const gateEnd = '<!-- release-gate-end -->';
+            const reminderStart = '<!-- release-reminder-start -->';
+            const reminderEnd = '<!-- release-reminder-end -->';
+            const prNumber = context.payload.pull_request.number;
+            const ready = process.env.READY === 'true';
+            const now = new Date().toISOString();
+            const digests = JSON.parse(process.env.DIGESTS_JSON || '{}');
+            const variants = JSON.parse(process.env.VARIANTS_JSON || '[]');
+            const verifyResults = JSON.parse(process.env.VERIFY_RESULTS_JSON || '{}');
+
+            const variantLines = variants.map((variant) => {
+              const digest = digests[variant.image] || 'unresolved';
+              const shortDigest = digest.startsWith('sha256:')
+                ? `sha256:${digest.slice(7, 23)}`
+                : digest.slice(0, 16);
+              return `| ${variant.image} | ${process.env.TARGET_TAG} | ${shortDigest} |`;
+            }).join('\n');
+
+            const checks = [
+              {
+                name: 'Resolve digests',
+                result: process.env.RESOLVE_OK === 'true' ? 'passed' : 'failed',
+                details: process.env.RESOLVE_SUMMARY,
+              },
+              {
+                name: 'Verify cosign signatures',
+                result: process.env.VERIFY_OK === 'true' ? 'passed' : 'failed',
+                details: process.env.VERIFY_SUMMARY,
+              },
+              {
+                name: `Check post-testing-e2e (${process.env.E2E_STATE || 'unknown'})`,
+                result: process.env.E2E_STATE === 'passed'
+                  ? 'passed'
+                  : process.env.E2E_STATE === 'skipped'
+                    ? 'skipped'
+                    : 'failed',
+                details: process.env.E2E_DETAILS
+                  ? `${process.env.E2E_SUMMARY} ${process.env.E2E_DETAILS}`.trim()
+                  : process.env.E2E_SUMMARY,
+              },
+            ];
+
+            const perVariantCheckLines = variants.map((variant) => {
+              const result = verifyResults[variant.image] || 'not-run';
+              return `| ${variant.image} | ${result} |`;
+            }).join('\n');
+
+            const gateSection = [
+              gateStart,
+              'Release status',
+              '',
+              `Status: ${ready ? 'ready' : 'blocked'}`,
+              `Last checked (UTC): ${now}`,
+              '',
+              'Variants',
+              '',
+              '| Variant | Source tag | Digest |',
+              '|---|---|---|',
+              variantLines || '| none | none | none |',
+              '',
+              'Checks',
+              '',
+              '| Check | Result | Details |',
+              '|---|---|---|',
+              ...checks.map((check) => `| ${check.name} | ${check.result} | ${String(check.details || '').replace(/\n/g, ' ')} |`),
+              '',
+              'Per-variant signature results',
+              '',
+              '| Variant | Signature |',
+              '|---|---|',
+              perVariantCheckLines || '| none | not-run |',
+              gateEnd,
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+            let reminderSection = `${reminderStart}\n${reminderEnd}`;
+            if (existing) {
+              const match = existing.body.match(new RegExp(`${reminderStart}[\\s\\S]*?${reminderEnd}`));
+              if (match) {
+                reminderSection = match[0];
+              }
+            }
+
+            const body = [marker, gateSection, reminderSection].join('\n\n');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+
+      - name: Set release readiness label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          READY: ${{ steps.aggregate.outputs.ready }}
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const ready = process.env.READY === 'true';
+            const desired = ready ? 'release/ready' : 'release/blocked';
+            const undesired = ready ? 'release/blocked' : 'release/ready';
+
+            const repoLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            for (const [name, color, description] of [
+              [desired, ready ? '0e8a16' : 'b60205', ready ? 'Release gate checks passed' : 'Release gate checks failed'],
+              [undesired, ready ? 'b60205' : '0e8a16', ready ? 'Release gate checks failed' : 'Release gate checks passed'],
+            ]) {
+              if (!repoLabels.some((label) => label.name === name)) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name,
+                  color,
+                  description,
+                });
+              }
+            }
+
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            const currentLabels = issue.data.labels.map((label) => typeof label === 'string' ? label : label.name);
+
+            if (!currentLabels.includes(desired)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: [desired],
+              });
+            }
+
+            if (currentLabels.includes(undesired)) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                name: undesired,
+              }).catch(() => {});
+            }
+
+      - name: Fail gate when checks are blocked
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ steps.aggregate.outputs.ready }}' != 'true' ]; then
+            echo '::error::Release gate is blocked. Review the sticky PR comment for details.'
+            exit 1
+          fi
