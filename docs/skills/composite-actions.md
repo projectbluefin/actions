@@ -174,8 +174,7 @@ Quick reference — for full details see [`composite-actions/action-reference.md
 | `preflight` | Validate registry auth, normalize image refs |
 | `push-image` | Push with retry, digest capture, skopeo alias tags |
 | `sign-and-publish` | Cosign keyless/key + Syft SBOM + SLSA provenance attestation |
-| `rechunk` | rpm-ostree `zstd:chunked` rechunking with delta support |
-| `chunka` | OCI-native chunkah rechunking (no rpm-ostree required) |
+| `chunka` | OCI-native chunkah v0.6.0 rechunking — the single rechunk implementation for all Fedora-based images |
 | `ghcr-cleanup` | Prune old/untagged GHCR images |
 | `detect-changes` | Detect changed paths, compute image-flavor build matrix |
 | `validate-pr` | Run just check, shellcheck, hadolint, pre-commit |

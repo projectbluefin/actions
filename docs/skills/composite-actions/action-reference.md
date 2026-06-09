@@ -1,6 +1,6 @@
 ---
 name: composite-actions-reference
-description: Full action-by-action reference for all bootc-build composite actions: setup-runner, dnf-cache, preflight, push-image, sign-and-publish, rechunk, chunka, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest. Load when implementing, debugging, or wiring a specific action.
+description: Full action-by-action reference for all bootc-build composite actions: setup-runner, dnf-cache, preflight, push-image, sign-and-publish, chunka, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest. Load when implementing, debugging, or wiring a specific action.
 metadata:
   type: reference
 ---
@@ -18,7 +18,6 @@ patterns, github-token pattern), see the parent [`composite-actions.md`](../comp
 - [generate-tags](#generate-tags)
 - [create-manifest](#create-manifest)
 - [sign-and-publish](#sign-and-publish)
-- [rechunk](#rechunk)
 - [chunka](#chunka)
 - [ghcr-cleanup](#ghcr-cleanup)
 - [detect-changes](#detect-changes)
@@ -139,19 +138,25 @@ gh attestation verify oci://ghcr.io/projectbluefin/bluefin@<digest> --repo proje
 
 ---
 
-## `rechunk`
-
-Runs `rpm-ostree compose build-chunked-oci` **inside** the source image itself (privileged `podman run --rm --privileged`) with the host's `/var/lib/containers` volume mounted. Output lands in `containers-storage:localhost/<output-image>`.
-
-⚠️ **Trust requirement:** The source image is executed as a privileged container with full access to host container storage. Only use `rechunk` with images you built in the same CI job or that come from a controlled registry. Never rechunk an image from an untrusted or external source.
-
-`previous-build` enables delta optimization for smaller OTA updates. Pass the previous build's registry reference.
-
----
-
 ## `chunka`
 
-OCI-native rechunking via [chunkah](https://github.com/coreos/chunkah). Uses `buildah build` with a **vendored** `Containerfile.splitter` — no rpm-ostree required.
+OCI-native rechunking via [chunkah v0.6.0](https://github.com/coreos/chunkah). Uses `buildah build`
+with a **vendored** `Containerfile.splitter` — no rpm-ostree required. This is the **single rechunk
+implementation** for all Fedora-based bootc images. `reusable-build.yml` calls it directly via
+`uses: projectbluefin/actions/bootc-build/chunka@<sha>` — no Justfile `rechunk` recipe required
+in consumer repos.
+
+**Consumer integration pattern:**
+- All rechunking happens in `reusable-build.yml` via the `chunka` action — consumers do NOT need a
+  `rechunk` recipe in their Justfile.
+- The `max_layers` workflow input (default: "128") is passed to the action. Upstream chunkah default
+  is 64; bootc images benefit from higher values for better layer reuse granularity.
+- Source image must be `localhost/<IMAGE_NAME>:<DEFAULT_TAG>` in rootful storage (result of
+  `just build-ghcr` which runs with sudo).
+
+**dakota exception:** dakota uses a different `chunkify` recipe (podman run + overlay/fakecap-restore
+for xattr injection). Full centralization is deferred — the xattr/overlay architecture is
+incompatible with the composite action's current interface. See projectbluefin/dakota#231.
 
 Key design decisions:
 - `CHUNKAH_VERSION`, `CHUNKAH_SHA`, and `bootc-build/chunka/Containerfile.splitter` are all version-pinned. **Bump all three together** when upgrading — see `docs/skills/supply-chain.md` for the step-by-step procedure.
@@ -160,15 +165,16 @@ Key design decisions:
 - Mandatory cleanup flags (`--prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-`) strip stale OSTree annotations and are hardcoded — they are correctness requirements, not tuning knobs.
 - `output-image` defaults to `source-image` (in-place rechunk).
 - `force-compression` input is optional and defaults to `false` (preserves existing compression). Use `true` for images that must migrate from existing registry compression (e.g. CentOS Stream bases transitioning from gzip to zstd:chunked).
+- v0.6.0 uses `--output oci:/run/src/out` + `FROM oci:out` (avoids tar/untar round-trip). v0.5.0 used `> /run/src/out.ociarchive` + `FROM oci-archive:out.ociarchive`. Consumer repos must NOT vendor their own Containerfile.splitter.
 
 **Workarounds carried from consuming repos:**
 
 | Workaround | Reason |
 |---|---|
 | `--skip-unused-stages=false` | buildah may skip the final import stage without this |
-| `-v "$(pwd):/run/src"` + `--security-opt=label=disable` | Required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x) — keeps the `/run/src` bind-mount alive so `out.ociarchive` is findable by the final stage |
-| `sudo rm -f out.ociarchive` | Containerfile.splitter leaves this artifact in the CWD; clean up to avoid stale files on re-runs |
-| `sudo podman save "${OUTPUT_TAG}" \| podman load` | buildah runs as root; its container store is separate from the runner-user's podman store — pipe transfers the image to unprivileged podman |
+| `-v "$(pwd):/run/src"` + `--security-opt=label=disable` | Required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x) — keeps the `/run/src` bind-mount alive so `out/` is findable by the final stage |
+| `sudo rm -rf out` | v0.6.0 Containerfile.splitter leaves `out/` dir in CWD; clean up to avoid stale files on re-runs |
+| `sudo podman save "${OUTPUT_TAG}" \| podman load` | Copies image to user (rootless) storage as a convenience; rootful storage (from `sudo buildah build`) is still intact and is what `reusable-build.yml` downstream steps use |
 
 **Root storage prerequisite:** `source-image` must be visible to rootful container storage (i.e., built or imported with `sudo`/buildah). Images built rootless won't be found by `sudo buildah build --from`.
 
