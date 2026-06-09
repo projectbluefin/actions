@@ -1,0 +1,282 @@
+name: Reusable Execute Release
+
+on:
+  workflow_call:
+    inputs:
+      registry:
+        description: GHCR registry prefix
+        required: false
+        default: ghcr.io/projectbluefin
+        type: string
+      variants:
+        description: JSON array of image promotion objects with image, source_tag, target_tag keys
+        required: true
+        type: string
+      fast_forward_branch:
+        description: Branch to fast-forward after promotion (leave empty to skip)
+        required: false
+        default: ''
+        type: string
+      cosign_identity_regexp:
+        description: Regular expression for cosign certificate identity verification
+        required: true
+        type: string
+    outputs:
+      promoted_digests:
+        description: JSON map of promoted digests keyed by image name
+        value: ${{ jobs.execute.outputs.promoted_digests }}
+      promoted_sha:
+        description: Source SHA promoted by this workflow
+        value: ${{ jobs.execute.outputs.promoted_sha }}
+
+permissions: {}
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      packages: write
+      pull-requests: write
+    outputs:
+      promoted_digests: ${{ steps.resolve.outputs.digests }}
+      promoted_sha: ${{ steps.promotion-sha.outputs.sha }}
+    steps:
+      - name: Record promotion SHAs
+        id: promotion-sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          # head.sha: tip of the promotion branch — identifies the testing content being promoted.
+          # merge_commit_sha: the squash commit GitHub created on main — used for branch fast-forward.
+          # All repos use squash-only merge, so these are always different SHAs.
+          {
+            echo "sha=${{ github.event.pull_request.head.sha }}"
+            echo "merge_sha=${{ github.event.pull_request.merge_commit_sha }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to GHCR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          registry_host="${REGISTRY#docker://}"
+          registry_host="${registry_host%%/*}"
+          echo "$GH_TOKEN" | skopeo login "$registry_host" --username "${{ github.actor }}" --password-stdin
+
+      - name: Resolve source digests
+        id: resolve
+        shell: bash
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          digests='{}'
+
+          while IFS= read -r variant; do
+            [ -n "$variant" ] || continue
+            image=$(jq -r '.image' <<<"$variant")
+            source_tag=$(jq -r '.source_tag' <<<"$variant")
+            ref="${REGISTRY}/${image}:${source_tag}"
+            digest=$(skopeo inspect --format '{{.Digest}}' "docker://${ref}")
+            digests=$(jq -c --arg image "$image" --arg digest "$digest" '. + {($image): $digest}' <<<"$digests")
+            echo "Resolved ${image}:${source_tag} -> ${digest}"
+          done < <(jq -c '.[]' <<<"$VARIANTS_JSON")
+
+          echo "digests=${digests}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Re-verify cosign signatures before promotion
+        shell: bash
+        env:
+          DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
+          IDENTITY_REGEXP: ${{ inputs.cosign_identity_regexp }}
+          REGISTRY: ${{ inputs.registry }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r variant; do
+            [ -n "$variant" ] || continue
+            image=$(jq -r '.image' <<<"$variant")
+            digest=$(jq -r --arg image "$image" '.[$image]' <<<"$DIGESTS_JSON")
+            ref="${REGISTRY}/${image}@${digest}"
+            echo "Verifying ${ref}"
+            cosign verify \
+              --certificate-identity-regexp "$IDENTITY_REGEXP" \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              "$ref" >/dev/null
+          done < <(jq -c '.[]' <<<"$VARIANTS_JSON")
+
+      - name: Promote digests to target tags
+        shell: bash
+        env:
+          DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
+          REGISTRY: ${{ inputs.registry }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r variant; do
+            [ -n "$variant" ] || continue
+            image=$(jq -r '.image' <<<"$variant")
+            target_tag=$(jq -r '.target_tag' <<<"$variant")
+            digest=$(jq -r --arg image "$image" '.[$image]' <<<"$DIGESTS_JSON")
+            src="docker://${REGISTRY}/${image}@${digest}"
+            dest="docker://${REGISTRY}/${image}:${target_tag}"
+            echo "Promoting ${src} to ${dest}"
+            skopeo copy --all "$src" "$dest"
+          done < <(jq -c '.[]' <<<"$VARIANTS_JSON")
+
+      - name: Fast-forward branch after promotion
+        if: inputs.fast_forward_branch != ''
+        shell: bash
+        env:
+          BRANCH: ${{ inputs.fast_forward_branch }}
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ steps.promotion-sha.outputs.merge_sha }}
+        run: |
+          set -euo pipefail
+          # Use merge_commit_sha (the squash commit on main), not head.sha.
+          # All repos are squash-only: head.sha is the source branch tip and is
+          # NOT in main's history after the merge. merge_commit_sha is what
+          # actually landed on main and is safe to fast-forward to.
+          #
+          # sync-main-to-lts.yml creates merge commits on the branch on every
+          # main push, so the branch may already be at or ahead of MERGE_SHA
+          # by the time this step runs.
+          compare=$(gh api \
+            "repos/${{ github.repository }}/compare/${MERGE_SHA}...${BRANCH}" \
+            --jq '.status' 2>/dev/null || echo "diverged")
+
+          if [ "$compare" = 'identical' ] || [ "$compare" = 'ahead' ]; then
+            echo "${BRANCH} is already at or ahead of ${MERGE_SHA} (status: ${compare}). Skipping fast-forward."
+            exit 0
+          fi
+
+          gh api "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" \
+            --method PATCH \
+            --field sha="$MERGE_SHA" \
+            --field force=false >/dev/null
+          echo "Fast-forwarded ${BRANCH} to ${MERGE_SHA}"
+
+      - name: Update sticky comment with promotion result
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
+          PROMOTED_SHA: ${{ steps.promotion-sha.outputs.sha }}
+          VARIANTS_JSON: ${{ inputs.variants }}
+        with:
+          script: |
+            const marker = '<!-- release-status-marker -->';
+            const gateStart = '<!-- release-gate-start -->';
+            const gateEnd = '<!-- release-gate-end -->';
+            const reminderStart = '<!-- release-reminder-start -->';
+            const reminderEnd = '<!-- release-reminder-end -->';
+            const prNumber = context.payload.pull_request.number;
+            const digests = JSON.parse(process.env.DIGESTS_JSON || '{}');
+            const variants = JSON.parse(process.env.VARIANTS_JSON || '[]');
+            const actor = context.actor;
+            const promotedAt = new Date().toISOString();
+
+            const digestLines = variants.map((variant) => {
+              const digest = digests[variant.image] || 'unknown';
+              const shortDigest = digest.startsWith('sha256:')
+                ? `sha256:${digest.slice(7, 23)}`
+                : digest.slice(0, 16);
+              return `| ${variant.image} | ${variant.source_tag} | ${variant.target_tag} | ${shortDigest} |`;
+            }).join('\n');
+
+            const gateSection = [
+              gateStart,
+              'Release status',
+              '',
+              'Status: promoted',
+              `Promoted on (UTC): ${promotedAt}`,
+              `Promoted by: ${actor}`,
+              `Source SHA: ${process.env.PROMOTED_SHA}`,
+              '',
+              'Digests',
+              '',
+              '| Variant | Source tag | Target tag | Digest |',
+              '|---|---|---|---|',
+              digestLines || '| none | none | none | none |',
+              gateEnd,
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+
+            let reminderSection = `${reminderStart}\n${reminderEnd}`;
+            if (existing) {
+              const reminderMatch = existing.body.match(new RegExp(`${reminderStart}[\\s\\S]*?${reminderEnd}`));
+              if (reminderMatch) {
+                reminderSection = reminderMatch[0];
+              }
+            }
+
+            const body = [marker, gateSection, reminderSection].join('\n\n');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+
+      - name: Close legacy failure issues
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const legacyTitles = new Set([
+              'ci: weekly LTS release failure',
+              'ci: weekly promotion e2e failure',
+              'ci: weekly release failure',
+            ]);
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            for (const issue of issues) {
+              if (issue.pull_request) {
+                continue;
+              }
+              if (!legacyTitles.has(issue.title)) {
+                continue;
+              }
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+            }
+
+      - name: Confirm release promotion completed
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Release promotion completed. Caller should run the release notes workflow as a separate job.'
