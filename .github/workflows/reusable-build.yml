@@ -50,6 +50,11 @@ on:
         default: "true"
         required: false
         type: string
+      max_layers:
+        description: "Maximum number of OCI layers for chunkah rechunking. Upstream default is 64; bootc images typically use 128."
+        default: "128"
+        required: false
+        type: string
 
 env:
   IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
@@ -262,32 +267,10 @@ jobs:
       - name: Rechunk Image
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         id: rechunk-image
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PREVIOUS_BUILD: ${{ github.event.inputs.previous_build || '1' }}
-          MATRIX_BASE_NAME: ${{ matrix.base_name }}
-          MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
-          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
-        run: |
-          sudo -E "$(command -v just)" rechunk "${MATRIX_BASE_NAME}" \
-                            "${MATRIX_STREAM_NAME}" \
-                            "${MATRIX_IMAGE_FLAVOR}" \
-                            "1" \
-                            "0" \
-                            "${PREVIOUS_BUILD}"
-
-      - name: Retag Rechunked Image
-        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
-        id: load-rechunk
-        shell: bash
-        env:
-          MATRIX_BASE_NAME: ${{ matrix.base_name }}
-          MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
-        run: |
-          sudo -E "$(command -v just)" load-rechunk "${MATRIX_BASE_NAME}" \
-                            "${DEFAULT_TAG}" \
-                            "${MATRIX_IMAGE_FLAVOR}"
+        uses: projectbluefin/actions/bootc-build/chunka@dc35eb231998ba93244072ec72781e36f373a4a3 # v1
+        with:
+          source-image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          max-layers: ${{ inputs.max_layers }}
 
       - name: Record rechunk duration
         id: rechunk-duration
