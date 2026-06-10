@@ -1,0 +1,34 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "name": "test-image-prev",
+  "documentNamespace": "https://example.com/test-image-previous",
+  "dataLicense": "CC0-1.0",
+  "documentDescribes": ["SPDXRef-image"],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-linux",
+      "name": "linux",
+      "versionInfo": "6.9.14",
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-gnome-shell",
+      "name": "gnome-shell",
+      "versionInfo": "47.0",
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-firefox",
+      "name": "firefox",
+      "versionInfo": "131.0",
+      "filesAnalyzed": false
+    },
+    {
+      "SPDXID": "SPDXRef-old-package",
+      "name": "old-package",
+      "versionInfo": "9.9.9",
+      "filesAnalyzed": false
+    }
+  ]
+}

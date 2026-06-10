@@ -3,3 +3,4 @@
 *-worktree/
 actions/
 agent-build-timeout/
+__pycache__/
