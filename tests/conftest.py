@@ -7,5 +7,8 @@ REPO_ROOT = Path(__file__).parent.parent
 # Create-release scripts
 sys.path.insert(0, str(REPO_ROOT / "bootc-build" / "create-release" / "scripts"))
 
+# chunka scripts
+sys.path.insert(0, str(REPO_ROOT / "bootc-build" / "chunka"))
+
 # Top-level scripts (check-consumer-contract, etc.)
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
