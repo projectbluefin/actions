@@ -35,7 +35,9 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
 | Verify SHA pins are correct and comments are accurate | `docs/skills/determinism.md` → "Already pinned" |
 | Add or scan an image for CVEs before push | `docs/skills/supply-chain.md` → "shift-left CVE scanning" + `docs/skills/composite-actions/action-reference.md` → "scan-image" |
-| Generate release notes and create a GitHub Release (git-cliff / Conventional Commits) | `docs/skills/composite-actions/action-reference.md` → "generate-release-notes" + `docs/skills/composite-actions/reusable-workflow.md` → "reusable-release.yml" |
+| Add or modify Python unit tests | `docs/skills/testing.md` |
+| Understand or change the pytest coverage threshold | `docs/skills/testing.md` |
+| Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
 | Enforce Conventional Commits PR title format | `docs/skills/composite-actions/action-reference.md` → "validate-pr-title" |
 | Understand SLSA Build L2 posture and scope | `docs/skills/supply-chain.md` → "SLSA Build L2 posture" |
@@ -54,6 +56,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 
 | Skill | Covers |
 |---|---|
+| [`testing.md`](skills/testing.md) | pytest setup, coverage baseline (60%), uncovered lines, threshold rules |
 | [`composite-actions.md`](skills/composite-actions.md) | Authoring conventions, action catalog, rollout strategy, CI-fix-first workflow, known workarounds |
 | [`composite-actions/action-reference.md`](skills/composite-actions/action-reference.md) | Full action-by-action reference for all bootc-build composite actions |
 | [`composite-actions/reusable-workflow.md`](skills/composite-actions/reusable-workflow.md) | reusable-build.yml and reusable-release.yml details, cross-repo refs, digest shape |
