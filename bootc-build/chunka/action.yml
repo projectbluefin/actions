@@ -13,8 +13,19 @@ inputs:
     description: "Maximum number of OCI layers"
     default: "128"
   force-compression:
-    description: "Force recompression via buildah (optional; default preserves existing compression)"
+    description: "Force recompression via buildah (optional; default preserves existing compression; ignored in BST mode)"
     default: "false"
+  xattr-manifest:
+    description: >
+      Path to a fakecap TSV manifest (path<TAB>component<TAB>interval) for BST/BuildStream images.
+      When set, the action uses the BST code path: mounts a writable overlay, injects
+      user.component xattrs from the manifest, then runs chunkah via podman run.
+      The buildah/Containerfile.splitter path is skipped entirely.
+      Required for images built with BuildStream because BST strips xattrs on OCI export;
+      without physical xattrs chunkah detects 0 components.
+      Produce the manifest with scripts/gen-filemap.py (outputs files/fakecap-manifest.tsv).
+      See coreos/chunkah#113 (closed; physical xattr injection is the confirmed resolution).
+    default: ""
 
 outputs:
   image-ref:
@@ -32,6 +43,8 @@ runs:
         OUTPUT: ${{ inputs.output-image }}
         MAX_LAYERS: ${{ inputs.max-layers }}
         FORCE_COMPRESSION: ${{ inputs.force-compression }}
+        XATTR_MANIFEST: ${{ inputs.xattr-manifest }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
 
@@ -42,40 +55,103 @@ runs:
         CHUNKAH_VERSION="v0.6.0"
         CHUNKAH_SHA="sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708"
         CHUNKAH_REF="quay.io/coreos/chunkah:${CHUNKAH_VERSION}@${CHUNKAH_SHA}"
-        CONTAINERFILE="${{ github.action_path }}/Containerfile.splitter"
+        CONTAINERFILE="${ACTION_PATH}/Containerfile.splitter"
 
         OUTPUT_TAG="${OUTPUT:-${SOURCE}}"
-
-        FC_FLAG=""
-        if [[ "${FORCE_COMPRESSION}" == "true" ]]; then
-          FC_FLAG="--force-compression"
-        fi
 
         # CHUNKAH_CONFIG_STR passes existing OCI labels (containers.bootc=1, etc.)
         # into chunkah so they are preserved on the rechunked image.
         CHUNKAH_CONFIG_STR="$(sudo podman inspect "${SOURCE}")"
 
-        # -v and --security-opt are required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x).
-        # The bind-mount of /run/src keeps the OCI output dir in the host CWD so that the
-        # final `FROM oci:out` stage in Containerfile.splitter can find it.
-        sudo buildah build \
-          --skip-unused-stages=false \
-          --from "${SOURCE}" \
-          --build-arg "CHUNKAH=${CHUNKAH_REF}" \
-          --build-arg "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
-          --build-arg "CHUNKAH_ARGS=--max-layers ${MAX_LAYERS} --prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-" \
-          -t "${OUTPUT_TAG}" \
-          -v "$(pwd):/run/src" \
-          --security-opt=label=disable \
-          ${FC_FLAG:+${FC_FLAG}} \
-          "${CONTAINERFILE}"
+        if [[ -n "${XATTR_MANIFEST}" ]]; then
+          # ── BST path ────────────────────────────────────────────────────────────
+          # BuildStream strips xattrs on OCI export, so chunkah detects 0 components
+          # without intervention. Workaround: mount a writable overlay, physically
+          # set user.component xattrs from the pre-built fakecap manifest, then run
+          # chunkah against the overlay. coreos/chunkah#113 (closed) confirmed this
+          # is the accepted resolution — no libc fallback will land in chunkah.
 
-        sudo rm -rf out
+          # Pull chunkah with retries (transient registry 5xx errors are common).
+          for attempt in 1 2 3; do
+            sudo podman pull "${CHUNKAH_REF}" && break
+            echo "==> chunkah pull attempt ${attempt} failed, retrying in 10s..."
+            [[ "${attempt}" -lt 3 ]] && sleep 10
+          done
 
-        # Transfer rechunked image from root (buildah) storage to user (podman) storage.
-        # buildah runs as root, so its container store is separate from the runner-user's
-        # podman store. Piping save→load makes the tagged image visible to unprivileged
-        # podman steps that follow.
+          LOWER=$(sudo podman image mount "${SOURCE}")
+          UPPER=$(mktemp -d -p /var/tmp)
+          WORK=$(mktemp -d -p /var/tmp)
+          MERGED=$(mktemp -d -p /var/tmp)
+          sudo chmod 755 "$UPPER" "$WORK" "$MERGED"
+
+          cleanup_bst() {
+            sudo umount "$MERGED" 2>/dev/null || true
+            sudo rm -rf "$UPPER" "$WORK" "$MERGED"
+            sudo podman image umount "${SOURCE}" >/dev/null 2>&1 || true
+          }
+          trap cleanup_bst EXIT
+
+          sudo mount -t overlay overlay \
+            -o "lowerdir=${LOWER},upperdir=${UPPER},workdir=${WORK}" \
+            "$MERGED"
+
+          echo "==> Injecting user.component xattrs from ${XATTR_MANIFEST}..."
+          sudo python3 "${ACTION_PATH}/inject-xattrs.py" "${XATTR_MANIFEST}" "$MERGED"
+
+          echo "==> Running chunkah against overlay..."
+          LOADED=$(sudo podman run --rm \
+            --pull never \
+            --security-opt label=type:unconfined_t \
+            -v "${MERGED}:/chunkah:ro" \
+            -e "CHUNKAH_ROOTFS=/chunkah" \
+            -e "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
+            "${CHUNKAH_REF}" build \
+              --max-layers "${MAX_LAYERS}" \
+              --prune /sysroot/ \
+              --label ostree.commit- \
+              --label ostree.final-diffid- \
+            | sudo podman load)
+
+          NEW_REF=$(echo "$LOADED" | sed -n 's/^Loaded image(s): //p; s/^Loaded image: //p' | head -1)
+          if [[ -z "$NEW_REF" ]]; then
+            NEW_REF=$(echo "$LOADED" | grep -oP '^[0-9a-f]{64}$' | head -1 || true)
+          fi
+          if [[ -n "$NEW_REF" && "$NEW_REF" != "${OUTPUT_TAG}" ]]; then
+            sudo podman tag "$NEW_REF" "${OUTPUT_TAG}"
+          fi
+
+        else
+          # ── RPM / buildah path ──────────────────────────────────────────────────
+          # For RPM-based bootc images: chunkah reads the rpmdb for component
+          # detection. buildah executes the vendored Containerfile.splitter which
+          # mounts the source image and runs chunkah inside the build context.
+
+          FC_FLAG=""
+          if [[ "${FORCE_COMPRESSION}" == "true" ]]; then
+            FC_FLAG="--force-compression"
+          fi
+
+          # -v and --security-opt are required for buildah < v1.44 (Ubuntu 24.04 ships 1.33.x).
+          # The bind-mount of /run/src keeps the OCI output dir in the host CWD so that the
+          # final `FROM oci:out` stage in Containerfile.splitter can find it.
+          sudo buildah build \
+            --skip-unused-stages=false \
+            --from "${SOURCE}" \
+            --build-arg "CHUNKAH=${CHUNKAH_REF}" \
+            --build-arg "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
+            --build-arg "CHUNKAH_ARGS=--max-layers ${MAX_LAYERS} --prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-" \
+            -t "${OUTPUT_TAG}" \
+            -v "$(pwd):/run/src" \
+            --security-opt=label=disable \
+            ${FC_FLAG:+${FC_FLAG}} \
+            "${CONTAINERFILE}"
+
+          sudo rm -rf out
+        fi
+
+        # Transfer rechunked image from root (buildah/podman) storage to user (podman) storage.
+        # Both paths leave the tagged image in root's container store; this step makes it
+        # visible to unprivileged podman steps that follow (e.g. push-image, sign-and-publish).
         sudo podman save "${OUTPUT_TAG}" | podman load
 
         echo "image-ref=${OUTPUT_TAG}" >> "$GITHUB_OUTPUT"
