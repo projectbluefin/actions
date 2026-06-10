@@ -234,6 +234,8 @@ The recommended cadence: move `@v1` periodically after a batch of Renovate bumps
 | Renovate PR consumer-validation fails | Bot exemption not firing | Verify author login ends in `[bot]` or starts with `app/` — check `gh pr view NNN --json author` |
 | Renovate PR has merge conflict | Another bump landed first; branches diverged | Locally checkout the branch, `git rebase origin/main`, force-push |
 | Two Renovate PRs update the same action | Both opened before either merged | Close the older/lower version one; merge the newer |
+| Dependency Dashboard (issue #42) shows PRs as "Open" | Renovate dashboard is eventually consistent — PRs may already be merged | Confirm with `gh pr view NNN --json mergedAt` before acting; the dashboard self-corrects on next Renovate run |
+| Renovate warns: "Fallback to renovate.json as preset is deprecated" | Config file named `renovate.json` instead of `default.json` | Rename: `git mv renovate.json default.json` — content stays identical |
 
 ---
 
