@@ -311,3 +311,36 @@ Never add a new inline `uses:` for a third-party action in a consumer workflow i
 | `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for the OCI output dir (`out/`) to survive to the final stage |
 | `sudo rm -rf out` | `chunka` | Containerfile.splitter leaves `out/` dir in CWD (v0.6.0+; was `out.ociarchive` in v0.5.0); stale dir breaks re-runs |
 | `sudo podman save \| podman load` | `chunka` | buildah (root) and podman (user) use separate container stores |
+
+### Reusable workflow caller permissions ceiling
+
+GitHub enforces the caller's `permissions:` block as a hard ceiling for every callee job. A callee
+job declaring `contents: write` is **silently downgraded** to `contents: read` if the caller only
+grants `contents: read`.
+
+**Pattern:** audit the caller's top-level `permissions:` block against every job the callee
+declares, and ensure the caller grants the union of all permissions any callee job requires.
+
+```yaml
+# lifecycle-caller.yml: ceiling must include write because on-pr-lgtm inside
+# lifecycle.yml calls `gh pr merge --auto`, which needs contents: write
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write   # required even though most jobs only need read
+```
+
+Silent failure mode: the callee job runs without errors, but any operation that needs write
+(merge, push, tag) returns a silent 403.
+
+### PR branch rebase with conflicting intermediate commits
+
+When a PR branch contains an intermediate "stepping stone" commit that conflicts with main,
+do not attempt a full rebase of the branch. Instead:
+
+1. Create a new branch off `origin/main`
+2. `git cherry-pick <final-commit-SHA>` — skip the intermediate commit entirely
+3. Resolve any conflict in the final commit (usually trivial)
+4. Force-push to the PR branch
+
+This avoids pulling obsolete intermediate state into main and produces a clean single commit.
