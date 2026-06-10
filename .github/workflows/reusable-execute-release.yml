@@ -52,9 +52,13 @@ jobs:
           # head.sha: tip of the promotion branch — identifies the testing content being promoted.
           # merge_commit_sha: the squash commit GitHub created on main — used for branch fast-forward.
           # All repos use squash-only merge, so these are always different SHAs.
+          #
+          # Fallback to github.sha for push events (no pull_request context available).
+          PR_HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          PR_MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
           {
-            echo "sha=${{ github.event.pull_request.head.sha }}"
-            echo "merge_sha=${{ github.event.pull_request.merge_commit_sha }}"
+            echo "sha=${PR_HEAD_SHA:-${{ github.sha }}}"
+            echo "merge_sha=${PR_MERGE_SHA:-${{ github.sha }}}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Authenticate to GHCR
@@ -178,7 +182,11 @@ jobs:
             const gateEnd = '<!-- release-gate-end -->';
             const reminderStart = '<!-- release-reminder-start -->';
             const reminderEnd = '<!-- release-reminder-end -->';
-            const prNumber = context.payload.pull_request.number;
+            const prNumber = context.payload.pull_request?.number;
+            if (!prNumber) {
+              core.info('No pull_request context (push trigger) — skipping sticky comment update.');
+              return;
+            }
             const digests = JSON.parse(process.env.DIGESTS_JSON || '{}');
             const variants = JSON.parse(process.env.VARIANTS_JSON || '[]');
             const actor = context.actor;
