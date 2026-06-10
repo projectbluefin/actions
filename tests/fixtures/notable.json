@@ -1,0 +1,5 @@
+[
+  {"sbom_name": "linux", "label": "Kernel"},
+  {"sbom_name": "gnome-shell", "label": "GNOME Shell"},
+  {"sbom_name": "firefox", "label": "Firefox"}
+]
