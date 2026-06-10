@@ -40,13 +40,13 @@ def main() -> int:
             interval = parts[2] if len(parts) > 2 else "weekly"
             target = rootfs + rel_path
             try:
-                os.lsetxattr(
+                os.setxattr(
                     target,
                     b"user.component",
                     component.encode(),
                     follow_symlinks=False,
                 )
-                os.lsetxattr(
+                os.setxattr(
                     target,
                     b"user.update-interval",
                     interval.encode(),
