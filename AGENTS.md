@@ -165,7 +165,7 @@ Do not request review without evidence. Before opening a PR for review:
 
 **Consumer validation "N/A" rules (enforced by CI):** `Consumer PR:` and `Consumer CI run:` must be real GitHub URLs — `https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/NNN` and `.../actions/runs/NNN` respectively. "N/A" is **only** accepted for `Out-of-org consumer impact:`. Even additive-only changes need a draft consumer PR to get a run URL. Bot/Renovate PRs (author login ending in `[bot]` or starting with `app/`) are exempt automatically.
 
-**Consumer repos use `testing` as their active dev branch.** When opening consumer validation PRs or reading state in `projectbluefin/bluefin` or `projectbluefin/bluefin-lts`, always target `testing` — not `main`. Reading `main` gives stale state; PRs opened against `main` will need to be reverted.
+**Consumer repo branches differ:** `projectbluefin/bluefin` uses `testing` as its active dev branch; `projectbluefin/bluefin-lts` uses `main`. When opening consumer validation PRs: target `testing` for bluefin, `main` for bluefin-lts. Never target `main` for bluefin — PRs opened there will need to be reverted.
 
 **`gh run rerun` does not pick up workflow changes from `main`.** After merging a fix to a workflow file (e.g. `consumer-validation.yml`), re-running an old failed run still executes the original workflow from the HEAD branch commit. To trigger a run with the updated workflow, push a new commit to the PR branch (triggering a `synchronize` event) or admin-merge the PR directly.
 
