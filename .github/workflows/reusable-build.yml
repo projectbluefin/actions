@@ -370,10 +370,26 @@ jobs:
             echo "push_tags=${DEFAULT_TAG} ${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
           fi
 
-      # Trivy scan temporarily disabled — see projectbluefin/actions#116
-      # - name: Export image for scanning
-      # - name: Scan image for vulnerabilities
-      # - name: Upload SARIF to GitHub Security tab
+      - name: Export image for scanning
+        shell: bash
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          DEFAULT_TAG: ${{ env.DEFAULT_TAG }}
+        run: |
+          set -eoux pipefail
+          # docker-archive format is required by trivy --input; oci-archive is not supported.
+          # Use the localhost/ prefix to reference the rootful podman image store.
+          sudo podman save --format docker-archive \
+            -o /tmp/scan-image.tar \
+            "localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
+
+      - name: Scan image for vulnerabilities
+        uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
+        with:
+          input: /tmp/scan-image.tar
+          severity-threshold: ${{ inputs.scan-severity-threshold }}
+          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
         id: push
