@@ -207,7 +207,7 @@ jobs:
       issues: write
       packages: read
       pull-requests: write
-    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@84649d23ac4dbd9f7534c1490d8a80fb05ac2ab8 # v1
+    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@0390ca2f0c95b679c3ffdf7a4f2db8ffe01107a9 # v1
     with:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}
