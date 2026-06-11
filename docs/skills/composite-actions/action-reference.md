@@ -290,7 +290,7 @@ Wraps `aquasecurity/trivy-action` to scan a locally built OCI image for CVEs **b
 
 **Placement rule:** must run per-arch in the matrix build job, after `Tag Images` and **before** `Push to GHCR`. Scanning after push means shipping a known-critical image to the registry. This action is already wired into `reusable-build.yml` at the correct position.
 
-`scan-image` is now **always non-blocking** for CVE findings: it forces Trivy `exit-code: 0`, uploads SARIF, writes a human-readable Trivy table, and can optionally open a GitHub issue summarizing the affected packages, CVE IDs, severity, and fix availability.
+`scan-image` is now **always non-blocking** for CVE findings: it forces Trivy `exit-code: 0`, uploads SARIF, parses Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue summarizing the affected packages, CVE IDs, and fixed versions.
 
 Inputs:
 
@@ -301,11 +301,11 @@ Inputs:
 | `severity-threshold` | `CRITICAL` | Report vulnerabilities at this severity and above |
 | `exit-code` | `0` | Deprecated compatibility input; the action always exits `0` |
 | `ignore-unfixed` | `true` | Skip vulns with no available fix |
-| `create-issue` | `false` | When `true`, file a GitHub issue if CVEs are detected |
+| `create-issue` | `false` | When `true`, file a GitHub issue if CRITICAL CVEs are detected |
 | `github-token` | required | Token for SARIF upload and fallback issue creation |
 | `gh-token` | `""` | Optional token override for `gh issue create` |
 
-In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the threshold (default: `CRITICAL`).
+In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. The auto-issue step deduplicates per CVE ID by searching open issues before filing and only applies `priority/p0`, `area/security`, and `kind/bug` labels when those labels already exist in the caller repo. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing actionable CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the reporting threshold (default: `CRITICAL`).
 
 **Permissions required:** the calling job needs `security-events: write` for SARIF upload. If `create-issue: true`, it also needs `issues: write`. Both are already set on the `build_container` job in `reusable-build.yml`.
 

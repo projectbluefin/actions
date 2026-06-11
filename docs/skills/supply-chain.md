@@ -182,9 +182,9 @@ after push. Rationale:
 - CVE findings are report-only (`exit-code: 0`) on every event; non-PR `projectbluefin/*` builds can auto-file a GitHub issue instead of blocking the pipeline.
 
 The `bootc-build/scan-image` composite action wraps `aquasecurity/trivy-action`, uploads
-SARIF results to the GitHub Security tab (always, even when the scan passes), and can
-optionally open a GitHub issue with the affected packages, CVE IDs, severity, fix
-availability, and full Trivy table output.
+SARIF results to the GitHub Security tab (always, even when the scan passes), parses
+Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue with the
+affected packages, CVE IDs, installed versions, and fixed versions.
 
 Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
 
@@ -200,6 +200,8 @@ Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
 
 The `build_container` job must have `security-events: write` permission for SARIF upload.
 If `create-issue` is enabled, it also needs `issues: write`.
+The issue-creation path must deduplicate by CVE ID against open issues and only apply
+labels that already exist in the caller repo.
 
 **Org safety rule:** never enable `create-issue` for `ublue-os/*` consumers. Shared actions in
 this repo may read from `ublue-os` repos, but they must not create issues, comments, PRs, or

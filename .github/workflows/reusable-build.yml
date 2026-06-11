@@ -41,7 +41,7 @@ on:
         required: false
         type: string
       scan-severity-threshold:
-        description: "Trivy CVE severity threshold for scan-image. Builds fail on this severity and above. Default: CRITICAL."
+        description: "Trivy CVE severity threshold for scan-image reporting. Default: CRITICAL."
         default: "CRITICAL"
         required: false
         type: string

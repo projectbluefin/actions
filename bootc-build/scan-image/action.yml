@@ -21,7 +21,7 @@ inputs:
     description: "Ignore vulnerabilities that have no available fix"
     default: "true"
   create-issue:
-    description: "When true, create a GitHub issue if CVEs are detected."
+    description: "When true, create a GitHub issue if CRITICAL CVEs are detected."
     default: "false"
   github-token:
     description: "Token for uploading SARIF results to GitHub Security tab and as the fallback token for issue creation"
@@ -51,14 +51,14 @@ runs:
         # Scan OCI image config for secrets baked into ENV instructions
         image-config-scanners: secret
 
-    - name: Scan image with Trivy (table)
+    - name: Scan image with Trivy (JSON)
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
         scan-type: 'image'
         image-ref: ${{ inputs.image }}
         input: ${{ inputs.input }}
-        format: table
-        output: trivy-results.table
+        format: json
+        output: trivy-results.json
         severity: ${{ inputs.severity-threshold }}
         exit-code: '0'
         ignore-unfixed: ${{ inputs.ignore-unfixed }}
@@ -73,9 +73,10 @@ runs:
         IMAGE_REF: ${{ inputs.image }}
         INPUT_PATH: ${{ inputs.input }}
         SEVERITY_THRESHOLD: ${{ inputs.severity-threshold }}
-        BODY_FILE: ${{ github.workspace }}/scan-image-issue-body.md
+        FINDINGS_FILE: ${{ github.workspace }}/scan-image-critical-findings.json
         REPOSITORY: ${{ github.repository }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        REF_NAME: ${{ github.ref_name }}
       run: |
         set -euo pipefail
         python3 <<'PY'
@@ -86,7 +87,6 @@ runs:
         from pathlib import Path
 
         severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"]
-        severity_rank = {name: len(severity_order) - index for index, name in enumerate(severity_order)}
 
         def normalize_severity(value):
             text = str(value or "").strip().upper()
@@ -106,160 +106,70 @@ runs:
                 return "LOW"
             return "UNKNOWN"
 
-        sarif_path = Path("trivy-results.sarif")
-        table_path = Path("trivy-results.table")
-        body_path = Path(os.environ["BODY_FILE"])
+        findings_path = Path(os.environ["FINDINGS_FILE"])
         display_ref = os.environ.get("IMAGE_REF") or os.environ.get("INPUT_PATH") or "unknown-image"
         repo = os.environ.get("REPOSITORY", "")
         run_url = os.environ.get("RUN_URL", "")
         threshold = os.environ.get("SEVERITY_THRESHOLD", "CRITICAL")
+        ref_name = os.environ.get("REF_NAME", "") or "unknown-ref"
         scan_date = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         counts = defaultdict(int)
-        sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
-        for run in sarif.get("runs", []):
-            rule_map = {}
-            driver = (run.get("tool") or {}).get("driver") or {}
-            for rule in driver.get("rules", []) or []:
-                rule_id = rule.get("id")
-                if rule_id:
-                    rule_map[rule_id] = rule
-
-            for result in run.get("results", []) or []:
-                cve_id = result.get("ruleId", "")
+        trivy = json.loads(Path("trivy-results.json").read_text(encoding="utf-8"))
+        seen = set()
+        critical_entries = []
+        for result in trivy.get("Results", []) or []:
+            target = result.get("Target", "")
+            for vuln in result.get("Vulnerabilities", []) or []:
+                cve_id = vuln.get("VulnerabilityID", "")
                 if not cve_id.startswith("CVE-"):
                     continue
-                rule = rule_map.get(cve_id, {})
-                properties = {}
-                properties.update(rule.get("properties") or {})
-                properties.update(result.get("properties") or {})
-                severity = normalize_severity(
-                    properties.get("severity")
-                    or properties.get("Severity")
-                    or properties.get("security-severity")
-                )
+                severity = normalize_severity(vuln.get("Severity"))
                 counts[severity] += 1
-
-        table_entries = []
-        seen = set()
-        headers = None
-        table_text = table_path.read_text(encoding="utf-8")
-        for line in table_text.splitlines():
-            if "│" not in line:
-                continue
-            cells = [cell.strip() for cell in line.split("│")[1:-1]]
-            if not cells:
-                continue
-            if "Library" in cells and "Vulnerability" in cells:
-                headers = cells
-                continue
-            if not headers or len(cells) != len(headers):
-                continue
-            row = dict(zip(headers, cells))
-            cve_id = row.get("Vulnerability", "")
-            if not cve_id.startswith("CVE-"):
-                continue
-            fixed_version = row.get("Fixed Version", "")
-            entry = {
-                "package": row.get("Library", ""),
-                "cve": cve_id,
-                "severity": normalize_severity(row.get("Severity", "")),
-                "installed": row.get("Installed Version", ""),
-                "fixed": fixed_version,
-                "fix_availability": f"available ({fixed_version})" if fixed_version and fixed_version not in {"-", "0"} else "none",
-            }
-            key = (entry["package"], entry["cve"], entry["installed"], entry["fixed"])
-            if key in seen:
-                continue
-            seen.add(key)
-            table_entries.append(entry)
-
-        if not counts and table_entries:
-            for entry in table_entries:
-                counts[entry["severity"]] += 1
+                entry = {
+                    "package": vuln.get("PkgName", ""),
+                    "cve": cve_id,
+                    "severity": severity,
+                    "installed": vuln.get("InstalledVersion", ""),
+                    "fixed": vuln.get("FixedVersion", ""),
+                    "target": target,
+                }
+                if severity != "CRITICAL":
+                    continue
+                key = (entry["package"], entry["cve"], entry["installed"], entry["fixed"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                critical_entries.append(entry)
 
         total_cves = sum(counts.values())
         highest_severity = next((name for name in severity_order if counts.get(name, 0) > 0), threshold)
-        issue_title = f"[security] CVE scan found {highest_severity} vulnerabilities in {display_ref}"
-
-        raw_table = table_text
-        max_table_chars = 30000
-        if len(raw_table) > max_table_chars:
-            raw_table = raw_table[:max_table_chars] + "\n... truncated ..."
-
-        body_lines = [
-            "## Automated CVE scan detected vulnerabilities",
-            "",
-            f"- Image: `{display_ref}`",
-            f"- Repository: `{repo}`",
-            f"- Scan date (UTC): `{scan_date}`",
-            f"- Workflow run: {run_url}",
-            f"- Severity threshold: `{threshold}`",
-            f"- Total CVEs found: `{total_cves}`",
-            "",
-            "### Severity summary",
-            "",
-            "| Severity | Count |",
-            "| --- | ---: |",
-        ]
-
-        for severity in severity_order:
-            count = counts.get(severity, 0)
-            if count:
-                body_lines.append(f"| {severity} | {count} |")
-
-        if not any(counts.values()):
-            body_lines.append("| None | 0 |")
-
-        if table_entries:
-            table_entries.sort(
-                key=lambda entry: (
-                    -severity_rank.get(entry["severity"], 0),
-                    entry["package"],
-                    entry["cve"],
-                )
+        issue_title = f"fix(security): critical CVE detected in {ref_name} build"
+        critical_entries.sort(key=lambda entry: (entry["cve"], entry["package"], entry["installed"]))
+        findings_path.write_text(
+            json.dumps(
+                {
+                    "image": display_ref,
+                    "repository": repo,
+                    "run_url": run_url,
+                    "scan_date": scan_date,
+                    "severity_threshold": threshold,
+                    "highest_severity": highest_severity,
+                    "total_cves": total_cves,
+                    "ref_name": ref_name,
+                    "critical_entries": critical_entries,
+                },
+                indent=2,
             )
-            body_lines.extend(
-                [
-                    "",
-                    "### Affected packages",
-                    "",
-                    "| Package | CVE | Severity | Installed | Fixed version | Fix availability |",
-                    "| --- | --- | --- | --- | --- | --- |",
-                ]
-            )
-            for entry in table_entries:
-                body_lines.append(
-                    "| {package} | {cve} | {severity} | `{installed}` | `{fixed}` | {fix_availability} |".format(
-                        package=entry["package"] or "unknown",
-                        cve=entry["cve"],
-                        severity=entry["severity"],
-                        installed=entry["installed"] or "unknown",
-                        fixed=entry["fixed"] or "none",
-                        fix_availability=entry["fix_availability"],
-                    )
-                )
-
-        body_lines.extend(
-            [
-                "",
-                "<details>",
-                "<summary>Full Trivy table output</summary>",
-                "",
-                "```text",
-                raw_table.rstrip(),
-                "```",
-                "</details>",
-                "",
-                "_Opened automatically by `bootc-build/scan-image`._",
-            ]
+            + "\n",
+            encoding="utf-8",
         )
-        body_path.write_text("\n".join(body_lines).strip() + "\n", encoding="utf-8")
 
         with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
             output.write(f"cves-found={'true' if total_cves else 'false'}\n")
+            output.write(f"critical-cves-found={'true' if critical_entries else 'false'}\n")
             output.write(f"issue-title={issue_title}\n")
-            output.write(f"issue-body-file={body_path}\n")
+            output.write(f"findings-file={findings_path}\n")
 
         if total_cves:
             print(f"::warning::{total_cves} CVE(s) detected in {display_ref}")
@@ -275,13 +185,13 @@ runs:
         token: ${{ inputs.github-token }}
 
     - name: Create CVE issue
-      if: ${{ always() && steps.summarize-cves.outputs.cves-found == 'true' && inputs.create-issue == 'true' }}
+      if: ${{ always() && steps.summarize-cves.outputs.critical-cves-found == 'true' && inputs.create-issue == 'true' }}
       shell: bash
       env:
         GH_TOKEN_INPUT: ${{ inputs.gh-token }}
         GITHUB_TOKEN_INPUT: ${{ inputs.github-token }}
         ISSUE_TITLE: ${{ steps.summarize-cves.outputs.issue-title }}
-        ISSUE_BODY_FILE: ${{ steps.summarize-cves.outputs.issue-body-file }}
+        FINDINGS_FILE: ${{ steps.summarize-cves.outputs.findings-file }}
         REPO: ${{ github.repository }}
       run: |
         set -euo pipefail
@@ -291,9 +201,103 @@ runs:
           export GH_TOKEN="${GITHUB_TOKEN_INPUT}"
         fi
 
-        if ! gh issue create \
-          --repo "${REPO}" \
-          --title "${ISSUE_TITLE}" \
-          --body-file "${ISSUE_BODY_FILE}"; then
-          echo "::warning::Failed to create CVE issue for ${REPO}"
-        fi
+        python3 <<'PY'
+        import json
+        import os
+        import subprocess
+        import sys
+        from pathlib import Path
+
+        repo = os.environ["REPO"]
+        title = os.environ["ISSUE_TITLE"]
+        findings = json.loads(Path(os.environ["FINDINGS_FILE"]).read_text(encoding="utf-8"))
+        body_path = Path(os.environ["GITHUB_WORKSPACE"]) / "scan-image-issue-body.md"
+        desired_labels = ["priority/p0", "area/security", "kind/bug"]
+
+        def gh_json(*args):
+            completed = subprocess.run(
+                ["gh", *args],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            stdout = completed.stdout.strip()
+            return json.loads(stdout) if stdout else []
+
+        try:
+            existing_labels = {
+                item["name"]
+                for item in gh_json("label", "list", "--repo", repo, "--limit", "200", "--json", "name")
+            }
+            labels = [label for label in desired_labels if label in existing_labels]
+
+            novel_entries = []
+            duplicate_cves = []
+            seen_duplicate_cves = set()
+            for entry in findings.get("critical_entries", []):
+                cve = entry["cve"]
+                matches = gh_json(
+                    "issue",
+                    "list",
+                    "--repo",
+                    repo,
+                    "--state",
+                    "open",
+                    "--search",
+                    f"{cve} state:open",
+                    "--limit",
+                    "1",
+                    "--json",
+                    "number",
+                )
+                if matches:
+                    if cve not in seen_duplicate_cves:
+                        duplicate_cves.append(cve)
+                        seen_duplicate_cves.add(cve)
+                    continue
+                novel_entries.append(entry)
+
+            if not novel_entries:
+                print("::notice::Critical CVEs already have open issues; skipping auto-file")
+                sys.exit(0)
+
+            lines = [
+                "## Critical CVEs detected by Trivy",
+                "",
+                f"- Image: `{findings['image']}`",
+                f"- Repository: `{findings['repository']}`",
+                f"- Ref: `{findings['ref_name']}`",
+                f"- Scan date (UTC): `{findings['scan_date']}`",
+                f"- Workflow run: {findings['run_url']}",
+                "",
+                "| CVE | Package | Installed version | Fixed version |",
+                "| --- | --- | --- | --- |",
+            ]
+
+            for entry in novel_entries:
+                fixed = entry["fixed"] or "none available"
+                lines.append(
+                    f"| {entry['cve']} | {entry['package'] or 'unknown'} | "
+                    f"`{entry['installed'] or 'unknown'}` | `{fixed}` |"
+                )
+
+            if duplicate_cves:
+                lines.extend(
+                    [
+                        "",
+                        "Skipped because an open issue already exists for:",
+                        "",
+                        ", ".join(f"`{cve}`" for cve in duplicate_cves),
+                    ]
+                )
+
+            lines.extend(["", "_Opened automatically by `bootc-build/scan-image`._"])
+            body_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+            cmd = ["gh", "issue", "create", "--repo", repo, "--title", title, "--body-file", str(body_path)]
+            for label in labels:
+                cmd.extend(["--label", label])
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as exc:
+            print(f"::warning::Failed to create CVE issue for {repo}: {exc}", file=sys.stderr)
+        PY
