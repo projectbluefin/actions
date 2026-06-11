@@ -388,7 +388,7 @@ jobs:
         with:
           input: /tmp/scan-image.tar
           severity-threshold: ${{ inputs.scan-severity-threshold }}
-          exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          exit-code: '0'  # Non-blocking: CVEs reported via SARIF, never gate builds (Option D)
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR

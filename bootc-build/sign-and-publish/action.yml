@@ -35,7 +35,7 @@ inputs:
       Regexp for cosign verify --certificate-identity-regexp. Defaults to known signing
       workflows in the projectbluefin org. Callers outside the org must override this with
       their own org prefix (e.g. 'https://github.com/myorg/(myrepo|actions)/').
-    default: "https://github.com/projectbluefin/(bluefin|bluefin-lts|aurora|actions)/.github/workflows/"
+    default: "https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota|common|aurora|actions)/.github/workflows/"
 
 outputs:
   sbom-digest:
