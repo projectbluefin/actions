@@ -60,9 +60,10 @@ jobs:
           # Build grep pattern from approved list
           APPROVED_PATTERN=$(IFS='|'; echo "${APPROVED[*]}")
 
-          # Find new secrets.XXX references added by this PR (lines starting with +)
+          # Scan added YAML lines — skip diff headers (+++) and comment lines
           NEW_SECRETS=$(git diff "${BASE_SHA}...HEAD" -- '*.yml' '*.yaml' \
             | grep '^+' \
+            | grep -v '^+++\|^+[[:space:]]*#' \
             | grep -oE 'secrets\.[A-Z0-9_]+' \
             | sort -u \
             | grep -vE "^secrets\.(${APPROVED_PATTERN})$" \
