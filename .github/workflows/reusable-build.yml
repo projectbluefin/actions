@@ -91,6 +91,7 @@ jobs:
       DIGEST_FILE: ${{ github.workspace }}/.push-digest
     permissions:
       contents: read
+      issues: write
       packages: write
       id-token: write
       attestations: write
@@ -386,9 +387,11 @@ jobs:
       - name: Scan image for vulnerabilities
         uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
         with:
+          image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           input: /tmp/scan-image.tar
           severity-threshold: ${{ inputs.scan-severity-threshold }}
           exit-code: '0'  # Non-blocking: CVEs reported via SARIF, never gate builds (Option D)
+          create-issue: ${{ github.event_name != 'pull_request' && github.repository_owner == 'projectbluefin' && 'true' || 'false' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
