@@ -50,54 +50,9 @@ runs:
       id: retry
       shell: bash
       working-directory: ${{ inputs.working_directory }}
-      run: |
-        set +e  # Don't exit on failure — we handle it
-
-        MAX_ATTEMPTS=${{ inputs.max_attempts }}
-        WAIT=${{ inputs.initial_wait_seconds }}
-        RETRY_PATTERN="${{ inputs.retry_on }}"
-        ATTEMPT=1
-
-        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-          echo "::group::Attempt $ATTEMPT/$MAX_ATTEMPTS"
-
-          # Run the command, capture stderr
-          STDERR_FILE=$(mktemp)
-          eval "${{ inputs.command }}" 2> >(tee "$STDERR_FILE" >&2)
-          RC=$?
-
-          echo "::endgroup::"
-
-          if [ $RC -eq 0 ]; then
-            echo "Command succeeded on attempt $ATTEMPT"
-            echo "attempts=$ATTEMPT" >> "$GITHUB_OUTPUT"
-            echo "success=true" >> "$GITHUB_OUTPUT"
-            rm -f "$STDERR_FILE"
-            exit 0
-          fi
-
-          # Check if we should retry based on error pattern
-          if [ -n "$RETRY_PATTERN" ]; then
-            if ! grep -qiE "$RETRY_PATTERN" "$STDERR_FILE" 2>/dev/null; then
-              echo "::error::Command failed with non-retryable error (pattern '$RETRY_PATTERN' not found in stderr)"
-              echo "attempts=$ATTEMPT" >> "$GITHUB_OUTPUT"
-              echo "success=false" >> "$GITHUB_OUTPUT"
-              rm -f "$STDERR_FILE"
-              exit $RC
-            fi
-          fi
-
-          rm -f "$STDERR_FILE"
-
-          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-            echo "::error::All $MAX_ATTEMPTS attempts failed"
-            echo "attempts=$ATTEMPT" >> "$GITHUB_OUTPUT"
-            echo "success=false" >> "$GITHUB_OUTPUT"
-            exit $RC
-          fi
-
-          echo "::warning::Attempt $ATTEMPT failed (exit $RC). Waiting ${WAIT}s before retry..."
-          sleep "$WAIT"
-          WAIT=$((WAIT * 2))
-          ATTEMPT=$((ATTEMPT + 1))
-        done
+      env:
+        RETRY_COMMAND: ${{ inputs.command }}
+        MAX_ATTEMPTS: ${{ inputs.max_attempts }}
+        INITIAL_WAIT_SECONDS: ${{ inputs.initial_wait_seconds }}
+        RETRY_ON: ${{ inputs.retry_on }}
+      run: bash "${{ github.action_path }}/retry.sh"
