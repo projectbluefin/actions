@@ -155,15 +155,17 @@ Do not request review without evidence. Before opening a PR for review:
 
 **Supply chain gates:** Every action that downloads external files (Containerfiles, scripts, configs) at build time must vendor those files into the action directory or verify their SHA-256 before use. Never pass a mutable URL directly to `buildah build` or `bash`. See `docs/skills/supply-chain.md` for the full pattern, the chunkah `Containerfile.splitter` vendoring procedure, and the manifest-index-vs-platform-digest rule for OCI image pins. Routine chunkah upgrades are now fully automated via Renovate + `vendor-chunka-files.yml` — no manual steps required.
 
-**SHA pinning:** Every `uses:` referencing a third-party action must be pinned to a full commit SHA with a version comment. PRs that introduce floating tags (`@main`, `@v3`) will be rejected.
+**SHA pinning:** Every `uses:` referencing a **third-party** action (outside `projectbluefin/`) must be pinned to a full commit SHA with a version comment. PRs that introduce floating tags (`@main`, `@v3`) on third-party actions will be rejected. **First-party actions within `projectbluefin/actions` use `@v1`** — never SHA-pin your own code.
 
 **Pre-commit guard:** `no-floating-action-tags` blocks third-party `@main`/`@v*` floating action tags in workflow and composite action files. This repo's own `@v1` refs in consumer repos are exempted from the guard in those repos — they are managed floating tags deliberately advanced by this repo's release process.
 
 **No breaking changes without a version signal:** Removing or renaming an input, or changing default behavior, requires coordinating with consuming repos. Document the blast radius in the PR description.
 
-**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) pinned to your feature branch SHA. CI must pass there before merging to `main` and moving the `@v1` tag. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
+**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) that uses `@v1` on the affected workflows. CI must pass there before merging to `main` and advancing the `@v1` tag. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
 
-**Consumer validation "N/A" rules (enforced by CI):** `Consumer PR:` and `Consumer CI run:` must be real GitHub URLs — `https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/NNN` and `.../actions/runs/NNN` respectively. "N/A" is **only** accepted for `Out-of-org consumer impact:`. Even additive-only changes need a draft consumer PR to get a run URL. Bot/Renovate PRs (author login ending in `[bot]` or starting with `app/`) are exempt automatically.
+**Consumer validation "N/A" rules (enforced by CI):** `Consumer PR:` and `Consumer CI run:` must be real GitHub URLs — `https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/NNN` and `.../actions/runs/NNN` respectively. "N/A" is **only** accepted for `Out-of-org consumer impact:`. Even additive-only changes need a draft consumer PR. Bot/Renovate PRs (author login ending in `[bot]` or starting with `app/`) are exempt automatically.
+
+**Consumer PRs use `@v1`, not SHA pins.** Consumer workflow files reference first-party actions with `@v1`. The consumer validation PR simply triggers CI against those `@v1` references. After CI passes, merge the actions PR, advance `@v1` to the new `main` HEAD (see the runbook above), and the consumer repos pick up the change on their next workflow run.
 
 **Consumer repo branches differ:** `projectbluefin/bluefin` uses `testing` as its active dev branch; `projectbluefin/bluefin-lts` uses `main`. When opening consumer validation PRs: target `testing` for bluefin, `main` for bluefin-lts. Never target `main` for bluefin — PRs opened there will need to be reverted.
 
@@ -175,7 +177,29 @@ Do not request review without evidence. Before opening a PR for review:
 
 **Agents MUST NOT push directly to `main`.** All changes via PR from a feature branch. Branch protection enforces this; direct pushes are blocked for non-admins.
 
-**`@v1` tag moves require human authorization.** Force-pushing the shared tag affects every consumer repo simultaneously. A human must run `git tag -f v1 && git push --force origin v1` after verifying CI is green. Do not initiate this as an agent action. Recommended cadence: after a batch of Renovate SHA pin bumps has landed on `main`, not after every individual merge.
+**`@v1` tag — how to ship a release (maintainers only).** The `@v1` tag is what consumer repos and internal cross-workflow references use to pin to this repo's code. Advancing it is how you deploy merged changes to all consumers at once.
+
+**When to advance:** after one or more PRs land on `main` and you are satisfied with CI. You do not need to advance it after every single merge — batch a few related changes, or advance it immediately if the change fixes a live production issue.
+
+**How to advance (run these exact commands locally):**
+
+```bash
+# From a clean checkout of this repo
+git fetch origin
+git tag -f v1 origin/main
+git push --force origin v1
+```
+
+That's it. The tag now points to the current `main` HEAD. Every workflow that references `@v1` will use the new code on its next run.
+
+**Verify it worked:**
+
+```bash
+git ls-remote origin v1
+# Should print the same SHA as: git rev-parse origin/main
+```
+
+**What this affects:** every consumer workflow calling `reusable-*.yml@v1` or `bootc-build/*@v1` — currently bluefin, dakota, and bluefin-lts (once adopted). Changes take effect on the *next* workflow run in each repo; nothing is re-run automatically.
 
 **SBOM alignment:** the factory standard is Syft → SPDX-JSON, attached via ORAS and stored as a GitHub Actions artifact. `sign-and-publish` handles this for Fedora-based images. BST/dakota uses `just sbom` (also SPDX-JSON). All release notes must be generated from these SBOMs — never from separate container inspection scripts. bluefin-lts is the exception until issue bluefin-lts#74 is resolved.
 
