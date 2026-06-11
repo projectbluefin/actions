@@ -64,6 +64,8 @@ Inside the reusable workflow, cross-repo composite action calls must use fully q
 
 **Keep self-refs in lockstep:** when bumping reusable workflow self-references, update **all** `projectbluefin/actions/bootc-build/*@<SHA>` entries in that workflow family to the same tested commit. Mixing self-ref SHAs means one pipeline can execute different generations of this repo's actions in a single run.
 
+**Retry GitHub API polling in reusable workflows:** wrap `gh api` polling for other workflow runs (for example, `post-testing-e2e` release-gate lookups) with `projectbluefin/actions/actions/retry@<SHA>` and write the API response to `${{ runner.temp }}`. The retry action executes `with.command` via `eval`, so keep the command free of unescaped double quotes — prefer single-quoted headers plus escaped `?` / `&` separators when redirecting API output to a file. If the retried helper lives in another reusable workflow such as `reusable-release-gate.yml`, bump every caller's pinned `projectbluefin/actions/.github/workflows/...@<SHA>` ref in the same PR so consumers execute the retried helper instead of the previous commit.
+
 Pin GitHub-hosted Linux jobs to explicit runner labels (`ubuntu-24.04` / `ubuntu-24.04-arm`) instead of `ubuntu-latest`, and set `timeout-minutes` on every lightweight helper job (`preflight`, `check`, `collect-digests`, release/validation/report jobs). The build matrix itself gets the longer explicit timeout because it can otherwise hold a runner indefinitely when podman or registry operations hang.
 
 ---

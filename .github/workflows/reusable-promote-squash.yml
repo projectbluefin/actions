@@ -193,7 +193,7 @@ jobs:
       issues: write
       packages: read
       pull-requests: write
-    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@cd1f55c4f16164b4d1ec12798d6410d9e8026c46 # v1
+    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@5f8abb3eb76390e634fd8c543d21f524d4f5f60f # feat/retry-e2e-promote
     with:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}
