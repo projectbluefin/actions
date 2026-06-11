@@ -102,3 +102,21 @@ The `pat-ban.yml` enforcement workflow scans diff lines for `secrets.XXX` patter
 **Fix applied:** The scanner filters `grep -v '^+++\|^+[[:space:]]*#'` to skip diff headers and YAML comment lines before extracting secret names. When writing or modifying enforcement checks that scan their own diffs, always add this filter.
 
 **Authoring rule:** In any workflow file that discusses `secrets.NAME` in comments, write the name without the `secrets.` prefix to avoid triggering the scan. E.g., write `# GITHUB_TOKEN (built-in)` not `# secrets.GITHUB_TOKEN`.
+
+## Gotcha: nested same-repo action refs on feature branches
+
+If a reusable workflow change in `projectbluefin/actions` also updates a nested `uses:
+projectbluefin/actions/bootc-build/...@<sha>` reference, consumer validation can fail before the
+job starts when that nested ref points to a **non-tip SHA from the same feature branch**.
+
+Observed behavior:
+
+- The top-level consumer pin to `projectbluefin/actions/.github/workflows/reusable-build.yml@<branch-head-sha>`
+  resolves correctly.
+- A nested same-repo action ref to an **earlier SHA from that feature branch** does **not**
+  resolve in GitHub Actions (`unable to find version <sha>`), even though the commit exists in the
+  branch history.
+
+Practical rule: for consumer validation, either keep the nested ref on the current branch tip, or
+use a temporary validation-only branch ref and switch back to a stable SHA before merge. Do not
+assume any reachable feature-branch ancestor SHA is externally resolvable by the Actions downloader.
