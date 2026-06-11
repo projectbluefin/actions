@@ -4,14 +4,18 @@ on:
   push:
     branches: [main]
     paths:
+      - "actions/**"
       - "bootc-build/create-release/scripts/**"
-      - "scripts/check-consumer-contract.py"
+      - "bootc-build/generate-tags/**"
+      - "scripts/**"
       - "tests/**"
       - ".github/workflows/unit-tests.yml"
   pull_request:
     paths:
+      - "actions/**"
       - "bootc-build/create-release/scripts/**"
-      - "scripts/check-consumer-contract.py"
+      - "bootc-build/generate-tags/**"
+      - "scripts/**"
       - "tests/**"
       - ".github/workflows/unit-tests.yml"
 
@@ -40,7 +44,25 @@ jobs:
       - name: Run pytest
         run: |
           python -m pytest tests/ -v --tb=short \
+            --ignore=tests/bats \
             --cov=bootc-build/create-release/scripts \
             --cov=scripts \
             --cov-report=term-missing \
             --cov-fail-under=60
+
+  bats:
+    name: bats
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install bats
+        run: |
+          sudo npm install -g bats@1.11.1
+          bats --version
+
+      - name: Run bats tests
+        run: bats tests/bats/
