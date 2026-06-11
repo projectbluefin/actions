@@ -259,7 +259,7 @@ jobs:
 
       - name: Fetch completed post-testing-e2e runs with retry
         if: steps.e2e-precheck.outputs.should_check == 'true'
-        uses: projectbluefin/actions/actions/retry@2a09e72e9be15b137392dde15f8587f35587e8eb # main — includes actions/retry (actions#155)
+        uses: projectbluefin/actions/actions/retry@v1
         env:
           E2E_RUNS_PATH: ${{ runner.temp }}/post-testing-e2e-runs.json
           GH_TOKEN: ${{ github.token }}
