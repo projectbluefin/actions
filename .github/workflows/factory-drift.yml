@@ -1,0 +1,230 @@
+name: Factory Drift Detection
+
+on:
+  schedule:
+    - cron: '0 6 * * 4' # Thursday 06:00 UTC — weekly config convergence check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: factory-drift
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Detect factory config drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.MERGERAPTOR_APP_ID }}
+          private-key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
+          owner: projectbluefin
+
+      - name: Fetch workflow files
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          CONSUMER_REPOS=(
+            projectbluefin/bluefin
+            projectbluefin/bluefin-lts
+            projectbluefin/dakota
+            projectbluefin/common
+            projectbluefin/bonedigger
+          )
+
+          mkdir -p /tmp/workflows
+
+          for repo in "${CONSUMER_REPOS[@]}"; do
+            short="${repo#projectbluefin/}"
+            mkdir -p "/tmp/workflows/${short}"
+            gh api "repos/${repo}/contents/.github/workflows" \
+              --jq '.[].name' 2>/dev/null \
+            | while read -r wf; do
+                gh api "repos/${repo}/contents/.github/workflows/${wf}" \
+                  --jq '.content' 2>/dev/null \
+                | base64 -d > "/tmp/workflows/${short}/${wf}" 2>/dev/null || true
+              done
+          done
+
+      - name: Detect drift
+        id: drift
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          CONSUMER_REPOS=(
+            projectbluefin/bluefin
+            projectbluefin/bluefin-lts
+            projectbluefin/dakota
+            projectbluefin/common
+            projectbluefin/bonedigger
+          )
+
+          IMAGE_REPOS=(
+            projectbluefin/bluefin
+            projectbluefin/bluefin-lts
+            projectbluefin/dakota
+          )
+
+          drift_items=()
+
+          # ── Check 1: Floating @main / @latest / @master refs ─────────────────
+          for repo in "${CONSUMER_REPOS[@]}"; do
+            short="${repo#projectbluefin/}"
+            floating_wfs=$(
+              grep -rl 'uses:.*@\(main\|latest\|master\)' "/tmp/workflows/${short}/" 2>/dev/null \
+              | xargs -r -I{} basename {} \
+              | tr '\n' ' ' \
+              | sed 's/ $//' \
+              || true
+            )
+            if [[ -n "${floating_wfs}" ]]; then
+              drift_items+=("${repo}|floating-refs|Floating @main/@latest/@master refs in: ${floating_wfs}")
+            fi
+          done
+
+          # ── Check 2: cliff.toml presence in image repos ───────────────────────
+          for repo in "${IMAGE_REPOS[@]}"; do
+            has_cliff=$(
+              gh api "repos/${repo}/contents/cliff.toml" --jq '.name' 2>/dev/null \
+              || echo "missing"
+            )
+            if [[ "${has_cliff}" == "missing" ]]; then
+              drift_items+=("${repo}|missing-cliff-toml|cliff.toml absent from repo root — structured changelogs unavailable")
+            fi
+          done
+
+          # ── Check 3: promote-testing-to-main LoC threshold ───────────────────
+          for repo in "${CONSUMER_REPOS[@]}"; do
+            short="${repo#projectbluefin/}"
+            promote_wf="/tmp/workflows/${short}/promote-testing-to-main.yml"
+            if [[ -f "${promote_wf}" ]]; then
+              loc=$(wc -l < "${promote_wf}")
+              if [[ "${loc}" -gt 50 ]]; then
+                drift_items+=("${repo}|promote-loc-drift|promote-testing-to-main.yml is ${loc} lines (threshold: 50) — candidate for reusable extraction")
+              fi
+            fi
+          done
+
+          # ── Check 4: Testsuite SHA divergence ────────────────────────────────
+          testsuite_shas=()
+          for repo in "${CONSUMER_REPOS[@]}"; do
+            short="${repo#projectbluefin/}"
+            sha=$(
+              grep -roh 'projectbluefin/testsuite@[0-9a-f]\{40\}' "/tmp/workflows/${short}/" 2>/dev/null \
+              | head -1 \
+              | cut -d@ -f2 \
+              || true
+            )
+            [[ -n "${sha}" ]] && testsuite_shas+=("${repo}:${sha}")
+          done
+
+          if [[ "${#testsuite_shas[@]}" -gt 1 ]]; then
+            unique_ts=$(
+              printf '%s\n' "${testsuite_shas[@]}" \
+              | cut -d: -f2 \
+              | sort -u \
+              | wc -l
+            )
+            if [[ "${unique_ts}" -gt 1 ]]; then
+              detail=$(printf '%s\n' "${testsuite_shas[@]}")
+              drift_items+=("factory|testsuite-sha-divergence|Repos pin different testsuite SHAs: ${detail}")
+            fi
+          fi
+
+          # ── Summary and step output ───────────────────────────────────────────
+          echo ""
+          echo "=== Factory Drift Report ==="
+
+          if [[ "${#drift_items[@]}" -eq 0 ]]; then
+            echo "✓ No drift detected."
+            echo "has_drift=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "✗ ${#drift_items[@]} drift item(s) found:"
+            printf '  %s\n' "${drift_items[@]}"
+            echo "has_drift=true" >> "${GITHUB_OUTPUT}"
+            printf '%s\n' "${drift_items[@]}" > /tmp/drift_items.txt
+          fi
+
+          # Write job summary
+          {
+            echo "## Factory Drift Detection"
+            echo ""
+            if [[ "${#drift_items[@]}" -eq 0 ]]; then
+              echo "✅ No drift detected across ${#CONSUMER_REPOS[@]} repos."
+            else
+              echo "⚠️ **${#drift_items[@]} drift item(s) found**"
+              echo ""
+              echo "| Repo | Check | Detail |"
+              echo "|---|---|---|"
+              for item in "${drift_items[@]}"; do
+                IFS='|' read -r r c d <<< "${item}"
+                echo "| \`${r}\` | \`${c}\` | ${d} |"
+              done
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: File issues for drift
+        if: steps.drift.outputs.has_drift == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          FALLBACK_REPO="projectbluefin/common"
+          issues_opened=0
+
+          while IFS='|' read -r repo check description; do
+            # Factory-wide findings go to common; repo-specific go to the repo
+            if [[ "${repo}" == "factory" ]]; then
+              target_repo="${FALLBACK_REPO}"
+            else
+              target_repo="${repo}"
+            fi
+
+            title="fix(factory): drift — ${check} (${repo})"
+
+            # Deduplicate: skip if an open issue with this check name already exists
+            existing=$(
+              gh issue list \
+                --repo "${target_repo}" \
+                --state open \
+                --search "in:title ${check}" \
+                --json title \
+                --jq '.[].title' 2>/dev/null \
+              || echo ""
+            )
+
+            if echo "${existing}" | grep -Fq "${check}"; then
+              echo "Skipping duplicate: ${check} in ${repo}"
+              continue
+            fi
+
+            gh issue create \
+              --repo "${target_repo}" \
+              --title "${title}" \
+              --label "area/ci" \
+              --body "## Factory Drift Detected
+
+**Check:** \`${check}\`
+**Repo:** \`${repo}\`
+**Detail:** ${description}
+
+---
+Opened automatically by [\`factory-drift.yml\`](https://github.com/projectbluefin/actions/blob/main/.github/workflows/factory-drift.yml) in \`projectbluefin/actions\`." \
+            || true
+
+            issues_opened=$((issues_opened + 1))
+          done < /tmp/drift_items.txt
+
+          echo "Opened ${issues_opened} issue(s)."
