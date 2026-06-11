@@ -92,6 +92,39 @@ For `aurora` and `bazzite`, you cannot open PRs directly. Verify that your chang
 
 The `@v1` tag is a floating pointer. A broken merge immediately breaks builds for ALL consumers with no rollback except a revert. The consumer validation step is the only gate.
 
+## PR body format — critical pitfall
+
+The consumer validation check searches for lines matching `^Consumer PR:` and `^Consumer CI run:` (colon immediately after the label). If your PR body uses **markdown headings** (`## Consumer PR`) instead of the **template format** (`Consumer PR: <URL>`), the check silently fails with "Missing 'Consumer PR:' line in the PR template".
+
+**Wrong:**
+```markdown
+## Consumer PR
+N/A — internal workflow, no consumer PR needed.
+```
+
+**Correct:**
+```markdown
+## Consumer validation
+
+Consumer PR: https://github.com/projectbluefin/bluefin/pull/NNN
+Consumer CI run: https://github.com/projectbluefin/bluefin/actions/runs/NNN
+Out-of-org consumer impact: N/A — aurora/bazzite unaffected because ...
+```
+
+Even for internal-only workflows (like `reusable-renovate.yml` which is only used within `projectbluefin/actions` itself for Renovate runs), the CI check still requires real URLs. Open a draft consumer PR in bluefin that pins `reusable-build.yml` to your branch SHA — this exercises the actions repo at that commit and satisfies the check. The consumer PR does NOT need to build the specific file being changed.
+
+**Consumer PR SHA pinning — how to create it via API:**
+```bash
+# Get branch SHA
+gh api repos/projectbluefin/actions/git/ref/heads/<branch> --jq '.object.sha'
+# Create branch in bluefin from testing
+gh api repos/projectbluefin/bluefin/git/refs --method POST \
+  --field ref="refs/heads/consumer-validate/<name>" \
+  --field sha="$(gh api repos/projectbluefin/bluefin/git/ref/heads/testing --jq '.object.sha')"
+# Update build-image-testing.yml: replace old actions SHA with your branch SHA
+# Push via API, open draft PR targeting testing
+```
+
 ## Gotchas when writing the enforcement workflow itself
 
 The `pat-ban.yml` enforcement workflow scans diff lines for `secrets.XXX` patterns. When that workflow was first authored, it failed its own CI check because:
