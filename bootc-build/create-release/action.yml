@@ -243,6 +243,7 @@ runs:
           --cert-regexp    "${CERT_REGEXP}" \
           --docs-url       "${DOCS_URL}" \
           --sbom-filename  "${SBOM_FILENAME}" \
+          --overflow-file  release-notes-full.md \
           --output         release-notes.md
 
     # ── Resolve SBOM asset filename ───────────────────────────────────────────
@@ -263,6 +264,19 @@ runs:
         cp "${SBOM_PATH}" "${TARGET}"
         echo "filename=${TARGET}" >> "$GITHUB_OUTPUT"
 
+    # ── Detect overflow notes (full notes written when body > 120k chars) ───────
+    - name: Detect overflow notes
+      id: overflow
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -f "release-notes-full.md" ]]; then
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "Overflow notes detected — will attach release-notes-full.md as a release asset."
+        else
+          echo "found=false" >> "$GITHUB_OUTPUT"
+        fi
+
     # ── Create GitHub Release ─────────────────────────────────────────────────
     - name: Create GitHub Release
       id: create-release
@@ -274,6 +288,7 @@ runs:
         TITLE:         ${{ inputs.title }}
         DRAFT:         ${{ inputs.draft }}
         PRERELEASE:    ${{ inputs.prerelease }}
+        OVERFLOW_FOUND: ${{ steps.overflow.outputs.found }}
         SBOM_FILENAME: ${{ steps.sbom-name.outputs.filename }}
       run: |
         set -euo pipefail
@@ -291,6 +306,12 @@ runs:
         PRERELEASE_FLAG=""
         [[ "${PRERELEASE}" == "true" ]] && PRERELEASE_FLAG="--prerelease"
 
+        # Attach the full-notes overflow asset when the body was trimmed.
+        OVERFLOW_ASSETS=()
+        if [[ "${OVERFLOW_FOUND}" == "true" ]]; then
+          OVERFLOW_ASSETS+=("release-notes-full.md")
+        fi
+
         URL=$(gh release create "${TAG}" \
           --repo           "${REPO}" \
           --title          "${TITLE}" \
@@ -300,6 +321,7 @@ runs:
           release-card.png \
           release-card-dark.png \
           "${SBOM_FILENAME}" \
+          "${OVERFLOW_ASSETS[@]}" \
           | tail -n1)
 
         echo "url=${URL}" >> "$GITHUB_OUTPUT"
@@ -309,4 +331,4 @@ runs:
     - name: Cleanup
       if: always()
       shell: bash
-      run: rm -f _versions.json _notable_packages.json
+      run: rm -f _versions.json _notable_packages.json release-notes-full.md
