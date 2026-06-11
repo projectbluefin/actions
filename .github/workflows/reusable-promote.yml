@@ -166,18 +166,71 @@ jobs:
           VARIANTS: ${{ inputs.variants }}
         run: |
           set -euo pipefail
+
+          # --- Days since last stable release ---
+          LAST_DATE=$(gh release list \
+            --repo "${{ github.repository }}" \
+            --limit 1 --json publishedAt \
+            --jq '.[0].publishedAt // ""' 2>/dev/null || echo "")
+          if [ -n "$LAST_DATE" ]; then
+            DAYS=$(( ( $(date +%s) - $(date -d "$LAST_DATE" +%s) ) / 86400 ))
+            DAYS_CELL="${DAYS}d (${LAST_DATE%%T*})"
+          else
+            DAYS_CELL="no prior release"
+          fi
+
+          # --- Commits on main since last stable promotion ---
+          LAST_SHA=$(git log -1 --format=%H origin/main -- .github/release-state.yaml 2>/dev/null || echo "")
+          if [ -n "$LAST_SHA" ]; then
+            COMMIT_COUNT=$(git rev-list --count "${LAST_SHA}..origin/main" 2>/dev/null || echo "?")
+          else
+            COMMIT_COUNT="?"
+          fi
+
+          # --- Component versions: old ref → new ref for key element files ---
+          component_row() {
+            local bst="$1" label="$2"
+            [ -f "$bst" ] || return
+            local track new_ref old_ref mark
+            track=$(grep -m1 '^s*track:' "$bst" | sed 's/.*track: *//' | tr -d '"' | xargs || echo "—")
+            new_ref=$(grep -m1 '^s*ref:' "$bst" | sed 's/.*ref: *//' | tr -d '"' | cut -c1-12 || echo "—")
+            if [ -n "$LAST_SHA" ]; then
+              old_ref=$(git show "${LAST_SHA}:${bst}" 2>/dev/null \
+                | grep -m1 '^s*ref:' | sed 's/.*ref: *//' | tr -d '"' | cut -c1-12 || echo "—")
+              [ "$old_ref" = "$new_ref" ] && mark="" || mark=" ⬆"
+            else
+              old_ref="—"
+              mark=""
+            fi
+            printf '| `%s` | `%s` | `%s` → `%s`%s |\n' "$label" "$track" "$old_ref" "$new_ref" "$mark"
+          }
+
+          COMP_TABLE=$(
+            component_row elements/gnome-build-meta.bst  gnome-build-meta
+            component_row elements/freedesktop-sdk.bst   freedesktop-sdk
+          )
+
+          # --- PR title ---
           FIRST_DIGEST=$(grep -m1 '^  [a-z]' .github/release-state.yaml \
             | awk '{print $2}' | tr -d '"' | cut -c8-23)
           PR_TITLE="ci: promote testing images to stable (${FIRST_DIGEST})"
 
+          # --- PR body ---
           {
-            echo "## Promote :testing → :stable"
-            echo ""
-            echo "Merge this PR to publish a stable release."
-            echo ""
-            echo '```yaml'
-            cat .github/release-state.yaml
-            echo '```'
+            printf '<!-- @coderabbitai ignore -->\n'
+            printf '## :testing → :stable\n\n'
+            printf '| | |\n|---|---|\n'
+            printf '| **Days since last stable** | %s |\n' "$DAYS_CELL"
+            printf '| **Commits since last stable** | %s |\n' "$COMMIT_COUNT"
+            printf '| **Updated** | %s |\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf '### Images\n\n| Variant | Digest |\n|---|---|\n'
+            grep '^  [a-z]' .github/release-state.yaml \
+              | awk '{gsub(/:/,"",$1); gsub(/"/,"",$2); printf "| `%s` | `%s` |\n", $1, $2}'
+            if [ -n "$COMP_TABLE" ]; then
+              printf '\n### Components\n\n| Component | Track | Ref |\n|---|---|---|\n'
+              printf '%s\n' "$COMP_TABLE"
+            fi
+            printf '\n_Merge this PR (2 × maintainers required). When merged, `execute-release.yml` re-verifies cosign signatures and copies each digest to `:stable`._\n'
           } > /tmp/pr-body.md
 
           EXISTING=$(gh pr list \
@@ -199,10 +252,10 @@ jobs:
               --head "${PROMOTION_BRANCH}" \
               --base main \
               --title "${PR_TITLE}" \
+              --label "release/ready" \
               --body-file /tmp/pr-body.md)
             echo "pr_number=${PR_URL##*/}" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Normalize variants for release gate
         if: steps.branch.outputs.changed == 'true'
         id: gate-variants
