@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# GITHUB_RELEASE_BODY_LIMIT — GitHub enforces a hard 125 000-character cap on
+# release bodies (HTTP 422 "body is too long").  render_notes.py stays well
+# under that by checking the assembled text against --max-chars (default
+# 120 000).  When the limit would be exceeded the full notes are written to a
+# separate overflow file (default release-notes-full.md) so they can be
+# attached as a release asset, and a trimmed body is written to --output.
 """
 render_notes.py — Generate release notes markdown with full SBOM display
 and step-by-step supply chain verification instructions using CNCF tools.
@@ -321,6 +327,18 @@ def main() -> None:
     ap.add_argument("--sbom-filename", default="",
                     help="Filename of SBOM asset attached to the release (e.g. bluefin.spdx.json)")
     ap.add_argument("--output",        default="release-notes.md")
+    ap.add_argument(
+        "--max-chars",
+        type=int,
+        default=120_000,
+        help="Hard cap on the release body (default 120 000; GitHub limit is 125 000)",
+    )
+    ap.add_argument(
+        "--overflow-file",
+        default="release-notes-full.md",
+        help="Path to write the *full* notes when truncation occurs "
+             "(attach this file as a release asset)",
+    )
     args = ap.parse_args()
 
     for path, label in [(args.versions, "--versions"), (args.sbom, "--sbom")]:
@@ -360,9 +378,59 @@ def main() -> None:
 
     notes = "\n".join(sections)
 
+    # ── Guard: GitHub enforces a 125 000-char limit on release bodies ────────
+    if len(notes) > args.max_chars:
+        # Persist the full notes as a separate asset so nothing is lost.
+        with open(args.overflow_file, "w", encoding="utf-8") as f:
+            f.write(notes)
+        print(
+            f"::warning::Release notes are {len(notes):,} chars "
+            f"(limit {args.max_chars:,}). Full notes written to "
+            f"'{args.overflow_file}' — it will be attached as a release asset.",
+            file=sys.stderr,
+        )
+
+        # Build a compact body: drop the full inventory + diff details blocks;
+        # replace them with a pointer to the overflow asset.
+        asset_ref = os.path.basename(args.overflow_file)
+        overflow_note = (
+            f"_The full package inventory and diff details exceed GitHub's "
+            f"release-body limit.  "
+            f"They are attached as [`{asset_ref}`]({asset_ref})._\n"
+        )
+        compact_sections = [
+            _section_card(args.tag, args.repo),
+            "",
+            _section_diff_summary(versions["diff"], versions["has_prev"], total),
+            "",
+            _section_notable(versions["notable"]),
+            "",
+            overflow_note,
+            "",
+            _section_supply_chain(
+                image=args.image,
+                digest=args.digest,
+                repo=args.repo,
+                tag=args.tag,
+                cert_regexp=args.cert_regexp,
+                sbom_filename=sbom_filename,
+                docs_url=args.docs_url,
+            ),
+        ]
+        notes = "\n".join(compact_sections)
+
+        # Absolute last resort: hard-truncate if even the compact body is over.
+        if len(notes) > args.max_chars:
+            notes = notes[: args.max_chars - 12] + "\n\n…*(truncated)*"
+            print(
+                "::warning::Compact release notes still exceeded the limit — "
+                "hard-truncated.",
+                file=sys.stderr,
+            )
+
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(notes)
-    print(f"Release notes written: {args.output}")
+    print(f"Release notes written: {args.output} ({len(notes):,} chars)")
 
 
 if __name__ == "__main__":
