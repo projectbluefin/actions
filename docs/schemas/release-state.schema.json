@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/projectbluefin/actions/main/docs/schemas/release-state.schema.json",
+  "title": "release-state",
+  "description": "Schema for .github/release-state.yaml in projectbluefin image repos (bluefin, bluefin-lts, dakota). Written by reusable-promote.yml; read by reusable-execute-release.yml.",
+  "type": "object",
+  "required": ["testing", "updated_at"],
+  "additionalProperties": false,
+  "properties": {
+    "testing": {
+      "type": "object",
+      "description": "Map of variant name to :testing OCI digest.",
+      "minProperties": 1,
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]*$": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "OCI content-addressable digest for this variant's :testing tag."
+        }
+      },
+      "additionalProperties": false
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp when this file was last updated by the promote workflow."
+    }
+  },
+  "examples": [
+    {
+      "testing": {
+        "dakota": "sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
+        "dakota-nvidia": "sha256:def456abc123def456abc123def456abc123def456abc123def456abc123def4"
+      },
+      "updated_at": "2026-06-10T23:32:45Z"
+    }
+  ]
+}

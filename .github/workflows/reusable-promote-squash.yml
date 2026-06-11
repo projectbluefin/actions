@@ -1,0 +1,281 @@
+# reusable-promote-squash.yml — shared squash-promote logic for bluefin, bluefin-lts
+#
+# Consolidates promote-testing-to-main.yml across image repos:
+#   projectbluefin/bluefin     (~343 LoC) → thin caller (~25 LoC)
+#   projectbluefin/bluefin-lts (~354 LoC) → thin caller (~25 LoC)
+#
+# Implements consistency-audit C1 from projectbluefin/common.
+#
+# Key improvement over per-repo workflows:
+#   - Squash branch is always rebuilt fresh from origin/main — no staleness,
+#     no conflict drift, no "parent is stale" failures.
+#   - --auto replaces the 12-step mergeability-polling + GraphQL enqueue loop.
+
+name: reusable-promote-squash
+
+on:
+  workflow_call:
+    inputs:
+      variants:
+        description: >
+          JSON array of variant objects for release-gate,
+          e.g. '[{"image":"bluefin"},{"image":"bluefin-nvidia"}]'
+        required: true
+        type: string
+      cosign_identity_regexp:
+        description: >
+          Regex for cosign certificate identity,
+          e.g. '^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/'
+        required: true
+        type: string
+      registry:
+        description: 'GHCR registry prefix'
+        required: false
+        type: string
+        default: 'ghcr.io/projectbluefin'
+      run_e2e:
+        description: 'Whether the release-gate should require a passing e2e run'
+        required: false
+        type: boolean
+        default: false
+      e2e_suites:
+        description: 'Comma-separated testsuite suite identifiers (smoke, common, lts, dakota)'
+        required: false
+        type: string
+        default: 'smoke'
+      e2e_image:
+        description: 'Full image ref for e2e gate; if empty, e2e step is skipped'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-testing-to-main-${{ github.event.repository.name }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Build and maintain squash promotion PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      sync_needed: ${{ steps.compare.outputs.sync_needed }}
+      testing_sha: ${{ steps.compare.outputs.testing_sha }}
+      pr_number: ${{ steps.upsert.outputs.pr_number }}
+      pr_url: ${{ steps.upsert.outputs.pr_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch branches
+        run: git fetch origin main testing
+
+      - name: Compare testing and main trees
+        id: compare
+        run: |
+          set -euo pipefail
+
+          MAIN_SHA=$(git rev-parse origin/main)
+          TESTING_SHA=$(git rev-parse origin/testing)
+          MAIN_TREE=$(git rev-parse 'origin/main^{tree}')
+          TESTING_TREE=$(git rev-parse 'origin/testing^{tree}')
+
+          if [ "$MAIN_TREE" = "$TESTING_TREE" ]; then
+            echo "::notice::main and testing are identical — nothing to promote"
+            echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "testing differs from main — promotion needed"
+            echo "sync_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "testing_sha=${TESTING_SHA}"
+            echo "main_sha=${MAIN_SHA}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Rebuild squash promotion branch
+        if: steps.compare.outputs.sync_needed == 'true'
+        env:
+          PROMOTION_BRANCH: auto/promote-testing-to-main
+        run: |
+          set -euo pipefail
+          # Always rebuild from current origin/main — eliminates staleness and conflict
+          # drift. Force-push ensures the PR always shows a clean single-commit diff.
+          git checkout -B "$PROMOTION_BRANCH" origin/main
+          git merge --squash origin/testing
+          git commit -m "chore: promote testing to main"
+          git push --force origin "$PROMOTION_BRANCH"
+          echo "\u2705 Squash branch rebuilt"
+
+      - name: Upsert promotion PR
+        if: steps.compare.outputs.sync_needed == 'true'
+        id: upsert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_BRANCH: auto/promote-testing-to-main
+          TESTING_SHA: ${{ steps.compare.outputs.testing_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --base main \
+            --head "$PROMOTION_BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          TITLE="chore: promote testing to main"
+          BODY=$(printf '%s\n' \
+            "## Automated testing \u2192 main promotion" \
+            "" \
+            "This PR is maintained by \`.github/workflows/promote-testing-to-main.yml\`." \
+            "" \
+            "- Testing SHA: \`${TESTING_SHA}\`" \
+            "- Workflow run: ${RUN_URL}" \
+            "" \
+            "The squash branch is rebuilt fresh on every run \u2014 always clean, no merge conflicts.")
+
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --title "$TITLE" \
+              --body "$BODY"
+            echo "Updated existing PR #${PR_NUMBER}"
+          else
+            PR_NUMBER=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --base main \
+              --head "$PROMOTION_BRANCH" \
+              --title "$TITLE" \
+              --body "$BODY" \
+              --json number --jq '.number')
+            echo "Created PR #${PR_NUMBER}"
+          fi
+
+          # Enable auto-merge: PR lands as soon as required status checks pass.
+          # Falls back gracefully if auto-merge is not enabled on the repo.
+          gh pr merge "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --auto 2>/dev/null \
+            && echo "\u2705 Auto-merge enabled on PR #${PR_NUMBER}" \
+            || echo "\u26a0\ufe0f  Auto-merge not available \u2014 maintainer merges when checks pass"
+
+          PR_URL=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json url --jq '.url')
+          {
+            echo "pr_number=${PR_NUMBER}"
+            echo "pr_url=${PR_URL}"
+          } >> "$GITHUB_OUTPUT"
+
+  gate:
+    name: Release gate checks
+    needs: [promote]
+    if: needs.promote.outputs.sync_needed == 'true'
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      packages: read
+      pull-requests: write
+    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@cd1f55c4f16164b4d1ec12798d6410d9e8026c46 # v1
+    with:
+      repo: ${{ github.repository }}
+      pr_number: ${{ needs.promote.outputs.pr_number }}
+      head_sha: ${{ needs.promote.outputs.testing_sha }}
+      registry: ${{ inputs.registry }}
+      variants: ${{ inputs.variants }}
+      cosign_identity_regexp: ${{ inputs.cosign_identity_regexp }}
+      target_tag: testing
+      run_e2e: ${{ inputs.run_e2e }}
+      e2e_suites: ${{ inputs.e2e_suites }}
+      e2e_image: ${{ inputs.e2e_image }}
+    secrets: inherit
+
+  close-failure-issue:
+    needs: [promote]
+    if: needs.promote.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Close stale failure issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const title = 'ci: testing\u2192main promotion conflict';
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'area/ci,kind/bug',
+              state: 'open',
+            });
+            const open = existing.data.find(i => i.title === title);
+            if (open) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: open.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+              core.info(`Closed stale failure issue #${open.number}`);
+            }
+
+  report-failure:
+    needs: [promote]
+    if: always() && needs.promote.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update failure issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const testingSha = '${{ needs.promote.outputs.testing_sha }}' || 'unknown';
+            const prUrl = '${{ needs.promote.outputs.pr_url }}';
+            const title = 'ci: testing\u2192main promotion conflict';
+            const body = `## Testing \u2192 Main Promotion Conflict\n\n**Run:** ${runUrl}\n**Testing SHA:** \`${testingSha}\`${prUrl ? `\n**PR:** ${prUrl}` : ''}\n\n_Automatically opened by promote-testing-to-main.yml_`;
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'area/ci,kind/bug',
+              state: 'open',
+            });
+            const dup = existing.data.find(i => i.title === title);
+            if (dup) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: dup.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['area/ci', 'kind/bug', 'priority/p1'],
+              });
+            }
