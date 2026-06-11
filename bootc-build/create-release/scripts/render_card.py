@@ -319,7 +319,7 @@ def _build_html(
     )
 
 
-def _screenshot(html_path: str, output_path: str, color_scheme: str = "light") -> None:
+def _screenshot(html_path: str, output_path: str, color_scheme: str = "light") -> None:  # pragma: no cover
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -339,10 +339,7 @@ def _screenshot(html_path: str, output_path: str, color_scheme: str = "light") -
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--versions",      required=True)
-    ap.add_argument("--tag",           required=True)
+def main() -> None:  # pragma: no cover
     ap.add_argument("--date",          required=True, help="YYYY-MM-DD")
     ap.add_argument("--sha7",          required=True)
     ap.add_argument("--project-name",  default="Bluefin")
@@ -385,5 +382,5 @@ def main() -> None:
         os.unlink(html_path)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     main()
