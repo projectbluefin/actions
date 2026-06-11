@@ -91,3 +91,14 @@ For `aurora` and `bazzite`, you cannot open PRs directly. Verify that your chang
 ## Why this matters
 
 The `@v1` tag is a floating pointer. A broken merge immediately breaks builds for ALL consumers with no rollback except a revert. The consumer validation step is the only gate.
+
+## Gotchas when writing the enforcement workflow itself
+
+The `pat-ban.yml` enforcement workflow scans diff lines for `secrets.XXX` patterns. When that workflow was first authored, it failed its own CI check because:
+
+1. A YAML comment in the workflow file said `# Find new secrets.XXX references` — the `secrets.XXX` literal matched the scanner's own grep pattern
+2. Diff headers (`+++ b/file`) also appear as `+` lines and can carry false matches
+
+**Fix applied:** The scanner filters `grep -v '^+++\|^+[[:space:]]*#'` to skip diff headers and YAML comment lines before extracting secret names. When writing or modifying enforcement checks that scan their own diffs, always add this filter.
+
+**Authoring rule:** In any workflow file that discusses `secrets.NAME` in comments, write the name without the `secrets.` prefix to avoid triggering the scan. E.g., write `# GITHUB_TOKEN (built-in)` not `# secrets.GITHUB_TOKEN`.
