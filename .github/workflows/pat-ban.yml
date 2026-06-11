@@ -1,0 +1,90 @@
+# PAT Ban Enforcement — rejects PRs that introduce new unapproved secret references
+#
+# Secrets policy: https://github.com/projectbluefin/common/blob/main/docs/secrets-policy.md
+#
+# Approved secrets (frozen set — additions require a security review issue):
+#   GITHUB_TOKEN          — GitHub built-in, automatic, always allowed
+#   MERGERAPTOR_APP_ID    — GitHub App for MERGERAPTOR bot
+#   MERGERAPTOR_PRIVATE_KEY — GitHub App for MERGERAPTOR bot
+#   BLUEFINBOT_APP_ID     — GitHub App for BLUEFINBOT
+#   BLUEFINBOT_PRIVATE_KEY — GitHub App for BLUEFINBOT
+#   CASD_CLIENT_KEY       — TLS client cert for BuildStream CAS (dakota only)
+#   SIGNING_SECRET        — Legacy cosign private key (common only, pending keyless migration)
+#   R2_ACCESS_KEY_ID_2025     — Cloudflare R2 (iso only — out of scope)
+#   R2_SECRET_ACCESS_KEY_2025 — Cloudflare R2 (iso only — out of scope)
+#   R2_ENDPOINT_2025          — Cloudflare R2 (iso only — out of scope)
+#   R2_ACCESS_KEY_PRODUCTION  — Cloudflare R2 (iso only — out of scope)
+#   R2_SECRET_PRODUCTION      — Cloudflare R2 (iso only — out of scope)
+#
+# PATs are BANNED. Use github.token or GitHub App tokens instead.
+
+name: PAT ban — no new unapproved secrets
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-no-new-pats:
+    name: No new unapproved secret references
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for unapproved secrets in diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          # Approved secrets — exact names only
+          APPROVED=(
+            GITHUB_TOKEN
+            MERGERAPTOR_APP_ID
+            MERGERAPTOR_PRIVATE_KEY
+            BLUEFINBOT_APP_ID
+            BLUEFINBOT_PRIVATE_KEY
+            CASD_CLIENT_KEY
+            SIGNING_SECRET
+          )
+
+          # Build grep pattern from approved list
+          APPROVED_PATTERN=$(IFS='|'; echo "${APPROVED[*]}")
+
+          # Scan added YAML lines — skip diff headers (+++) and comment lines
+          NEW_SECRETS=$(git diff "${BASE_SHA}...HEAD" -- '*.yml' '*.yaml' \
+            | grep '^+' \
+            | grep -v '^+++\|^+[[:space:]]*#' \
+            | grep -oE 'secrets\.[A-Z0-9_]+' \
+            | sort -u \
+            | grep -vE "^secrets\.(${APPROVED_PATTERN})$" \
+            || true)
+
+          if [ -z "$NEW_SECRETS" ]; then
+            echo "✅ No unapproved secret references introduced."
+            exit 0
+          fi
+
+          echo "::error::Unapproved secret reference(s) introduced by this PR:"
+          echo "$NEW_SECRETS" | while read -r s; do
+            echo "  ::error::  $s"
+          done
+          echo ""
+          echo "PATs are banned in the Bluefin factory."
+          echo "Approved alternatives:"
+          echo "  - GITHUB_TOKEN (built-in, use this for most cases)"
+          echo "  - GitHub App tokens (MERGERAPTOR / BLUEFINBOT) for cross-repo bot operations"
+          echo ""
+          echo "If you believe a new secret is genuinely required, file a security"
+          echo "review issue in projectbluefin/common before adding it."
+          echo "Policy: https://github.com/projectbluefin/common/blob/main/docs/secrets-policy.md"
+          exit 1
