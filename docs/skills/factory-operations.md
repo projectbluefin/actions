@@ -174,7 +174,56 @@ No `skill-metrics.json` artifact is produced currently (future enhancement if ba
 
 ---
 
-## 4. Renovate — Automated Dependency Maintenance
+## 4. Factory Health Monitor
+
+### What it is
+
+A scheduled workflow (`actions/.github/workflows/factory-health.yml`) that checks the last 24 hours of
+critical factory pipelines and opens an issue in `projectbluefin/common` when any monitored pipeline
+falls below the success-rate threshold.
+
+### Schedule
+
+`cron: '0 */6 * * *'` — every 6 hours. Also triggerable via `workflow_dispatch`.
+
+### Monitored pipelines
+
+| Repo | Pipeline | Workflow queried |
+|---|---|---|
+| `projectbluefin/bluefin` | Build | `Testing Images` |
+| `projectbluefin/bluefin` | E2E | `Nightly E2E` |
+| `projectbluefin/bluefin` | Promote | `Promote testing to main` |
+| `projectbluefin/bluefin-lts` | Build | `Build Bluefin LTS` |
+| `projectbluefin/bluefin-lts` | E2E | `Post-Merge E2E — Testing Parity` |
+| `projectbluefin/bluefin-lts` | Promote | `Promote testing to main` |
+| `projectbluefin/dakota` | Build | `Build Bluefin dakota` |
+| `projectbluefin/dakota` | Promote | `Publish Bluefin dakota` |
+| `projectbluefin/common` | Build | `Build` |
+| `projectbluefin/common` | Unit Tests | `Unit Tests` |
+
+### Alerting behavior
+
+- Success rate = `successful completed runs / completed non-skipped runs`
+- Window = last 24 hours
+- Threshold = 80%
+- Open issues are deduplicated by repo + pipeline title prefix
+- Issues are filed in `projectbluefin/common` with the labels that currently exist from:
+  `priority/p0`, `area/ci`, `kind/bug`
+
+### Authentication pattern
+
+Use the workflow `github.token` for read-only `gh run list` calls against the public factory repos.
+Generate a GitHub App token scoped to `projectbluefin/common` before creating issues there. This keeps
+cross-repo issue writes explicit while avoiding broader write scopes for routine monitoring.
+
+### Output
+
+The workflow always prints a markdown summary table to stdout and `$GITHUB_STEP_SUMMARY`, even when no
+issues are opened.
+
+---
+
+## 5. Renovate — Automated Dependency Maintenance
 
 ### What it does
 
@@ -239,9 +288,14 @@ The recommended cadence: move `@v1` periodically after a batch of Renovate bumps
 
 ---
 
-## How the Four Systems Work Together
+## How the Five Systems Work Together
 
 ```
+Factory health monitor runs every 6 hours
+  └─▶ success rate < 80%
+        ├── no open alert issue → opens issue in projectbluefin/common
+        └── open alert issue exists → logs and skips duplicate creation
+
 Renovate detects stale SHA pin
   └─▶ Opens bump PR
         ├── CI (actionlint + skill-drift) passes → auto-merges
@@ -267,7 +321,9 @@ Batch of Renovate bumps land on main
         └─▶ All consumer repos pick up updated SHA pins
 ```
 
-Renovate keeps pins fresh automatically; the PR check and weekly audit keep knowledge current; the production gate and @v1 human authorization keep consumers safe.
+Renovate keeps pins fresh automatically; the PR check and weekly audit keep knowledge current; the
+factory health monitor surfaces failing pipelines quickly; and the production gate plus @v1 human
+authorization keep consumers safe.
 
 ---
 
