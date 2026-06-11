@@ -7,6 +7,8 @@ metadata:
 
 # Factory Operations Skill
 
+`projectbluefin/actions` is the canonical home for org-wide factory automation. The `projectbluefin/housekeeping` repo is deprecated and should only carry the deprecation notice until it is archived.
+
 Covers three interconnected systems that keep the projectbluefin factory safe and self-improving:
 
 1. **Production gate** — machine-enforced 2-human approval before any build reaches `:stable`

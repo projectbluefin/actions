@@ -266,7 +266,7 @@ After editing a skill file, commit it in the same PR as the triggering change.
 |---|---|
 | [projectbluefin/testsuite](https://github.com/projectbluefin/testsuite) | QA pipeline — Argo + KubeVirt + AT-SPI |
 | [projectbluefin/bonedigger](https://github.com/projectbluefin/bonedigger) | Client reporting + issue lifecycle bot |
-| [projectbluefin/housekeeping](https://github.com/projectbluefin/housekeeping) | Org-wide maintenance workflows |
+| [projectbluefin/housekeeping](https://github.com/projectbluefin/housekeeping) | Deprecated placeholder repo — org-wide automation lives in `projectbluefin/actions` |
 
 ---
 

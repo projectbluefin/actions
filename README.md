@@ -15,6 +15,10 @@ Maintainers: see [docs/MAINTAINERS.md](docs/MAINTAINERS.md) for the agentic work
 
 For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
+## Org-wide automation
+
+`projectbluefin/actions` is the canonical home for org-wide automation across the Project Bluefin factory. The `projectbluefin/housekeeping` repository is deprecated: it never gained workflows, and new maintenance or factory operations automation should be added here instead.
+
 ## Available Actions
 
 | Action | Purpose |
