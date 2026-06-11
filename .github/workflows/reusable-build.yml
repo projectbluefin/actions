@@ -175,7 +175,7 @@ jobs:
         if: github.event_name != 'pull_request'
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_ACTOR: ${{ github.actor }}
         run: echo "${GITHUB_TOKEN}" | sudo podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
@@ -399,7 +399,7 @@ jobs:
           image-name: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.compute-push-tags.outputs.push_tags }}
           default-tag: ${{ steps.compute-push-tags.outputs.push_default }}
-          github-token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Record push duration
         id: push-duration
@@ -514,7 +514,7 @@ jobs:
           signing-mode: keyless
           generate-sbom: ${{ inputs.stream_name != 'testing' && 'true' || 'false' }}
           push-attestation: "true"
-          github-token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
 
       - name: Verify rechunk metadata preserved
