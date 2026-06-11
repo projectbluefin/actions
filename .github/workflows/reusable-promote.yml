@@ -157,81 +157,116 @@ jobs:
           git push --force-with-lease origin "${PROMOTION_BRANCH}"
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch last stable release metadata
+        if: steps.branch.outputs.changed == 'true'
+        id: last-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=$(gh release list \
+            --repo "${{ github.repository }}" \
+            --limit 1 \
+            --json tagName,publishedAt \
+            --jq '.[0]' 2>/dev/null || echo '{}')
+
+          TAG=$(echo "${RELEASE_JSON}" | jq -r '.tagName // empty')
+          PUBLISHED=$(echo "${RELEASE_JSON}" | jq -r '.publishedAt // empty')
+
+          if [[ -n "${TAG}" && -n "${PUBLISHED}" ]]; then
+            DAYS=$(( ( $(date +%s) - $(date -d "${PUBLISHED}" +%s) ) / 86400 ))
+            {
+              echo "days=${DAYS}"
+              echo "tag=${TAG}"
+              echo "url=https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "days="
+              echo "tag="
+              echo "url="
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Render promotion PR body
+        if: steps.branch.outputs.changed == 'true'
+        id: render
+        env:
+          GH_TOKEN:  ${{ github.token }}
+          VARIANTS:  ${{ inputs.variants }}
+          REGISTRY:  ${{ inputs.registry }}
+          RUN_URL:   ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          DAYS_AGO:  ${{ steps.last-release.outputs.days }}
+          LAST_TAG:  ${{ steps.last-release.outputs.tag }}
+          LAST_URL:  ${{ steps.last-release.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          # Build variants-with-digests JSON from release-state.yaml using awk (no PyYAML dep)
+          VARIANTS_JSON=$(grep '^  [a-z]' .github/release-state.yaml \
+            | awk '{img=$1; gsub(/:/, "", img); dig=$2; gsub(/"/, "", dig);
+                    printf "{\"image\":\"%s\",\"digest\":\"%s\"},", img, dig}' \
+            | sed 's/,$//')
+          VARIANTS_JSON="[${VARIANTS_JSON}]"
+
+          PRIMARY_IMAGE=$(echo "${VARIANTS}" | jq -r 'if .[0] | type == "string" then .[0] else .[0].image end')
+          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | sed 's/-/ /g; s/\b\(.\)/\u\1/g')
+          DATE="$(date -u +%Y-%m-%d)"
+
+          DAYS_ARGS=()
+          [[ -n "${DAYS_AGO}" ]] && DAYS_ARGS+=(--days-since-stable "${DAYS_AGO}")
+          TAG_ARGS=()
+          [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
+
+          python3 scripts/render_pr_body.py \
+            --project-name  "${PROJECT_NAME}" \
+            --primary-image "${PRIMARY_IMAGE}" \
+            --variants-json "${VARIANTS_JSON}" \
+            --repo          "${{ github.repository }}" \
+            --run-url       "${RUN_URL}" \
+            --date          "${DATE}" \
+            "${DAYS_ARGS[@]}" \
+            "${TAG_ARGS[@]}" \
+            --output        /tmp/pr-body.md
+
+          # Append BST component-version table when element files are present
+          # (dakota-specific: tracks gnome-build-meta and freedesktop-sdk refs)
+          LAST_SHA=$(git log -1 --format=%H origin/main -- .github/release-state.yaml 2>/dev/null || echo "")
+          component_row() {
+            local bst="$1" label="$2"
+            [ -f "$bst" ] || return
+            local track new_ref old_ref mark
+            track=$(grep -m1 'track:' "$bst" | sed 's/.*track: *//' | tr -d '"' | xargs || echo "—")
+            new_ref=$(grep -m1 'ref:' "$bst" | sed 's/.*ref: *//' | tr -d '"' | cut -c1-12 || echo "—")
+            if [ -n "${LAST_SHA}" ]; then
+              old_ref=$(git show "${LAST_SHA}:${bst}" 2>/dev/null \
+                | grep -m1 'ref:' | sed 's/.*ref: *//' | tr -d '"' | cut -c1-12 || echo "—")
+              [ "$old_ref" = "$new_ref" ] && mark="" || mark=" ⬆"
+            else
+              old_ref="—"; mark=""
+            fi
+            # shellcheck disable=SC2016  # \n in printf format is intentional, not a variable
+            printf '| `%s` | `%s` | `%s` → `%s`%s |\n' "$label" "$track" "$old_ref" "$new_ref" "$mark"
+          }
+          COMP_TABLE=$(
+            component_row elements/gnome-build-meta.bst gnome-build-meta
+            component_row elements/freedesktop-sdk.bst  freedesktop-sdk
+          )
+          if [ -n "${COMP_TABLE}" ]; then
+            printf '\n### Components\n\n| Component | Track | Ref |\n|---|---|---|\n%s\n' "${COMP_TABLE}" >> /tmp/pr-body.md
+          fi
+
+          echo "pr_title=ci(promote): ${PRIMARY_IMAGE} testing → stable ${DATE}" >> "$GITHUB_OUTPUT"
+
       - name: Open or update promotion PR
         if: steps.branch.outputs.changed == 'true'
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
           PROMOTION_BRANCH: auto/promote-testing-to-main
-          VARIANTS: ${{ inputs.variants }}
+          PR_TITLE: ${{ steps.render.outputs.pr_title }}
         run: |
           set -euo pipefail
-
-          # --- Days since last stable release ---
-          LAST_DATE=$(gh release list \
-            --repo "${{ github.repository }}" \
-            --limit 1 --json publishedAt \
-            --jq '.[0].publishedAt // ""' 2>/dev/null || echo "")
-          if [ -n "$LAST_DATE" ]; then
-            DAYS=$(( ( $(date +%s) - $(date -d "$LAST_DATE" +%s) ) / 86400 ))
-            DAYS_CELL="${DAYS}d (${LAST_DATE%%T*})"
-          else
-            DAYS_CELL="no prior release"
-          fi
-
-          # --- Commits on main since last stable promotion ---
-          LAST_SHA=$(git log -1 --format=%H origin/main -- .github/release-state.yaml 2>/dev/null || echo "")
-          if [ -n "$LAST_SHA" ]; then
-            COMMIT_COUNT=$(git rev-list --count "${LAST_SHA}..origin/main" 2>/dev/null || echo "?")
-          else
-            COMMIT_COUNT="?"
-          fi
-
-          # --- Component versions: old ref → new ref for key element files ---
-          component_row() {
-            local bst="$1" label="$2"
-            [ -f "$bst" ] || return
-            local track new_ref old_ref mark
-            track=$(grep -m1 '^s*track:' "$bst" | sed 's/.*track: *//' | tr -d '"' | xargs || echo "—")
-            new_ref=$(grep -m1 '^s*ref:' "$bst" | sed 's/.*ref: *//' | tr -d '"' | cut -c1-12 || echo "—")
-            if [ -n "$LAST_SHA" ]; then
-              old_ref=$(git show "${LAST_SHA}:${bst}" 2>/dev/null \
-                | grep -m1 '^s*ref:' | sed 's/.*ref: *//' | tr -d '"' | cut -c1-12 || echo "—")
-              [ "$old_ref" = "$new_ref" ] && mark="" || mark=" ⬆"
-            else
-              old_ref="—"
-              mark=""
-            fi
-            printf '| `%s` | `%s` | `%s` → `%s`%s |\n' "$label" "$track" "$old_ref" "$new_ref" "$mark"
-          }
-
-          COMP_TABLE=$(
-            component_row elements/gnome-build-meta.bst  gnome-build-meta
-            component_row elements/freedesktop-sdk.bst   freedesktop-sdk
-          )
-
-          # --- PR title ---
-          FIRST_DIGEST=$(grep -m1 '^  [a-z]' .github/release-state.yaml \
-            | awk '{print $2}' | tr -d '"' | cut -c8-23)
-          PR_TITLE="ci: promote testing images to stable (${FIRST_DIGEST})"
-
-          # --- PR body ---
-          {
-            printf '<!-- @coderabbitai ignore -->\n'
-            printf '## :testing → :stable\n\n'
-            printf '| | |\n|---|---|\n'
-            printf '| **Days since last stable** | %s |\n' "$DAYS_CELL"
-            printf '| **Commits since last stable** | %s |\n' "$COMMIT_COUNT"
-            printf '| **Updated** | %s |\n\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            printf '### Images\n\n| Variant | Digest |\n|---|---|\n'
-            grep '^  [a-z]' .github/release-state.yaml \
-              | awk '{gsub(/:/,"",$1); gsub(/"/,"",$2); printf "| `%s` | `%s` |\n", $1, $2}'
-            if [ -n "$COMP_TABLE" ]; then
-              printf '\n### Components\n\n| Component | Track | Ref |\n|---|---|---|\n'
-              printf '%s\n' "$COMP_TABLE"
-            fi
-            printf '\n_Merge this PR (2 × maintainers required). When merged, `execute-release.yml` re-verifies cosign signatures and copies each digest to `:stable`._\n'
-          } > /tmp/pr-body.md
 
           EXISTING=$(gh pr list \
             --repo "${{ github.repository }}" \

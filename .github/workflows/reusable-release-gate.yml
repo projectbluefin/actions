@@ -84,6 +84,9 @@ jobs:
       ready: ${{ steps.aggregate.outputs.ready }}
       digests: ${{ steps.resolve.outputs.digests }}
     steps:
+      - name: Checkout (for gate section script)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
       - name: Authenticate to GHCR for skopeo reads
         shell: bash
         env:
@@ -563,6 +566,52 @@ jobs:
             ready=true
           fi
           echo "ready=${ready}" >> "$GITHUB_OUTPUT"
+
+      - name: Update PR body gate section
+        if: inputs.pr_number != ''
+        env:
+          GH_TOKEN:        ${{ github.token }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          REPO:            ${{ inputs.repo }}
+          RESOLVE_OK:      ${{ steps.resolve.outputs.ok }}
+          RESOLVE_SUMMARY: ${{ steps.resolve.outputs.summary }}
+          VERIFY_OK:       ${{ steps.verify.outputs.ok }}
+          VERIFY_SUMMARY:  ${{ steps.verify.outputs.summary }}
+          E2E_STATE:       ${{ steps.e2e.outputs.state }}
+          E2E_SUMMARY:     ${{ steps.e2e.outputs.summary }}
+          E2E_DETAILS:     ${{ steps.e2e.outputs.details }}
+          READY:           ${{ steps.aggregate.outputs.ready }}
+        run: |
+          set -euo pipefail
+
+          # Fetch current PR body
+          gh pr view "${INPUT_PR_NUMBER}" \
+            --repo "${REPO}" \
+            --json body \
+            --jq '.body' > /tmp/current-pr-body.md
+
+          # Skip gracefully if the body predates the Design C gate markers
+          if ! grep -q '<!-- gate-section-start -->' /tmp/current-pr-body.md; then
+            echo "::notice::PR body has no gate section markers — skipping body update (sticky comment still posted below)."
+            exit 0
+          fi
+
+          python3 scripts/render_gate_section.py \
+            --body-file      /tmp/current-pr-body.md \
+            --output         /tmp/updated-pr-body.md \
+            --resolve-ok     "${RESOLVE_OK}" \
+            --resolve-summary "${RESOLVE_SUMMARY}" \
+            --verify-ok      "${VERIFY_OK}" \
+            --verify-summary "${VERIFY_SUMMARY}" \
+            --e2e-state      "${E2E_STATE}" \
+            --e2e-summary    "${E2E_SUMMARY}" \
+            --e2e-details    "${E2E_DETAILS:-}" \
+            --ready          "${READY}"
+
+          gh pr edit "${INPUT_PR_NUMBER}" \
+            --repo "${REPO}" \
+            --body-file /tmp/updated-pr-body.md
+          echo "PR body gate section updated."
 
       - name: Post or update sticky release status comment
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0

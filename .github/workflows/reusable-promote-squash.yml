@@ -120,14 +120,107 @@ jobs:
           git push --force origin "$PROMOTION_BRANCH"
           echo "\u2705 Squash branch rebuilt"
 
+      - name: Fetch last stable release metadata
+        if: steps.compare.outputs.sync_needed == 'true'
+        id: last-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=$(gh release list \
+            --repo "${{ github.repository }}" \
+            --limit 1 \
+            --json tagName,publishedAt \
+            --jq '.[0]' 2>/dev/null || echo '{}')
+
+          TAG=$(echo "${RELEASE_JSON}" | jq -r '.tagName // empty')
+          PUBLISHED=$(echo "${RELEASE_JSON}" | jq -r '.publishedAt // empty')
+
+          if [[ -n "${TAG}" && -n "${PUBLISHED}" ]]; then
+            DAYS=$(( ( $(date +%s) - $(date -d "${PUBLISHED}" +%s) ) / 86400 ))
+            {
+              echo "days=${DAYS}"
+              echo "tag=${TAG}"
+              echo "url=https://github.com/${{ github.repository }}/releases/tag/${TAG}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "days="
+              echo "tag="
+              echo "url="
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect git log for PR body
+        if: steps.compare.outputs.sync_needed == 'true'
+        id: gitlog
+        run: |
+          set -euo pipefail
+          COUNT=$(git rev-list --count origin/main..origin/testing 2>/dev/null || echo 0)
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+
+          # Build commits JSON safely — split on tab, never rely on shell JSON escaping
+          COMMITS_JSON=$(git log origin/main..origin/testing \
+            --pretty=format:'%H%x09%s' \
+            --max-count=20 \
+            | python3 -c '
+          import sys, json
+          rows = []
+          for line in sys.stdin:
+              sha, _, subject = line.rstrip("\n").partition("\t")
+              rows.append({"sha": sha, "subject": subject})
+          print(json.dumps(rows))
+          ' 2>/dev/null || echo '[]')
+          echo "commits_json=${COMMITS_JSON}" >> "$GITHUB_OUTPUT"
+          echo "compare_url=https://github.com/${{ github.repository }}/compare/main...testing" >> "$GITHUB_OUTPUT"
+
+      - name: Render promotion PR body
+        if: steps.compare.outputs.sync_needed == 'true'
+        id: render
+        env:
+          VARIANTS:     ${{ inputs.variants }}
+          RUN_URL:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_COUNT: ${{ steps.gitlog.outputs.count }}
+          COMMITS_JSON: ${{ steps.gitlog.outputs.commits_json }}
+          COMPARE_URL:  ${{ steps.gitlog.outputs.compare_url }}
+          DAYS_AGO:     ${{ steps.last-release.outputs.days }}
+          LAST_TAG:     ${{ steps.last-release.outputs.tag }}
+          LAST_URL:     ${{ steps.last-release.outputs.url }}
+        run: |
+          set -euo pipefail
+          PRIMARY_IMAGE=$(echo "${VARIANTS}" | jq -r 'if .[0] | type == "string" then .[0] else .[0].image end')
+          # Title-case slug for display name: bluefin-lts → Bluefin Lts
+          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | sed 's/-/ /g; s/\b\(.\)/\u\1/g')
+          DATE="$(date -u +%Y-%m-%d)"
+
+          DAYS_ARGS=()
+          [[ -n "${DAYS_AGO}" ]] && DAYS_ARGS+=(--days-since-stable "${DAYS_AGO}")
+          TAG_ARGS=()
+          [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
+
+          python3 scripts/render_pr_body.py \
+            --project-name  "${PROJECT_NAME}" \
+            --primary-image "${PRIMARY_IMAGE}" \
+            --variants-json "${VARIANTS}" \
+            --repo          "${{ github.repository }}" \
+            --run-url       "${RUN_URL}" \
+            --date          "${DATE}" \
+            "${DAYS_ARGS[@]}" \
+            "${TAG_ARGS[@]}" \
+            --commit-count  "${COMMIT_COUNT}" \
+            --commits-json  "${COMMITS_JSON}" \
+            --compare-url   "${COMPARE_URL}" \
+            --output        /tmp/pr-body.md
+
+          echo "pr_title=ci(promote): ${PRIMARY_IMAGE} testing → stable ${DATE}" >> "$GITHUB_OUTPUT"
+
       - name: Upsert promotion PR
         if: steps.compare.outputs.sync_needed == 'true'
         id: upsert
         env:
           GH_TOKEN: ${{ github.token }}
           PROMOTION_BRANCH: auto/promote-testing-to-main
-          TESTING_SHA: ${{ steps.compare.outputs.testing_sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PR_TITLE: ${{ steps.render.outputs.pr_title }}
         run: |
           set -euo pipefail
 
@@ -139,30 +232,19 @@ jobs:
             --json number \
             --jq '.[0].number // empty')
 
-          TITLE="chore: promote testing to main"
-          BODY=$(printf '%s\n' \
-            "## Automated testing \u2192 main promotion" \
-            "" \
-            "This PR is maintained by \`.github/workflows/promote-testing-to-main.yml\`." \
-            "" \
-            "- Testing SHA: \`${TESTING_SHA}\`" \
-            "- Workflow run: ${RUN_URL}" \
-            "" \
-            "The squash branch is rebuilt fresh on every run \u2014 always clean, no merge conflicts.")
-
           if [ -n "$PR_NUMBER" ]; then
             gh pr edit "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
-              --title "$TITLE" \
-              --body "$BODY"
+              --title "${PR_TITLE}" \
+              --body-file /tmp/pr-body.md
             echo "Updated existing PR #${PR_NUMBER}"
           else
             PR_NUMBER=$(gh pr create \
               --repo "${{ github.repository }}" \
               --base main \
               --head "$PROMOTION_BRANCH" \
-              --title "$TITLE" \
-              --body "$BODY" \
+              --title "${PR_TITLE}" \
+              --body-file /tmp/pr-body.md \
               --json number --jq '.number')
             echo "Created PR #${PR_NUMBER}"
           fi
