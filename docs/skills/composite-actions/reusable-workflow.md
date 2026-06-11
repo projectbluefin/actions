@@ -122,6 +122,17 @@ SBOM generation and upload should run for every non-PR build, including the `tes
 
 ---
 
+## Promotion gate retries and stale-e2e recovery
+
+`reusable-release-gate.yml` treats the e2e lookup as a two-layer retry boundary:
+
+- short GitHub API hiccups (`502/503/504`, rate limits, timeouts) retry up to 3 times with a 30 second backoff
+- stale or still-pending e2e coverage re-checks the gate up to 4 times total with 10m / 20m / 30m waits between checks
+
+When the latest relevant `post-testing-e2e` / `post-merge-e2e` run is older than the stale threshold (default 120 minutes), the gate attempts a `workflow_dispatch` re-run before waiting again. If the gate still cannot clear after the final check, it auto-files or updates a `priority/p1` issue titled `promotion blocked for >2h on <branch>` in the caller repo and keeps the workflow failed.
+
+---
+
 ## `reusable-release.yml` — calling from a consuming repo
 
 ### Image stable-release mode
