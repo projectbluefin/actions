@@ -1,0 +1,233 @@
+name: Factory Health
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  issues: write
+
+concurrency:
+  group: factory-health
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Generate common issue token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MERGERAPTOR_APP_ID }}
+          private-key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
+          owner: projectbluefin
+          repositories: common
+          permission-issues: write
+
+      - name: Monitor 24h factory success rates
+        env:
+          COMMON_ISSUE_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          WINDOW_HOURS=24
+          THRESHOLD=80
+          CUTOFF_EPOCH=$(date -u -d "${WINDOW_HOURS} hours ago" '+%s')
+          COMMON_REPO="projectbluefin/common"
+
+          monitor_pipeline() {
+            local repo="$1"
+            local pipeline="$2"
+            local workflow="$3"
+
+            local runs_json recent_json completed_json total success rate_display rate_value status failures_md
+
+            runs_json=$(gh run list \
+              --repo "${repo}" \
+              --workflow "${workflow}" \
+              --limit 100 \
+              --json createdAt,status,conclusion,url \
+              2>/dev/null || echo '[]')
+
+            recent_json=$(jq --argjson cutoff "${CUTOFF_EPOCH}" '
+              [ .[]
+              | select((.createdAt | fromdateiso8601) >= $cutoff)
+              ]
+            ' <<<"${runs_json}")
+
+            completed_json=$(jq '
+              [ .[]
+              | select(.status == "completed" and .conclusion != "skipped")
+              ]
+            ' <<<"${recent_json}")
+
+            total=$(jq 'length' <<<"${completed_json}")
+            success=$(jq '[ .[] | select(.conclusion == "success") ] | length' <<<"${completed_json}")
+
+            if (( total > 0 )); then
+              rate_value=$(( success * 100 / total ))
+              rate_display="${rate_value}%"
+              if (( rate_value < THRESHOLD )); then
+                status="alert"
+              else
+                status="healthy"
+              fi
+            else
+              rate_value=-1
+              rate_display="n/a"
+              status="no-runs"
+            fi
+
+            failures_md=$(jq -r '
+              [
+                .[]
+                | select(.conclusion != "success")
+                | "- [" + .conclusion + "](" + .url + ")"
+              ][0:5][]
+            ' <<<"${completed_json}" || true)
+
+            jq -n \
+              --arg repo "${repo}" \
+              --arg pipeline "${pipeline}" \
+              --arg workflow "${workflow}" \
+              --argjson total "${total}" \
+              --argjson success "${success}" \
+              --argjson rate_value "${rate_value}" \
+              --arg rate_display "${rate_display}" \
+              --arg status "${status}" \
+              --arg failures_md "${failures_md}" \
+              '{
+                repo: $repo,
+                pipeline: $pipeline,
+                workflow: $workflow,
+                total: $total,
+                success: $success,
+                rate_value: $rate_value,
+                rate_display: $rate_display,
+                status: $status,
+                failures_md: $failures_md
+              }'
+          }
+
+          results='[]'
+          while IFS='|' read -r repo pipeline workflow; do
+            row=$(monitor_pipeline "${repo}" "${pipeline}" "${workflow}")
+            results=$(jq --argjson row "${row}" '. + [$row]' <<<"${results}")
+          done <<'EOF'
+          projectbluefin/bluefin|Build|Testing Images
+          projectbluefin/bluefin|E2E|Nightly E2E
+          projectbluefin/bluefin|Promote|Promote testing to main
+          projectbluefin/bluefin-lts|Build|Build Bluefin LTS
+          projectbluefin/bluefin-lts|E2E|Post-Merge E2E — Testing Parity
+          projectbluefin/bluefin-lts|Promote|Promote testing to main
+          projectbluefin/dakota|Build|Build Bluefin dakota
+          projectbluefin/dakota|Promote|Publish Bluefin dakota
+          projectbluefin/common|Build|Build
+          projectbluefin/common|Unit Tests|Unit Tests
+          EOF
+
+          summary_table=$(
+            jq -r '
+              [
+                "| Repo | Pipeline | Workflow | Success | Rate | Status |",
+                "|---|---|---|---:|---:|---|"
+              ] + (
+                map(
+                  "| \(.repo) | \(.pipeline) | \(.workflow) | \(.success)/\(.total) | \(.rate_display) | \(.status) |"
+                )
+              ) | .[]
+            ' <<<"${results}"
+          )
+
+          echo "Factory health summary (${WINDOW_HOURS}h window)"
+          echo "${summary_table}"
+          {
+            echo "## Factory health summary (${WINDOW_HOURS}h window)"
+            echo
+            echo "${summary_table}"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          open_issues_json=$(GH_TOKEN="${COMMON_ISSUE_TOKEN}" gh issue list \
+            --repo "${COMMON_REPO}" \
+            --state open \
+            --limit 100 \
+            --json number,title,url)
+
+          existing_labels=$(GH_TOKEN="${COMMON_ISSUE_TOKEN}" gh label list \
+            --repo "${COMMON_REPO}" \
+            --limit 200 \
+            --json name \
+            --jq '.[].name')
+
+          label_args=()
+          for label in priority/p0 area/ci kind/bug; do
+            if grep -Fxq "${label}" <<<"${existing_labels}"; then
+              label_args+=(--label "${label}")
+            else
+              echo "::warning::Label '${label}' does not exist in ${COMMON_REPO}; skipping it."
+            fi
+          done
+
+          issues_opened=0
+          while IFS= read -r breach; do
+            repo=$(jq -r '.repo' <<<"${breach}")
+            pipeline=$(jq -r '.pipeline' <<<"${breach}")
+            workflow=$(jq -r '.workflow' <<<"${breach}")
+            rate_display=$(jq -r '.rate_display' <<<"${breach}")
+            success=$(jq -r '.success' <<<"${breach}")
+            total=$(jq -r '.total' <<<"${breach}")
+            failures_md=$(jq -r '.failures_md' <<<"${breach}")
+
+            title_prefix="fix(factory): [${repo}] [${pipeline}] success rate dropped"
+            existing_issue=$(jq -r \
+              --arg prefix "${title_prefix}" \
+              '.[] | select(.title | startswith($prefix)) | .number' \
+              <<<"${open_issues_json}" | head -1)
+
+            if [[ -n "${existing_issue}" ]]; then
+              echo "Open issue already exists for ${repo} ${pipeline}: #${existing_issue}"
+              continue
+            fi
+
+            if [[ -z "${failures_md}" ]]; then
+              failures_md='- No failing completed runs captured in the 24h window.'
+            fi
+
+            issue_title="${title_prefix} to ${rate_display} (24h window)"
+            issue_body=$(cat <<EOF
+          ## Factory success rate alert
+
+          Monitoring window: last ${WINDOW_HOURS} hours
+          Threshold: ${THRESHOLD}%
+
+          ### Current pipeline rates
+          ${summary_table}
+
+          ### Alerting pipeline
+          - Repo: ${repo}
+          - Pipeline: ${pipeline}
+          - Workflow: ${workflow}
+          - Success rate: ${rate_display} (${success}/${total})
+
+          ### Failing runs
+          ${failures_md}
+
+          Opened automatically by \`.github/workflows/factory-health.yml\`.
+          EOF
+            )
+
+            GH_TOKEN="${COMMON_ISSUE_TOKEN}" gh issue create \
+              --repo "${COMMON_REPO}" \
+              --title "${issue_title}" \
+              --body "${issue_body}" \
+              "${label_args[@]}"
+
+            issues_opened=$((issues_opened + 1))
+          done < <(jq -c '.[] | select(.rate_value >= 0 and .rate_value < 80)' <<<"${results}")
+
+          echo "Opened ${issues_opened} issue(s)."

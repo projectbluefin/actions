@@ -46,6 +46,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add or update Trivy CVE scanning | `docs/skills/supply-chain.md` → "shift-left CVE scanning" |
 | Vendor or hash-verify an external build file | `docs/skills/supply-chain.md` → "vendor external build instruction files" |
 | Understand or configure the production gate (2-human approval) | `docs/skills/factory-operations.md` → "Production Gate" |
+| Monitor factory success rates or configure scheduled health alerts | `docs/skills/factory-operations.md` → "Factory Health Monitor" |
 | Understand the skill-drift PR check | `docs/skills/factory-operations.md` → "Skill-Drift PR Check" |
 | Understand the weekly skill audit | `docs/skills/factory-operations.md` → "Skill Audit" |
 | Debug a stuck or missing Environment approval gate | `docs/skills/factory-operations.md` → "Troubleshooting" |
