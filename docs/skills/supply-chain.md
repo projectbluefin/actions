@@ -216,3 +216,40 @@ alongside CVEs.
 secret patterns, but cannot catch all credential types. The primary defence against secrets
 in images remains not putting them there (`detect-private-key` pre-commit hook +
 `secrets:` block in Containerfiles replaced by runtime injection).
+
+---
+
+## Policy: PAT ban — no new unapproved secrets
+
+**PATs (Personal Access Tokens) are banned.** Use `GITHUB_TOKEN` or GitHub App tokens instead.
+
+### Approved secrets (frozen set)
+
+Additions require a security review issue in `projectbluefin/common` before provisioning.
+
+| Secret | Type | Scope |
+|---|---|---|
+| `GITHUB_TOKEN` | Built-in (automatic) | All repos |
+| `MERGERAPTOR_APP_ID` + `MERGERAPTOR_PRIVATE_KEY` | GitHub App | common, dakota, bonedigger |
+| `BLUEFINBOT_APP_ID` + `BLUEFINBOT_PRIVATE_KEY` | GitHub App | bluefin, bluefin-lts |
+| `CASD_CLIENT_KEY` | TLS client cert for BST CAS | dakota |
+| `SIGNING_SECRET` | Legacy cosign private key | common (pending keyless migration) |
+
+Policy doc: [projectbluefin/common/docs/secrets-policy.md](https://github.com/projectbluefin/common/blob/main/docs/secrets-policy.md)
+
+### CI enforcement
+
+`pat-ban.yml` blocks any PR to `actions` that introduces a `secrets.XXX` reference not in the approved list above.
+
+**When writing new workflows or composite actions that contain `secrets.XXX` patterns in comments:**
+- Avoid the literal string `secrets.ANYTHING_UPPERCASE` in YAML comments — the scanner reads diff output including comment lines
+- The scanner filters `^+[[:space:]]*#` lines, but only when the filter is correctly applied
+- If you must document a secret name in a comment, write it without the `secrets.` prefix (e.g. `# GITHUB_TOKEN — built-in`)
+
+### PACKAGES_TOKEN (removed)
+
+`PACKAGES_TOKEN` was a legacy PAT that appeared as a fallback in `reusable-build.yml`:
+```yaml
+github-token: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+```
+No caller ever set it — it always fell through to `GITHUB_TOKEN`. It was removed. Do not re-introduce it.
