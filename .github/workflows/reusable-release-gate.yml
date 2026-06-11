@@ -85,7 +85,8 @@ jobs:
           REGISTRY_HOST: ${{ inputs.registry }}
         run: |
           set -euo pipefail
-          registry_host="${REGISTRY_HOST#docker://}"
+          registry_host="${REGISTRY_HOST:-}"
+          registry_host="${registry_host#docker://}"
           registry_host="${registry_host%%/*}"
           echo "$GH_TOKEN" | skopeo login "$registry_host" --username "${{ github.actor }}" --password-stdin
 
@@ -237,9 +238,31 @@ jobs:
             exit 0
           fi
 
-          runs=$(gh api \
-            -H 'Accept: application/vnd.github+json' \
-            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100")
+          runs_file=.github/release-gate-e2e-runs.json
+          retry_pattern='timeout|timed out|connection reset|connection refused|temporarily unavailable|EOF|502|503|504|rate limit|TLS handshake timeout'
+          for attempt in 1 2 3; do
+            if gh api \
+              -H 'Accept: application/vnd.github+json' \
+              "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100" \
+              > "${runs_file}" 2> >(tee gh-api.err >&2); then
+              break
+            fi
+
+            if ! grep -qiE "${retry_pattern}" gh-api.err 2>/dev/null; then
+              echo '::error::E2E gate check failed with a non-retryable GitHub API error.'
+              exit 1
+            fi
+
+            if [ "${attempt}" -eq 3 ]; then
+              echo '::error::E2E gate check hit repeated transient GitHub API failures.'
+              exit 1
+            fi
+
+            echo "::warning::Transient GitHub API failure during E2E gate check (attempt ${attempt}/3). Retrying in 30s..."
+            sleep 30
+          done
+          rm -f gh-api.err
+          runs=$(cat "${runs_file}")
 
           selected=$(jq -c '
             [

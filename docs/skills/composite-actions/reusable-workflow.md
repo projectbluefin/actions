@@ -118,6 +118,10 @@ The workflow stages SBOMs as `IMAGE_NAME.sbom.json` (flat rename from `sbom_out/
 
 SBOM generation and upload should run for every non-PR build, including the `testing` stream. Weekly promotions retag testing digests directly to production tags, so skipping SBOM on testing leaves promoted images without signed SBOM referrers.
 
+## Promotion gate API retries
+
+Promotion and release gate workflows poll GitHub Actions for recent CI/e2e runs. Treat that lookup as a transient-failure boundary: network timeouts and GitHub API hiccups should retry up to 3 times with a 30 second backoff before the gate hard-fails. Otherwise a temporary API error can falsely block a promotion PR.
+
 ---
 
 ## `reusable-release.yml` — calling from a consuming repo
