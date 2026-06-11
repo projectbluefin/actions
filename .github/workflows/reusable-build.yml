@@ -385,7 +385,7 @@ jobs:
             "localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
 
       - name: Scan image for vulnerabilities
-        uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/scan-image@edc1969fe6a440eef06ed7e42c58d5cbdf67f443 # feat/scan-image-non-blocking-cve-notify
         with:
           image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           input: /tmp/scan-image.tar
