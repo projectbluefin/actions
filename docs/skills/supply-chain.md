@@ -179,10 +179,12 @@ after push. Rationale:
 - Each arch produces a distinct layer set; CRITICAL CVEs can exist in one arch but not the other.
 - Scanning before push is the correct OpenSSF shift-left position: do not ship a known-critical
   image to the registry.
-- PR builds scan in report-only mode (`exit-code: 0`); push events gate the build.
+- CVE findings are report-only (`exit-code: 0`) on every event; non-PR `projectbluefin/*` builds can auto-file a GitHub issue instead of blocking the pipeline.
 
-The `bootc-build/scan-image` composite action wraps `aquasecurity/trivy-action` and uploads
-SARIF results to the GitHub Security tab (always, even when the scan passes).
+The `bootc-build/scan-image` composite action wraps `aquasecurity/trivy-action`, uploads
+SARIF results to the GitHub Security tab (always, even when the scan passes), parses
+Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue with the
+affected packages, CVE IDs, installed versions, and fixed versions.
 
 Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
 
@@ -192,11 +194,19 @@ Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
   with:
     image: ${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
     severity-threshold: ${{ inputs.scan-severity-threshold }}
-    exit-code: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+    create-issue: ${{ github.event_name != 'pull_request' && github.repository_owner == 'projectbluefin' && 'true' || 'false' }}
     github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 The `build_container` job must have `security-events: write` permission for SARIF upload.
+If `create-issue` is enabled, it also needs `issues: write`.
+The issue-creation path must deduplicate by CVE ID against open issues and only apply
+labels that already exist in the caller repo.
+
+**Org safety rule:** never enable `create-issue` for `ublue-os/*` consumers. Shared actions in
+this repo may read from `ublue-os` repos, but they must not create issues, comments, PRs, or
+other automated write traffic there. Gate issue creation on `github.repository_owner` so only
+`projectbluefin/*` repos opt in by default.
 
 ### Secret scanning
 

@@ -41,7 +41,7 @@ on:
         required: false
         type: string
       scan-severity-threshold:
-        description: "Trivy CVE severity threshold for scan-image. Builds fail on this severity and above. Default: CRITICAL."
+        description: "Trivy CVE severity threshold for scan-image reporting. Default: CRITICAL."
         default: "CRITICAL"
         required: false
         type: string
@@ -91,6 +91,7 @@ jobs:
       DIGEST_FILE: ${{ github.workspace }}/.push-digest
     permissions:
       contents: read
+      issues: write
       packages: write
       id-token: write
       attestations: write
@@ -111,7 +112,7 @@ jobs:
           submodules: recursive
 
       - name: Setup runner
-        uses: projectbluefin/actions/bootc-build/setup-runner@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/setup-runner@94a11ae0b0997bfded884f7ae32fca6afcb46c77
         with:
           storage-backend: btrfs
           update-podman: "true"
@@ -159,7 +160,7 @@ jobs:
 
       - name: Restore DNF package cache
         id: dnf-cache-restore
-        uses: projectbluefin/actions/bootc-build/dnf-cache@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/dnf-cache@94a11ae0b0997bfded884f7ae32fca6afcb46c77
         with:
           action: restore
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -213,7 +214,7 @@ jobs:
 
       - name: Save DNF package cache
         if: always() && !cancelled()
-        uses: projectbluefin/actions/bootc-build/dnf-cache@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/dnf-cache@94a11ae0b0997bfded884f7ae32fca6afcb46c77
         with:
           action: save
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -267,7 +268,7 @@ jobs:
       - name: Rechunk Image
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         id: rechunk-image
-        uses: projectbluefin/actions/bootc-build/chunka@dc35eb231998ba93244072ec72781e36f373a4a3 # v1
+        uses: projectbluefin/actions/bootc-build/chunka@94a11ae0b0997bfded884f7ae32fca6afcb46c77 # v1
         with:
           source-image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           max-layers: ${{ inputs.max_layers }}
@@ -384,17 +385,19 @@ jobs:
             "localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
 
       - name: Scan image for vulnerabilities
-        uses: projectbluefin/actions/bootc-build/scan-image@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/scan-image@94a11ae0b0997bfded884f7ae32fca6afcb46c77
         with:
+          image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           input: /tmp/scan-image.tar
           severity-threshold: ${{ inputs.scan-severity-threshold }}
           exit-code: '0'  # Non-blocking: CVEs reported via SARIF, never gate builds (Option D)
+          create-issue: ${{ github.event_name != 'pull_request' && github.repository_owner == 'projectbluefin' && 'true' || 'false' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
         id: push
         if: github.event_name != 'pull_request'
-        uses: projectbluefin/actions/bootc-build/push-image@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/push-image@94a11ae0b0997bfded884f7ae32fca6afcb46c77
         with:
           image-name: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.compute-push-tags.outputs.push_tags }}
@@ -507,7 +510,7 @@ jobs:
       - name: Sign, publish SBOM, and attest
         if: github.event_name != 'pull_request'
         continue-on-error: true  # Never block image publishing — signing/SBOM failures are non-fatal
-        uses: projectbluefin/actions/bootc-build/sign-and-publish@dc35eb231998ba93244072ec72781e36f373a4a3
+        uses: projectbluefin/actions/bootc-build/sign-and-publish@94a11ae0b0997bfded884f7ae32fca6afcb46c77
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}

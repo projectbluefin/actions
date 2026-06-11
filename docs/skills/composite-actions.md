@@ -178,7 +178,7 @@ Quick reference — for full details see [`composite-actions/action-reference.md
 | `ghcr-cleanup` | Prune old/untagged GHCR images |
 | `detect-changes` | Detect changed paths, compute image-flavor build matrix |
 | `validate-pr` | Run just check, shellcheck, hadolint, pre-commit |
-| `scan-image` | Trivy CVE scan before push, SARIF upload |
+| `scan-image` | Trivy CVE scan before push, SARIF upload, optional CVE issue creation |
 | `generate-tags` | Generate Bluefin/Fedora OCI alias tags (Path 2 only) |
 | `create-manifest` | Multi-arch OCI manifest index assembly |
 | `generate-release-notes` | git-cliff Conventional Commits changelog |
