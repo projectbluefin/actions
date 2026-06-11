@@ -251,8 +251,8 @@ jobs:
         with:
           command: >-
             gh api -H 'Accept: application/vnd.github+json'
-            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100"
-            > "${E2E_RUNS_PATH}"
+            /repos/${REPO}/actions/runs\?head_sha=${HEAD_SHA}\&status=completed\&per_page=100
+            > ${E2E_RUNS_PATH}
           max_attempts: '4'
           initial_wait_seconds: '15'
           retry_on: 'rate limit|secondary rate limit|502|503|504|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|unexpected EOF'
