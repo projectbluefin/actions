@@ -1,0 +1,220 @@
+# reusable-promote.yml — shared promote-testing-to-main logic
+#
+# Consolidates the per-image promote-testing-to-main.yml workflows:
+#   projectbluefin/bluefin     (~343 LoC) → thin caller (~30 LoC)
+#   projectbluefin/bluefin-lts (~349 LoC) → thin caller (~30 LoC)
+#   projectbluefin/dakota      (~183 LoC) → thin caller (~30 LoC)
+#
+# Implements consistency-audit C1 from projectbluefin/common.
+
+name: reusable-promote
+
+on:
+  workflow_call:
+    inputs:
+      variants:
+        description: >-
+          JSON array of variant names,
+          e.g. '["dakota","dakota-nvidia"]'
+        required: true
+        type: string
+      cosign_identity_regexp:
+        description: >-
+          Regex for cosign certificate identity,
+          e.g. '^https://github\.com/projectbluefin/(dakota|actions)/\.github/workflows/'
+        required: true
+        type: string
+      registry:
+        description: 'GHCR registry prefix'
+        required: false
+        type: string
+        default: 'ghcr.io/projectbluefin'
+      run_e2e:
+        description: 'Whether the release-gate should require a passing e2e run'
+        required: false
+        type: boolean
+        default: false
+      e2e_suite:
+        description: 'testsuite suite identifier (smoke, common, lts, dakota)'
+        required: false
+        type: string
+        default: 'smoke'
+      lts_floor_days:
+        description: 'Min days since last promotion before allowing a new one (LTS=7, others=0)'
+        required: false
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-testing-to-main-${{ github.event.repository.name }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Resolve digests and maintain promotion PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      packages: read
+      pull-requests: write
+    outputs:
+      changed: ${{ steps.branch.outputs.changed }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Apply LTS floor (skip if promoted too recently)
+        if: inputs.lts_floor_days > 0
+        id: lts-floor
+        run: |
+          set -euo pipefail
+          LAST=$(git log -1 --format=%ct origin/main -- .github/release-state.yaml 2>/dev/null || echo 0)
+          NOW=$(date +%s)
+          AGE=$(( (NOW - LAST) / 86400 ))
+          FLOOR=${{ inputs.lts_floor_days }}
+          if [ "$AGE" -lt "$FLOOR" ]; then
+            echo "::notice::LTS floor not met: ${AGE}d < ${FLOOR}d — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to GHCR for skopeo
+        if: steps.lts-floor.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | skopeo login ghcr.io \
+            --username "x-access-token" \
+            --password-stdin
+
+      - name: Resolve current :testing digests
+        if: steps.lts-floor.outputs.skip != 'true'
+        id: digests
+        env:
+          REGISTRY: ${{ inputs.registry }}
+          VARIANTS: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          {
+            printf '# Managed by reusable-promote.yml — do not edit manually.\n'
+            printf '# Merging the PR that updates this file promotes these digests to :stable.\n'
+            printf 'testing:\n'
+            echo "${VARIANTS}" | jq -r '.[]' | while read -r variant; do
+              digest=$(skopeo inspect \
+                --format '{{.Digest}}' \
+                "docker://${REGISTRY}/${variant}:testing")
+              if [ -z "$digest" ]; then
+                echo "::error::Could not resolve digest for ${variant}:testing"
+                exit 1
+              fi
+              printf '  %s: "%s"\n' "${variant}" "${digest}"
+            done
+            printf 'updated_at: "%s"\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > /tmp/release-state.yaml
+
+      - name: Update or create promotion branch
+        if: steps.lts-floor.outputs.skip != 'true'
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_BRANCH: auto/promote-testing-to-main
+        run: |
+          set -euo pipefail
+          git fetch origin "${PROMOTION_BRANCH}" 2>/dev/null || true
+          git checkout -B "${PROMOTION_BRANCH}" origin/main
+
+          mkdir -p .github
+          cp /tmp/release-state.yaml .github/release-state.yaml
+          git add .github/release-state.yaml
+
+          if git diff --cached --quiet; then
+            echo "::notice::No digest changes — nothing to do"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git commit -m "ci: update testing image digests for stable promotion"
+          git push --force-with-lease origin "${PROMOTION_BRANCH}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update promotion PR
+        if: steps.branch.outputs.changed == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_BRANCH: auto/promote-testing-to-main
+          VARIANTS: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          FIRST_DIGEST=$(grep -m1 '^  [a-z]' .github/release-state.yaml \
+            | awk '{print $2}' | tr -d '"' | cut -c8-23)
+          PR_TITLE="ci: promote testing images to stable (${FIRST_DIGEST})"
+
+          {
+            echo "## Promote :testing → :stable"
+            echo ""
+            echo "Merge this PR to publish a stable release."
+            echo ""
+            echo '```yaml'
+            cat .github/release-state.yaml
+            echo '```'
+          } > /tmp/pr-body.md
+
+          EXISTING=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --head "${PROMOTION_BRANCH}" \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "${EXISTING}" \
+              --title "${PR_TITLE}" \
+              --body-file /tmp/pr-body.md
+            echo "pr_number=${EXISTING}" >> "$GITHUB_OUTPUT"
+          else
+            PR_URL=$(gh pr create \
+              --repo "${{ github.repository }}" \
+              --head "${PROMOTION_BRANCH}" \
+              --base main \
+              --title "${PR_TITLE}" \
+              --body-file /tmp/pr-body.md)
+            echo "pr_number=${PR_URL##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+  gate:
+    name: Release gate checks
+    needs: [promote]
+    if: needs.promote.outputs.changed == 'true'
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+      packages: read
+      pull-requests: write
+    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@84649d23ac4dbd9f7534c1490d8a80fb05ac2ab8 # v1
+    with:
+      repo: ${{ github.repository }}
+      pr_number: ${{ needs.promote.outputs.pr_number }}
+      registry: ${{ inputs.registry }}
+      variants: ${{ inputs.variants }}
+      cosign_identity_regexp: ${{ inputs.cosign_identity_regexp }}
+      target_tag: testing
+      run_e2e: ${{ inputs.run_e2e }}
+      e2e_suites: ${{ inputs.e2e_suite }}
+    secrets: inherit
