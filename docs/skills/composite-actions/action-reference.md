@@ -290,19 +290,24 @@ Wraps `aquasecurity/trivy-action` to scan a locally built OCI image for CVEs **b
 
 **Placement rule:** must run per-arch in the matrix build job, after `Tag Images` and **before** `Push to GHCR`. Scanning after push means shipping a known-critical image to the registry. This action is already wired into `reusable-build.yml` at the correct position.
 
+`scan-image` is now **always non-blocking** for CVE findings: it forces Trivy `exit-code: 0`, uploads SARIF, writes a human-readable Trivy table, and can optionally open a GitHub issue summarizing the affected packages, CVE IDs, severity, and fix availability.
+
 Inputs:
 
 | Input | Default | Description |
 |---|---|---|
-| `image` | required | Local image ref to scan (e.g. `localhost/bluefin:latest`) |
-| `severity-threshold` | `CRITICAL` | Fail on this severity and above |
-| `exit-code` | `1` | Set to `0` for report-only (no gate) — use on PR builds |
+| `image` | optional | Local image ref to scan (e.g. `localhost/bluefin:latest`) |
+| `input` | optional | Docker/OCI archive path to scan (for example a `podman save` tarball) |
+| `severity-threshold` | `CRITICAL` | Report vulnerabilities at this severity and above |
+| `exit-code` | `0` | Deprecated compatibility input; the action always exits `0` |
 | `ignore-unfixed` | `true` | Skip vulns with no available fix |
-| `github-token` | required | Token for SARIF upload |
+| `create-issue` | `false` | When `true`, file a GitHub issue if CVEs are detected |
+| `github-token` | required | Token for SARIF upload and fallback issue creation |
+| `gh-token` | `""` | Optional token override for `gh issue create` |
 
-In `reusable-build.yml`, `exit-code` is automatically `0` on `pull_request` events and `1` on push events. The `scan-severity-threshold` workflow input lets callers override the threshold (default: `CRITICAL`).
+In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the threshold (default: `CRITICAL`).
 
-**Permission required:** the calling job needs `security-events: write` for SARIF upload. This is already set on the `build_container` job in `reusable-build.yml`.
+**Permissions required:** the calling job needs `security-events: write` for SARIF upload. If `create-issue: true`, it also needs `issues: write`. Both are already set on the `build_container` job in `reusable-build.yml`.
 
 ---
 

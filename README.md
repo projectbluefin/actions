@@ -29,7 +29,7 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 | [`bootc-build/push-image`](bootc-build/push-image/) | GHCR push with retry and digest capture |
 | [`bootc-build/create-manifest`](bootc-build/create-manifest/) | Assemble and push a multi-arch OCI image manifest index |
 | [`bootc-build/sign-and-publish`](bootc-build/sign-and-publish/) | Cosign sign + SBOM + SLSA Build L2 provenance attestation |
-| [`bootc-build/scan-image`](bootc-build/scan-image/) | Trivy CVE scan before push; uploads SARIF to GitHub Security tab |
+| [`bootc-build/scan-image`](bootc-build/scan-image/) | Trivy CVE scan before push; uploads SARIF and can auto-file CVE issues on projectbluefin main builds |
 | [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
 | [`bootc-build/chunka`](bootc-build/chunka/) | chunkah rechunking (OCI-native, no rpm-ostree) |
 | [`bootc-build/generate-release-notes`](bootc-build/generate-release-notes/) | git-cliff Conventional Commits changelog |
