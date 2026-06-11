@@ -1,0 +1,45 @@
+name: Org-wide GHCR Cleanup
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'  # Mondays 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Prune old GHCR images
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Prune old images — bluefin family
+        uses: ./bootc-build/ghcr-cleanup
+        with:
+          packages: bluefin,bluefin-nvidia,bluefin-pr
+          older-than: 90 days
+          keep-n-tagged: 7
+          keep-n-untagged: 7
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune old images — dakota family
+        uses: ./bootc-build/ghcr-cleanup
+        with:
+          packages: dakota,dakota-nvidia
+          older-than: 90 days
+          keep-n-tagged: 7
+          keep-n-untagged: 7
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune old images — common
+        uses: ./bootc-build/ghcr-cleanup
+        with:
+          packages: common
+          older-than: 90 days
+          keep-n-tagged: 7
+          keep-n-untagged: 7
+          github-token: ${{ secrets.GITHUB_TOKEN }}
