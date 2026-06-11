@@ -210,18 +210,22 @@ jobs:
               continue
             fi
 
+            {
+              echo "## Factory Drift Detected"
+              echo ""
+              echo "**Check:** \`${check}\`"
+              echo "**Repo:** \`${repo}\`"
+              echo "**Detail:** ${description}"
+              echo ""
+              echo "---"
+              echo "Opened automatically by [\`factory-drift.yml\`](https://github.com/projectbluefin/actions/blob/main/.github/workflows/factory-drift.yml) in \`projectbluefin/actions\`."
+            } > /tmp/issue_body.md
+
             gh issue create \
               --repo "${target_repo}" \
               --title "${title}" \
               --label "area/ci" \
-              --body "## Factory Drift Detected
-
-**Check:** \`${check}\`
-**Repo:** \`${repo}\`
-**Detail:** ${description}
-
----
-Opened automatically by [\`factory-drift.yml\`](https://github.com/projectbluefin/actions/blob/main/.github/workflows/factory-drift.yml) in \`projectbluefin/actions\`." \
+              --body-file /tmp/issue_body.md \
             || true
 
             issues_opened=$((issues_opened + 1))
