@@ -39,6 +39,11 @@ on:
         required: false
         type: string
         default: 'smoke'
+      e2e_image:
+        description: 'Full image ref for e2e gate; if empty, e2e step is skipped'
+        required: false
+        type: string
+        default: ''
       lts_floor_days:
         description: 'Min days since last promotion before allowing a new one (LTS=7, others=0)'
         required: false
@@ -64,6 +69,7 @@ jobs:
     outputs:
       changed: ${{ steps.branch.outputs.changed }}
       pr_number: ${{ steps.pr.outputs.pr_number }}
+      gate_variants: ${{ steps.gate-variants.outputs.json }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -197,6 +203,16 @@ jobs:
             echo "pr_number=${PR_URL##*/}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Normalize variants for release gate
+        if: steps.branch.outputs.changed == 'true'
+        id: gate-variants
+        env:
+          VARIANTS: ${{ inputs.variants }}
+        run: |
+          set -euo pipefail
+          JSON=$(jq -c '[.[] | if type == "string" then {image: .} else . end]' <<<"${VARIANTS}")
+          echo "json=${JSON}" >> "$GITHUB_OUTPUT"
+
   gate:
     name: Release gate checks
     needs: [promote]
@@ -212,9 +228,10 @@ jobs:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}
       registry: ${{ inputs.registry }}
-      variants: ${{ inputs.variants }}
+      variants: ${{ needs.promote.outputs.gate_variants }}
       cosign_identity_regexp: ${{ inputs.cosign_identity_regexp }}
       target_tag: testing
       run_e2e: ${{ inputs.run_e2e }}
       e2e_suites: ${{ inputs.e2e_suite }}
+      e2e_image: ${{ inputs.e2e_image }}
     secrets: inherit
