@@ -85,7 +85,8 @@ jobs:
           REGISTRY_HOST: ${{ inputs.registry }}
         run: |
           set -euo pipefail
-          registry_host="${REGISTRY_HOST#docker://}"
+          registry_host="${REGISTRY_HOST:-}"
+          registry_host="${registry_host#docker://}"
           registry_host="${registry_host%%/*}"
           echo "$GH_TOKEN" | skopeo login "$registry_host" --username "${{ github.actor }}" --password-stdin
 
@@ -206,19 +207,18 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Check post-testing-e2e status for PR head SHA
-        id: e2e
+      - name: Determine whether E2E lookup is required
+        id: e2e-precheck
         shell: bash
         env:
-          E2E_SUITES: ${{ inputs.e2e_suites }}
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          REPO: ${{ inputs.repo }}
+          E2E_IMAGE: ${{ inputs.e2e_image }}
+          RUN_E2E: ${{ inputs.run_e2e }}
         run: |
           set -euo pipefail
 
-          if [ '${{ inputs.run_e2e }}' != 'true' ]; then
+          if [ "$RUN_E2E" != 'true' ]; then
             {
+              echo 'should_check=false'
               echo 'ok=true'
               echo 'state=skipped'
               echo 'summary=E2E check disabled by caller.'
@@ -227,8 +227,9 @@ jobs:
             exit 0
           fi
 
-          if [ -z '${{ inputs.e2e_image }}' ]; then
+          if [ -z "$E2E_IMAGE" ]; then
             {
+              echo 'should_check=false'
               echo 'ok=true'
               echo 'state=skipped'
               echo 'summary=E2E image not set; E2E gate skipped.'
@@ -237,9 +238,50 @@ jobs:
             exit 0
           fi
 
-          runs=$(gh api \
-            -H 'Accept: application/vnd.github+json' \
-            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100")
+          echo 'should_check=true' >> "$GITHUB_OUTPUT"
+
+      - name: Fetch completed post-testing-e2e runs with retry
+        if: steps.e2e-precheck.outputs.should_check == 'true'
+        uses: projectbluefin/actions/actions/retry@2a09e72e9be15b137392dde15f8587f35587e8eb # main — includes actions/retry (actions#155)
+        env:
+          E2E_RUNS_PATH: ${{ runner.temp }}/post-testing-e2e-runs.json
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          REPO: ${{ inputs.repo }}
+        with:
+          command: >-
+            gh api -H 'Accept: application/vnd.github+json'
+            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100"
+            > "${E2E_RUNS_PATH}"
+          max_attempts: '4'
+          initial_wait_seconds: '15'
+          retry_on: 'rate limit|secondary rate limit|502|503|504|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|unexpected EOF'
+
+      - name: Check post-testing-e2e status for PR head SHA
+        id: e2e
+        shell: bash
+        env:
+          E2E_RUNS_PATH: ${{ runner.temp }}/post-testing-e2e-runs.json
+          E2E_SUITES: ${{ inputs.e2e_suites }}
+          PRECHECK_DETAILS: ${{ steps.e2e-precheck.outputs.details }}
+          PRECHECK_OK: ${{ steps.e2e-precheck.outputs.ok }}
+          PRECHECK_STATE: ${{ steps.e2e-precheck.outputs.state }}
+          PRECHECK_SUMMARY: ${{ steps.e2e-precheck.outputs.summary }}
+          SHOULD_CHECK: ${{ steps.e2e-precheck.outputs.should_check }}
+        run: |
+          set -euo pipefail
+
+          if [ "$SHOULD_CHECK" != 'true' ]; then
+            {
+              echo "ok=${PRECHECK_OK}"
+              echo "state=${PRECHECK_STATE}"
+              echo "summary=${PRECHECK_SUMMARY}"
+              echo "details=${PRECHECK_DETAILS}"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          runs=$(cat "$E2E_RUNS_PATH")
 
           selected=$(jq -c '
             [
