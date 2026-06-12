@@ -96,7 +96,7 @@ runs:
 
         def normalize_severity(value):
             text = str(value or "").strip().upper()
-            if text in severity_rank:
+            if text in severity_order:
                 return text
             try:
                 score = float(text)
