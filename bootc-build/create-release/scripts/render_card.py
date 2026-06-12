@@ -341,6 +341,8 @@ def _screenshot(html_path: str, output_path: str, color_scheme: str = "light") -
 
 def main() -> None:  # pragma: no cover
     ap = argparse.ArgumentParser(description="Render a Bluefin release card")
+    ap.add_argument("--versions",      required=True, help="Path to _versions.json")
+    ap.add_argument("--tag",           required=True, help="Release tag, e.g. lts-20260612")
     ap.add_argument("--date",          required=True, help="YYYY-MM-DD")
     ap.add_argument("--sha7",          required=True)
     ap.add_argument("--project-name",  default="Bluefin")
