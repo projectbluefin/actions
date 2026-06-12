@@ -166,6 +166,7 @@ jobs:
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
           architecture: ${{ matrix.architecture }}
           image-flavor: ${{ matrix.image_flavor }}
+          cache-bust: ${{ hashFiles('**/Containerfile') }}
 
       - name: Record build start time
         id: build-timing
@@ -221,6 +222,7 @@ jobs:
           architecture: ${{ matrix.architecture }}
           allow-write: ${{ steps.setup-cache.outputs.allow_cache_write }}
           image-flavor: ${{ matrix.image_flavor }}
+          cache-bust: ${{ hashFiles('**/Containerfile') }}
 
       - name: Setup Syft
         id: setup-syft

@@ -34,6 +34,20 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Compute Trivy DB cache key (daily rotation)
+      id: trivy-date
+      shell: bash
+      run: echo "date=$(date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore Trivy vulnerability DB cache
+      id: trivy-db-cache-restore
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ~/.cache/trivy
+        key: trivy-db-${{ runner.os }}-${{ runner.arch }}-${{ steps.trivy-date.outputs.date }}
+        restore-keys: |
+          trivy-db-${{ runner.os }}-${{ runner.arch }}-
+
     - name: Scan image with Trivy (SARIF)
       # continue-on-error: Trivy DB errors (e.g. missing CPE indices for a new OS family like
       # CentOS 10) cause Trivy to exit 1 even when exit-code is '0'. This must not block builds.
@@ -71,6 +85,14 @@ runs:
         vuln-type: os,library
         scanners: vuln,secret
         image-config-scanners: secret
+
+    - name: Save Trivy vulnerability DB cache
+      # Only save on cache miss — DB is shared between the SARIF and JSON scan steps above.
+      if: steps.trivy-db-cache-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ~/.cache/trivy
+        key: ${{ steps.trivy-db-cache-restore.outputs.cache-primary-key }}
 
     - name: Summarize CVE findings
       id: summarize-cves

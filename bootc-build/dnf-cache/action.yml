@@ -18,6 +18,9 @@ inputs:
   allow-write:
     description: "Whether saving the cache is permitted"
     default: "true"
+  cache-bust:
+    description: "Optional string appended to the cache key to invalidate on content change (e.g. hashFiles('**/Containerfile')). Enables exact-key invalidation on Containerfile change while restore-keys still allow warm-start from a prior build."
+    default: ""
   cache-path:
     description: "Path glob to cache"
     default: "/var/tmp/buildah-cache-*"
@@ -36,7 +39,7 @@ runs:
       uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ inputs.cache-path }}
-        key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || '' }}${{ inputs.cache-name }}
+        key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || '' }}${{ inputs.cache-name }}${{ inputs.cache-bust != '' && format('-{0}', inputs.cache-bust) || '' }}
         restore-keys: |
           ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || format('{0}-', inputs.cache-name) }}
           ${{ runner.os }}-${{ inputs.architecture }}-buildah-
@@ -58,4 +61,4 @@ runs:
       uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
       with:
         path: ${{ inputs.cache-path }}
-        key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || '' }}${{ inputs.cache-name }}
+        key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || '' }}${{ inputs.cache-name }}${{ inputs.cache-bust != '' && format('-{0}', inputs.cache-bust) || '' }}
