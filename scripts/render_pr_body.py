@@ -149,10 +149,20 @@ def _section_commits(
     return "### Changes since last stable\n\n" + intro + "\n" + details + "\n"
 
 
-def _section_footer() -> str:
+def _section_footer(repo: str = "") -> str:
+    repo_flag = f" --repo {repo}" if repo else ""
+    pr_placeholder = "<pr-number>"
     return (
         "---\n\n"
-        "_✅ Merge to publish the stable release once the checklist above is green._\n"
+        "### Merge instructions\n\n"
+        "Requires **2 approvals** from `@projectbluefin/maintainers` then merge with a regular merge commit (not squash — squash breaks the merge base for future promotions):\n\n"
+        f"```bash\n"
+        f"gh pr merge {pr_placeholder}{repo_flag} --merge\n"
+        f"```\n\n"
+        "**Force merge** (emergency / bypass branch protection):\n\n"
+        f"```bash\n"
+        f"gh pr merge {pr_placeholder}{repo_flag} --merge --admin\n"
+        f"```\n"
     )
 
 
@@ -213,7 +223,7 @@ def main() -> None:
         "",
         _section_commits(args.commit_count, commits, args.compare_url or None),
         "",
-        _section_footer(),
+        _section_footer(args.repo),
     ]
 
     body = "\n".join(sections)
@@ -228,3 +238,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
