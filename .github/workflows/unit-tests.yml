@@ -6,6 +6,7 @@ on:
     paths:
       - "actions/**"
       - "bootc-build/create-release/scripts/**"
+      - "bootc-build/chunka/**"
       - "bootc-build/generate-tags/**"
       - "scripts/**"
       - "tests/**"
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "actions/**"
+      - "bootc-build/chunka/**"
       - "bootc-build/create-release/scripts/**"
       - "bootc-build/generate-tags/**"
       - "scripts/**"
@@ -45,6 +47,7 @@ jobs:
         run: |
           python -m pytest tests/ -v --tb=short \
             --ignore=tests/bats \
+            --cov=bootc-build/chunka \
             --cov=bootc-build/create-release/scripts \
             --cov=scripts \
             --cov-report=term-missing \
