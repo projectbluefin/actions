@@ -368,6 +368,22 @@ Never add a new inline `uses:` for a third-party action in a consumer workflow i
 | Workaround | Location | Issue |
 |---|---|---|
 | `chown /run/user/$UID/containers` before login | `push-image`, `create-manifest` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
+
+## Trigger patterns
+
+**Never use a cron to run a workflow that depends on another workflow completing.** Crons embed a timing assumption that drifts and creates silent races. Use `workflow_run` with a `conclusion == 'success'` guard instead:
+
+```yaml
+on:
+  workflow_run:
+    workflows: ["Execute Release"]
+    types: [completed]
+jobs:
+  my-job:
+    if: github.event.workflow_run.conclusion == 'success'
+```
+
+Always add `workflow_dispatch` alongside `workflow_run` so the workflow can be triggered manually without waiting for the upstream workflow to run.
 | `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |
