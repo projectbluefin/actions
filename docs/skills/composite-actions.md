@@ -5,11 +5,11 @@ metadata:
   type: reference
 ---
 
-# Composite Actions — Authoring Skill
+# Composite Actions - Authoring Skill
 
 Reference for writing and maintaining composite GitHub Actions in this repo.
 
-**Update this file** when you discover a new pattern, workaround, or convention — in the same PR as your change.
+**Update this file** when you discover a new pattern, workaround, or convention - in the same PR as your change.
 
 ## Contents
 - [Structure](#structure)
@@ -23,14 +23,14 @@ Reference for writing and maintaining composite GitHub Actions in this repo.
 - [Known workarounds](#known-workarounds)
 
 **Sub-files (load as needed):**
-- [`composite-actions/action-reference.md`](composite-actions/action-reference.md) — full action-by-action reference
-- [`composite-actions/reusable-workflow.md`](composite-actions/reusable-workflow.md) — reusable-build.yml and reusable-release.yml details
+- [`composite-actions/action-reference.md`](composite-actions/action-reference.md) - full action-by-action reference
+- [`composite-actions/reusable-workflow.md`](composite-actions/reusable-workflow.md) - reusable-build.yml and reusable-release.yml details
 
 ---
 
 ## Structure
 
-Every action lives at `bootc-build/<name>/action.yml`. No build system, no scripting layer — only YAML + inline shell.
+Every action lives at `bootc-build/<name>/action.yml`. No build system, no scripting layer - only YAML + inline shell.
 
 Required top-level keys:
 
@@ -49,19 +49,32 @@ runs:
 
 ## SHA Pinning
 
-All `uses:` references to external actions **must** be pinned to a full commit SHA. Append a comment with the human-readable version tag:
+**Third-party actions** (anything outside `projectbluefin/`) must be pinned to a full commit SHA with a version comment:
 
 ```yaml
 uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 ```
 
-Never use floating tags (`@main`, `@v3`, `@latest`). Renovate runs in **this repo** and auto-merges SHA pin and digest bumps when CI passes — the canonical pins live here and propagate to consumers when a maintainer moves `@v1`.
+Never use floating tags (`@main`, `@v3`, `@latest`) on third-party actions. Renovate runs in **this repo** and auto-merges SHA pin and digest bumps when CI passes.
 
 The version comment must match a **released** version tag (e.g. `v3.10.1`, not just `v3`). If a repo has no releases or tags, use a descriptive comment instead:
 
 ```yaml
 uses: ublue-os/some-action@abc123def456... # no-release, Merge PR #18 (2026-02)
 ```
+
+**First-party actions** (anything inside `projectbluefin/actions`) use `@v1` - never SHA-pin your own code:
+
+```yaml
+# Correct
+uses: projectbluefin/actions/bootc-build/create-release@v1
+uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@v1
+
+# Wrong - stale SHA pins on first-party code cause silent failures
+uses: projectbluefin/actions/bootc-build/create-release@abc1234... # v1
+```
+
+SHA pinning is a third-party supply-chain defence (prevents tag hijacking on external repos you don't control). It does not apply to code you own.
 
 ---
 
@@ -78,7 +91,7 @@ Use `set -eux` for steps where verbose trace output aids debugging (e.g., packag
 
 ### Passing inputs to shell
 
-Pass inputs through the `env:` block — do not expand `${{ inputs.foo }}` inline inside `run:` scripts:
+Pass inputs through the `env:` block - do not expand `${{ inputs.foo }}` inline inside `run:` scripts:
 
 ```yaml
 # ✅ correct
@@ -88,7 +101,7 @@ env:
 run: |
   cosign sign -y "${IMAGE}@${DIGEST}"
 
-# ❌ wrong — shell injection risk, harder to trace
+# ❌ wrong - shell injection risk, harder to trace
 run: |
   cosign sign -y "${{ inputs.image }}@${{ inputs.digest }}"
 ```
@@ -106,7 +119,7 @@ run: |
   shellcheck ${SHELLCHECK_GLOB}
 ```
 
-Word splitting on an env var is safe for globs but is NOT command injection — `;` in a variable is not a command separator.
+Word splitting on an env var is safe for globs but is NOT command injection - `;` in a variable is not a command separator.
 
 ### Secrets in run: steps
 
@@ -141,7 +154,7 @@ sudo -E podman push ...
 
 ## `github-token` pattern
 
-Actions that need registry access or GitHub API calls take an explicit `github-token` input (required). The calling workflow supplies `${{ secrets.GITHUB_TOKEN }}` or a PAT — the action never uses it implicitly.
+Actions that need registry access or GitHub API calls take an explicit `github-token` input (required). The calling workflow supplies `${{ secrets.GITHUB_TOKEN }}` or a PAT - the action never uses it implicitly.
 
 ```yaml
 inputs:
@@ -165,7 +178,7 @@ exit 1
 
 ## Action catalog
 
-Quick reference — for full details see [`composite-actions/action-reference.md`](composite-actions/action-reference.md).
+Quick reference - for full details see [`composite-actions/action-reference.md`](composite-actions/action-reference.md).
 
 | Action | Purpose |
 |---|---|
@@ -175,7 +188,7 @@ Quick reference — for full details see [`composite-actions/action-reference.md
 | `push-image` | Push with retry, digest capture, skopeo alias tags |
 | `sign-and-publish` | Cosign keyless/key + Syft SBOM + SLSA provenance attestation |
 | `apply-pkg-intervals` | Set `user.update-interval` xattrs on RPM files — run before `chunka` |
-| `chunka` | OCI-native chunkah v0.6.0 rechunking — the single rechunk implementation for all Fedora-based images |
+| `chunka` | OCI-native chunkah v0.6.0 rechunking - the single rechunk implementation for all Fedora-based images |
 | `ghcr-cleanup` | Prune old/untagged GHCR images |
 | `detect-changes` | Detect changed paths, compute image-flavor build matrix |
 | `validate-pr` | Run just check, shellcheck, hadolint, pre-commit |
@@ -274,7 +287,7 @@ If your build cadence differs from weekly, pass `force_reclassify: true` after a
 
 If a breaking change is unavoidable:
 - Option A: create a versioned subdirectory (`bootc-build/<name>/v2/action.yml`) and route new callers there while old callers keep `v1`
-- Option B: coordinate a single wave — update all consuming repos in one PR sweep, then bump `@v1`
+- Option B: coordinate a single wave - update all consuming repos in one PR sweep, then bump `@v1`
 
 Document the blast radius (which repos, which inputs change) in the PR description. Do not merge without a link to passing CI in at least one consumer.
 
@@ -287,7 +300,7 @@ See [`consumer-validation.md`](consumer-validation.md) for the required before-m
 1. Create `bootc-build/<name>/action.yml`.
 2. Pin all external `uses:` to commit SHAs with version comments.
 3. Use the `env:` block pattern for all inputs passed to shell.
-4. If the action downloads or references any external file (Containerfile, script, config) at runtime, vendor it or verify its SHA-256 — see `docs/skills/supply-chain.md`.
+4. If the action downloads or references any external file (Containerfile, script, config) at runtime, vendor it or verify its SHA-256 - see `docs/skills/supply-chain.md`.
 5. Add the action to the table in `README.md`.
 6. Add a row to the skill routing table in `docs/SKILL.md`.
 7. Add an entry to [`composite-actions/action-reference.md`](composite-actions/action-reference.md).
@@ -299,10 +312,10 @@ See [`consumer-validation.md`](consumer-validation.md) for the required before-m
 
 ### Dropping `with:` when editing `uses:`
 
-When you change only the SHA or comment on a `uses:` line, it's easy to accidentally delete the `with:` block below it. The result is a valid-looking YAML step where `uses:` runs but all inputs are silently dropped — actionlint catches this on push.
+When you change only the SHA or comment on a `uses:` line, it's easy to accidentally delete the `with:` block below it. The result is a valid-looking YAML step where `uses:` runs but all inputs are silently dropped - actionlint catches this on push.
 
 ```yaml
-# ❌ broken — with: block dropped, all inputs silently gone
+# ❌ broken - with: block dropped, all inputs silently gone
 - name: Upload artifact
   uses: actions/upload-artifact@abc123 # v7.0.1
     path: /tmp/output/               # ← this is now orphaned YAML, not under with:
@@ -314,7 +327,7 @@ When you change only the SHA or comment on a `uses:` line, it's easy to accident
     path: /tmp/output/
 ```
 
-Always verify the `with:` block is still present after editing a `uses:` line. Actionlint enforces this but only on push — not in local editors.
+Always verify the `with:` block is still present after editing a `uses:` line. Actionlint enforces this but only on push - not in local editors.
 
 ### Multi-line strings in `run:` blocks
 
@@ -323,14 +336,14 @@ actionlint). The newlines inside the YAML block scalar cause the parser to see s
 stray YAML keys rather than shell string content.
 
 ```yaml
-# ❌ broken — shellcheck sees an unclosed double-quoted string
+# ❌ broken - shellcheck sees an unclosed double-quoted string
 - run: |
     git commit -m "subject line
 
 Assisted-by: foo
 Co-authored-by: bar"   # actionlint: SC1072 / SC1073 / unexpected YAML key
 
-# ✅ correct — use ANSI-C quoting ($'...') to embed newlines
+# ✅ correct - use ANSI-C quoting ($'...') to embed newlines
 - run: |
     msg="subject line"$'\n\n'"Assisted-by: foo"$'\n'"Co-authored-by: bar"
     git commit -m "${msg}"
@@ -343,12 +356,12 @@ YAML block scalar. Heredocs are also acceptable for longer messages.
 
 ## CI-fix-first workflow (for agents)
 
-When an agent working in a **consuming repo** (bluefin, aurora, bazzite…) discovers a CI issue that involves duplicated inline steps or pinned third-party actions, the fix belongs **here first**:
+When an agent working in a **consuming repo** (bluefin, aurora, bazzite...) discovers a CI issue that involves duplicated inline steps or pinned third-party actions, the fix belongs **here first**:
 
-1. **Check if an action already exists** — scan the catalog above. If the shared action doesn't exist yet, create it here (follow "Adding a new action" above).
+1. **Check if an action already exists** — scan the catalog above. If the shared action doesn’t exist yet, create it here (follow “Adding a new action” above).
 2. **Open a PR in this repo** on a feature branch with the new or updated action.
-3. **Open a draft PR in the consumer repo** pinned to the feature branch SHA (e.g. `projectbluefin/actions/bootc-build/detect-changes@<SHA>`). CI must pass there before this repo's PR merges.
-4. **After this repo's PR merges** and `@v1` tag moves, update the consumer PR to `@v1`.
+3. **Open a draft PR in the consumer repo** using `@v1` references (no SHA pinning needed). CI must pass there before this repo’s PR merges.
+4. **Merge this repo’s PR**, then advance `@v1` to the new main HEAD (see `@v1` runbook in AGENTS.md). Consumer repos pick up the change automatically on their next workflow run.
 
 **What belongs here vs. in the consumer repo:**
 
@@ -359,7 +372,7 @@ When an agent working in a **consuming repo** (bluefin, aurora, bazzite…) disc
 | Reusable logic used in ≥2 workflows or repos | Repo-specific Justfile recipes |
 | Path-filter definitions shared across workflows | Workflow scheduling and triggers |
 
-Never add a new inline `uses:` for a third-party action in a consumer workflow if that action is already wrapped here. Inline pins create Renovate drift across all consumer workflows — centralize them.
+Never add a new inline `uses:` for a third-party action in a consumer workflow if that action is already wrapped here. Inline pins create Renovate drift across all consumer workflows - centralize them.
 
 ---
 
@@ -384,7 +397,7 @@ jobs:
 ```
 
 Always add `workflow_dispatch` alongside `workflow_run` so the workflow can be triggered manually without waiting for the upstream workflow to run.
-| `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) — root-owned files break cache agent |
+| `chmod 777` before cache save | `dnf-cache` | [actions/cache#1533](https://github.com/actions/cache/issues/1533) - root-owned files break cache agent |
 | `chown ~/.sigstore` before cosign | `sign-and-publish` | Runner sigstore cache created with wrong ownership |
 | podman upgraded from Ubuntu resolute | `setup-runner` | Ubuntu 24.04 podman too old for `ostree.components` annotations + `zstd:chunked` push |
 | `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for the OCI output dir (`out/`) to survive to the final stage |
@@ -418,7 +431,7 @@ When a PR branch contains an intermediate "stepping stone" commit that conflicts
 do not attempt a full rebase of the branch. Instead:
 
 1. Create a new branch off `origin/main`
-2. `git cherry-pick <final-commit-SHA>` — skip the intermediate commit entirely
+2. `git cherry-pick <final-commit-SHA>` - skip the intermediate commit entirely
 3. Resolve any conflict in the final commit (usually trivial)
 4. Force-push to the PR branch
 

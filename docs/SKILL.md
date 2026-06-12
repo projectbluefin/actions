@@ -15,7 +15,9 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add a new action to the repo | `docs/skills/composite-actions.md` → "Adding a new action" |
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
 | Configure or understand Renovate auto-merge | `docs/skills/factory-operations.md` → "Renovate" |
-| Update a pinned SHA | `docs/skills/composite-actions.md` → "SHA pinning" |
+| Update a third-party SHA pin | `docs/skills/composite-actions.md` → "SHA Pinning" |
+| Understand `@v1` tag and how to advance it | AGENTS.md → "@v1 tag" section |
+| Understand or change the promotion PR body format (Design C) | `docs/skills/factory-operations.md` → "Promotion PR Format" |
 | Understand the sign-and-publish flow | `docs/skills/composite-actions/action-reference.md` → "sign-and-publish" |
 | Understand the push-image push + digest pattern | `docs/skills/composite-actions/action-reference.md` → "push-image" |
 | Generate OCI image tags in a custom pipeline | `docs/skills/composite-actions/action-reference.md` → "generate-tags" |
@@ -38,6 +40,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add or modify Python unit tests | `docs/skills/testing.md` |
 | Understand or change the pytest coverage threshold | `docs/skills/testing.md` |
 | Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
+| Understand or debug the promotion PR body or gate checklist | `docs/skills/factory-operations.md` → "Promotion PR Format" |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
 | Enforce Conventional Commits PR title format | `docs/skills/composite-actions/action-reference.md` → "validate-pr-title" |
 | Understand SLSA Build L2 posture and scope | `docs/skills/supply-chain.md` → "SLSA Build L2 posture" |
@@ -65,5 +68,5 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`consumer-guide/upgrade-and-migration.md`](skills/consumer-guide/upgrade-and-migration.md) | Upgrade test gate, migration test, dakota Path 2 notes, live consumer examples |
 | [`consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius before merge |
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
-| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, scheduled skill audit, and Renovate auto-merge |
+| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, scheduled skill audit, Renovate auto-merge, promotion PR format (Design C) |
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |

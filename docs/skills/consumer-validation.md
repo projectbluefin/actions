@@ -20,17 +20,20 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 
 ## Validation steps (required before merge)
 
-1. **Pin a consumer PR**: Open a draft PR in `projectbluefin/bluefin` that pins its workflow to your branch SHA (not `@v1`):
+1. **Open a draft consumer PR**: Create a draft PR in `projectbluefin/bluefin` (target: `testing`) using
+   `@v1` references — no SHA pinning needed:
    ```yaml
-   uses: projectbluefin/actions/.github/workflows/reusable-build.yml@<your-branch-sha>
+   uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
    ```
+   The PR only needs to exist and pass CI. It does not need to build the specific file you changed.
 2. **Verify CI green**: Wait for the consumer PR's CI to pass completely.
 3. **Fill the PR template evidence fields** in this repo:
    - `Consumer PR: https://github.com/projectbluefin/<consumer>/pull/<number>`
    - `Consumer CI run: https://github.com/projectbluefin/<consumer>/actions/runs/<id>`
    - `Out-of-org consumer impact: <why aurora/bazzite are safe, or N/A>`
 4. **Keep the checklist honest**: Check the three consumer-validation boxes only after the linked PR and run exist.
-5. **Merge actions first**: Merge this PR, then update the consumer PR to re-pin to the new `@v1` SHA.
+5. **Merge this actions PR**, then advance `@v1` to the new main HEAD (see the `@v1` runbook in AGENTS.md).
+   Consumer repos pick up the change on their next workflow run — no further action needed.
 
 ## Automated PR check
 
@@ -111,18 +114,20 @@ Consumer CI run: https://github.com/projectbluefin/bluefin/actions/runs/NNN
 Out-of-org consumer impact: N/A — aurora/bazzite unaffected because ...
 ```
 
-Even for internal-only workflows (like `reusable-renovate.yml` which is only used within `projectbluefin/actions` itself for Renovate runs), the CI check still requires real URLs. Open a draft consumer PR in bluefin that pins `reusable-build.yml` to your branch SHA — this exercises the actions repo at that commit and satisfies the check. The consumer PR does NOT need to build the specific file being changed.
+Even for internal-only workflows (like `reusable-renovate.yml`), the CI check still requires real URLs. Open a draft consumer PR in bluefin targeting `testing` — this exercises the actions repo at `@v1` and satisfies the check.
 
-**Consumer PR SHA pinning — how to create it via API:**
+**How to create a consumer validation PR via API:**
 ```bash
-# Get branch SHA
-gh api repos/projectbluefin/actions/git/ref/heads/<branch> --jq '.object.sha'
 # Create branch in bluefin from testing
 gh api repos/projectbluefin/bluefin/git/refs --method POST \
   --field ref="refs/heads/consumer-validate/<name>" \
   --field sha="$(gh api repos/projectbluefin/bluefin/git/ref/heads/testing --jq '.object.sha')"
-# Update build-image-testing.yml: replace old actions SHA with your branch SHA
-# Push via API, open draft PR targeting testing
+# Open draft PR targeting testing — workflow files already use @v1, so no content changes needed
+gh pr create --repo projectbluefin/bluefin \
+  --head consumer-validate/<name> --base testing \
+  --title "ci: consumer validation for actions/<branch>" \
+  --body "Consumer validation PR. No content changes — CI exercises @v1 references." \
+  --draft
 ```
 
 ## Gotchas when writing the enforcement workflow itself
