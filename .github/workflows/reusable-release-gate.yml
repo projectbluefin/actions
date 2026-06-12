@@ -257,311 +257,111 @@ jobs:
 
           echo 'should_check=true' >> "$GITHUB_OUTPUT"
 
-      - name: Fetch completed post-testing-e2e runs with retry
-        if: steps.e2e-precheck.outputs.should_check == 'true'
-        uses: projectbluefin/actions/actions/retry@v1
-        env:
-          E2E_RUNS_PATH: ${{ runner.temp }}/post-testing-e2e-runs.json
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          REPO: ${{ inputs.repo }}
-        with:
-          command: >-
-            gh api -H 'Accept: application/vnd.github+json'
-            /repos/${REPO}/actions/runs\?head_sha=${HEAD_SHA}\&status=completed\&per_page=100
-            > ${E2E_RUNS_PATH}
-          max_attempts: '4'
-          initial_wait_seconds: '15'
-          retry_on: 'rate limit|secondary rate limit|502|503|504|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|unexpected EOF'
-
       - name: Check post-testing-e2e status for PR head SHA
         id: e2e
         shell: bash
         env:
-          E2E_RUNS_PATH: ${{ runner.temp }}/post-testing-e2e-runs.json
-          E2E_STALE_AFTER_MINUTES: ${{ inputs.e2e_stale_after_minutes }}
           E2E_SUITES: ${{ inputs.e2e_suites }}
           GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          PRECHECK_DETAILS: ${{ steps.e2e-precheck.outputs.details }}
-          PRECHECK_OK: ${{ steps.e2e-precheck.outputs.ok }}
-          PRECHECK_STATE: ${{ steps.e2e-precheck.outputs.state }}
-          PRECHECK_SUMMARY: ${{ steps.e2e-precheck.outputs.summary }}
           REPO: ${{ inputs.repo }}
-          SHOULD_CHECK: ${{ steps.e2e-precheck.outputs.should_check }}
         run: |
           set -euo pipefail
 
-          runs_file="${E2E_RUNS_PATH}"
-          workflows_file="${RUNNER_TEMP}/post-testing-e2e-workflows.json"
-          waits=(600 1200 1800)
-          retry_pattern="rate limit|secondary rate limit|502|503|504|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|unexpected EOF"
-
-          if [ "$SHOULD_CHECK" != 'true' ]; then
+          if [ '${{ inputs.run_e2e }}' != 'true' ]; then
             {
-              echo "ok=${PRECHECK_OK}"
-              echo "state=${PRECHECK_STATE}"
-              echo "summary=${PRECHECK_SUMMARY}"
-              echo "details=${PRECHECK_DETAILS}"
+              echo 'ok=true'
+              echo 'state=skipped'
+              echo 'summary=E2E check disabled by caller.'
+              echo 'details=Caller disabled the E2E gate.'
+              echo 'last_status=skipped'
+              echo 'last_age_minutes='
+              echo 'last_run_url='
+              echo 'workflow_path='
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          fetch_runs() {
-            local query="/repos/${REPO}/actions/runs?per_page=100"
-            local err_file="${RUNNER_TEMP}/release-gate-runs.err"
-            for attempt in 1 2 3; do
-              if gh api -H 'Accept: application/vnd.github+json' "${query}" >"${runs_file}" 2> >(tee "${err_file}" >&2); then
-                rm -f "${err_file}"
-                return 0
-              fi
-
-              if ! grep -qiE "${retry_pattern}" "${err_file}" 2>/dev/null; then
-                echo '::error::E2E gate check failed with a non-retryable GitHub API error.'
-                rm -f "${err_file}"
-                return 1
-              fi
-
-              if [ "${attempt}" -eq 3 ]; then
-                echo '::error::E2E gate check hit repeated transient GitHub API failures.'
-                rm -f "${err_file}"
-                return 1
-              fi
-
-              echo "::warning::Transient GitHub API failure during E2E gate check (attempt ${attempt}/3). Retrying in 30s..."
-              sleep 30
-            done
-          }
-
-          write_result() {
-            local result_json="$1"
+          if [ -z '${{ inputs.e2e_image }}' ]; then
             {
-              echo "ok=$(jq -r '.ok' <<<"${result_json}")"
-              echo "state=$(jq -r '.state' <<<"${result_json}")"
-              echo "summary=$(jq -r '.summary' <<<"${result_json}")"
-              echo "details=$(jq -r '.details' <<<"${result_json}")"
-              echo "last_status=$(jq -r '.last_status' <<<"${result_json}")"
-              echo "last_age_minutes=$(jq -r '.last_age_minutes' <<<"${result_json}")"
-              echo "last_run_url=$(jq -r '.last_run_url' <<<"${result_json}")"
-              echo "workflow_path=$(jq -r '.workflow_path' <<<"${result_json}")"
+              echo 'ok=true'
+              echo 'state=skipped'
+              echo 'summary=E2E image not set; E2E gate skipped.'
+              echo 'details=Caller left e2e_image empty.'
+              echo 'last_status=skipped'
+              echo 'last_age_minutes='
+              echo 'last_run_url='
+              echo 'workflow_path='
             } >> "$GITHUB_OUTPUT"
-          }
+            exit 0
+          fi
 
-          dispatch_workflow() {
-            local workflow_path="$1"
-            local dispatch_ref="${GITHUB_REF_NAME:-}"
-            if [ -z "${dispatch_ref}" ]; then
-              dispatch_ref=$(gh repo view "${REPO}" --json defaultBranchRef --jq '.defaultBranchRef.name')
-            fi
-            gh workflow run "${workflow_path}" --repo "${REPO}" --ref "${dispatch_ref}"
-          }
+          runs=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100")
 
-          for attempt in 1 2 3 4; do
-            if ! fetch_runs; then
-              result_json=$(jq -cn \
-                --arg state "error" \
-                --arg summary "GitHub API lookup for E2E runs failed." \
-                --arg details "Could not read Actions runs from ${REPO}." \
-                '{ok:false,state:$state,summary:$summary,details:$details,last_status:"unknown",last_age_minutes:"",last_run_url:"",workflow_path:"",should_dispatch:false}')
-              write_result "${result_json}"
-              exit 0
-            fi
-
-            result_json=$(python -c '
-            import json
-            import sys
-            from datetime import datetime, timezone
-
-            runs_path, workflows_path, head_sha, suites, stale_after = sys.argv[1:6]
-            stale_after = int(stale_after)
-
-            with open(runs_path, encoding="utf-8") as fh:
-            runs = json.load(fh)
-
-            try:
-            with open(workflows_path, encoding="utf-8") as fh:
-            workflows = json.load(fh)
-            except FileNotFoundError:
-            workflows = {"workflows": []}
-
-            patterns = ("post-testing-e2e", "post-merge-e2e")
-
-            def relevant(item):
-            haystacks = [
-            (item.get("path") or "").lower(),
-            (item.get("name") or "").lower(),
-            (item.get("display_title") or "").lower(),
+          selected=$(jq -c '
+            [
+              .workflow_runs[]
+              | select(
+                  ((.path // "") | endswith("post-testing-e2e.yml"))
+                  or (((.name // "") | ascii_downcase) | contains("post-testing-e2e"))
+                  or (((.name // "") | ascii_downcase) | contains("post-merge e2e"))
+                )
             ]
-            return any(pattern in hay for pattern in patterns for hay in haystacks)
+            | sort_by(.created_at)
+            | reverse
+            | .[0] // empty
+          ' <<<"$runs")
 
-            def parse_time(value):
-            if not value:
-            return None
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+          if [ -z "$selected" ]; then
+            {
+              echo 'ok=false'
+              echo 'state=failed'
+              echo "summary=No completed post-testing-e2e run found for suites ${E2E_SUITES} on this PR head SHA."
+              echo 'details=Expected a successful post-testing-e2e run for the promotion commit.'
+              echo 'last_status=missing'
+              echo 'last_age_minutes='
+              echo 'last_run_url='
+              echo 'workflow_path=.github/workflows/post-testing-e2e.yml'
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-            def age_minutes(value):
-            parsed = parse_time(value)
-            if parsed is None:
-            return ""
-            return str(int((datetime.now(timezone.utc) - parsed).total_seconds() // 60))
+          conclusion=$(jq -r '.conclusion // "unknown"' <<<"$selected")
+          run_url=$(jq -r '.html_url // empty' <<<"$selected")
+          run_name=$(jq -r '.name // .display_title // "post-testing-e2e"' <<<"$selected")
+          run_path=$(jq -r '.path // ".github/workflows/post-testing-e2e.yml"' <<<"$selected")
+          created_at=$(jq -r '.created_at // empty' <<<"$selected")
+          age_minutes=""
+          if [ -n "$created_at" ]; then
+            age_minutes=$(( ( $(date -u +%s) - $(date -d "$created_at" +%s) ) / 60 ))
+          fi
 
-            workflow_path = ""
-            relevant_runs = [run for run in runs.get("workflow_runs", []) if relevant(run)]
-            relevant_runs.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+          if [ "$conclusion" = 'success' ]; then
+            {
+              echo 'ok=true'
+              echo 'state=passed'
+              echo "summary=Recent ${run_name} run passed for suites ${E2E_SUITES} on this PR head SHA."
+              echo "details=${run_url}"
+              echo "last_status=success"
+              echo "last_age_minutes=${age_minutes}"
+              echo "last_run_url=${run_url}"
+              echo "workflow_path=${run_path}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo 'ok=false'
+              echo 'state=failed'
+              echo "summary=Recent ${run_name} run did not pass for suites ${E2E_SUITES} on this PR head SHA."
+              echo "details=${run_url}"
+              echo "last_status=${conclusion}"
+              echo "last_age_minutes=${age_minutes}"
+              echo "last_run_url=${run_url}"
+              echo "workflow_path=${run_path}"
+            } >> "$GITHUB_OUTPUT"
+          fi
 
-            latest_completed = next((run for run in relevant_runs if run.get("status") == "completed"), None)
-            latest_active = next((run for run in relevant_runs if run.get("status") != "completed"), None)
-            matching_completed = None
-            matching_active = None
-            if head_sha:
-            matching_completed = next((run for run in relevant_runs if run.get("head_sha") == head_sha and run.get("status") == "completed"), None)
-            matching_active = next((run for run in relevant_runs if run.get("head_sha") == head_sha and run.get("status") != "completed"), None)
-
-            for candidate in [matching_completed, matching_active, latest_completed, latest_active]:
-            if candidate and candidate.get("path"):
-            workflow_path = candidate["path"]
-            break
-
-            if not workflow_path:
-            workflow_candidates = [workflow for workflow in workflows.get("workflows", []) if relevant(workflow)]
-            if workflow_candidates:
-            workflow_path = workflow_candidates[0].get("path") or ""
-
-            selected = matching_completed or latest_completed
-            selected_name = (selected or {}).get("name") or (selected or {}).get("display_title") or "post-testing-e2e"
-            selected_url = (selected or {}).get("html_url") or (matching_active or latest_active or {}).get("html_url") or ""
-            selected_status = (selected or {}).get("conclusion") or (selected or {}).get("status") or "missing"
-            selected_age = age_minutes((selected or {}).get("created_at") or (matching_active or latest_active or {}).get("created_at"))
-            stale = not latest_completed or (selected_age and int(selected_age) > stale_after)
-
-            result = {
-            "ok": False,
-            "state": "stale",
-            "summary": f"No recent e2e run found for suites {suites}.",
-            "details": "Expected a successful post-testing-e2e or post-merge-e2e run before promotion.",
-            "last_status": selected_status,
-            "last_age_minutes": selected_age,
-            "last_run_url": selected_url,
-            "workflow_path": workflow_path,
-            "should_dispatch": False,
-            }
-
-            if head_sha:
-            if matching_completed:
-            result["last_status"] = matching_completed.get("conclusion") or "unknown"
-            result["last_age_minutes"] = age_minutes(matching_completed.get("created_at"))
-            result["last_run_url"] = matching_completed.get("html_url") or ""
-            selected_name = matching_completed.get("name") or matching_completed.get("display_title") or selected_name
-            if matching_completed.get("conclusion") == "success":
-            result.update({
-            "ok": True,
-            "state": "passed",
-            "summary": f"Recent {selected_name} run passed for suites {suites} on this PR head SHA.",
-            "details": matching_completed.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            else:
-            result.update({
-            "ok": False,
-            "state": "failed",
-            "summary": f"Recent {selected_name} run did not pass for suites {suites} on this PR head SHA.",
-            "details": matching_completed.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            elif matching_active:
-            result.update({
-            "state": "waiting",
-            "summary": f"{matching_active.get(\"name\") or matching_active.get(\"display_title\") or \"E2E\"} is still running for this PR head SHA.",
-            "details": matching_active.get("html_url") or "",
-            "last_status": matching_active.get("status") or "in_progress",
-            "last_age_minutes": age_minutes(matching_active.get("created_at")),
-            "last_run_url": matching_active.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            elif latest_completed and not stale:
-            result.update({
-            "state": "waiting",
-            "summary": f"No completed e2e run for this PR head SHA yet; latest relevant run is {result[\"last_age_minutes\"]} minute(s) old.",
-            "details": latest_completed.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            else:
-            age_fragment = f"{result[\"last_age_minutes\"]} minute(s)" if result["last_age_minutes"] else "more than the freshness threshold"
-            result.update({
-            "state": "stale",
-            "summary": f"E2E appears stale for suites {suites}; latest relevant run is {age_fragment} old.",
-            "details": result["last_run_url"] or "No relevant completed e2e run found.",
-            "should_dispatch": bool(workflow_path),
-            })
-            else:
-            if latest_completed and not stale:
-            result["last_status"] = latest_completed.get("conclusion") or "unknown"
-            result["last_age_minutes"] = age_minutes(latest_completed.get("created_at"))
-            result["last_run_url"] = latest_completed.get("html_url") or ""
-            selected_name = latest_completed.get("name") or latest_completed.get("display_title") or selected_name
-            if latest_completed.get("conclusion") == "success":
-            result.update({
-            "ok": True,
-            "state": "passed",
-            "summary": f"Recent {selected_name} run passed for suites {suites}.",
-            "details": latest_completed.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            else:
-            result.update({
-            "state": "failed",
-            "summary": f"Recent {selected_name} run did not pass for suites {suites}.",
-            "details": latest_completed.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            elif latest_active:
-            result.update({
-            "state": "waiting",
-            "summary": f"{latest_active.get(\"name\") or latest_active.get(\"display_title\") or \"E2E\"} is still running.",
-            "details": latest_active.get("html_url") or "",
-            "last_status": latest_active.get("status") or "in_progress",
-            "last_age_minutes": age_minutes(latest_active.get("created_at")),
-            "last_run_url": latest_active.get("html_url") or "",
-            "should_dispatch": False,
-            })
-            else:
-            age_fragment = f"{result[\"last_age_minutes\"]} minute(s)" if result["last_age_minutes"] else "more than the freshness threshold"
-            result.update({
-            "state": "stale",
-            "summary": f"E2E appears stale for suites {suites}; latest relevant run is {age_fragment} old.",
-            "details": result["last_run_url"] or "No relevant completed e2e run found.",
-            "should_dispatch": bool(workflow_path),
-            })
-
-            print(json.dumps(result))
-            ' "${runs_file}" "${workflows_file}" "${HEAD_SHA}" "${E2E_SUITES}" "${E2E_STALE_AFTER_MINUTES}")
-
-            state=$(jq -r '.state' <<<"${result_json}")
-            if [ "$(jq -r '.ok' <<<"${result_json}")" = 'true' ] || [ "${state}" = 'failed' ] || [ "${state}" = 'error' ]; then
-              write_result "${result_json}"
-              exit 0
-            fi
-
-            if [ "${attempt}" -eq 4 ]; then
-              write_result "${result_json}"
-              exit 0
-            fi
-
-            if [ "$(jq -r '.should_dispatch' <<<"${result_json}")" = 'true' ]; then
-              workflow_path=$(jq -r '.workflow_path // empty' <<<"${result_json}")
-              if [ -n "${workflow_path}" ]; then
-                if dispatch_workflow "${workflow_path}"; then
-                  echo "::notice::Re-dispatched ${workflow_path} because the e2e gate looked stale."
-                else
-                  echo "::warning::Failed to re-dispatch ${workflow_path}; continuing to wait and re-check."
-                fi
-              fi
-            fi
-
-            wait_seconds=${waits[$((attempt - 1))]}
-            echo "::warning::$(jq -r '.summary' <<<"${result_json}") Retrying in $((wait_seconds / 60)) minute(s) (attempt $((attempt + 1))/4)..."
-            sleep "${wait_seconds}"
-          done
 
       - name: Aggregate gate result
         id: aggregate
@@ -914,4 +714,5 @@ jobs:
             echo '::error::Release gate is blocked after retry/recovery. Review the sticky PR comment and the auto-filed issue for details.'
             exit 1
           fi
+
 
