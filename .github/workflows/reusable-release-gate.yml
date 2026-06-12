@@ -279,14 +279,23 @@ jobs:
         shell: bash
         env:
           E2E_RUNS_PATH: ${{ runner.temp }}/post-testing-e2e-runs.json
+          E2E_STALE_AFTER_MINUTES: ${{ inputs.e2e_stale_after_minutes }}
           E2E_SUITES: ${{ inputs.e2e_suites }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
           PRECHECK_DETAILS: ${{ steps.e2e-precheck.outputs.details }}
           PRECHECK_OK: ${{ steps.e2e-precheck.outputs.ok }}
           PRECHECK_STATE: ${{ steps.e2e-precheck.outputs.state }}
           PRECHECK_SUMMARY: ${{ steps.e2e-precheck.outputs.summary }}
+          REPO: ${{ inputs.repo }}
           SHOULD_CHECK: ${{ steps.e2e-precheck.outputs.should_check }}
         run: |
           set -euo pipefail
+
+          runs_file="${E2E_RUNS_PATH}"
+          workflows_file="${RUNNER_TEMP}/post-testing-e2e-workflows.json"
+          waits=(600 1200 1800)
+          retry_pattern="rate limit|secondary rate limit|502|503|504|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|unexpected EOF"
 
           if [ "$SHOULD_CHECK" != 'true' ]; then
             {
@@ -905,3 +914,4 @@ jobs:
             echo '::error::Release gate is blocked after retry/recovery. Review the sticky PR comment and the auto-filed issue for details.'
             exit 1
           fi
+
