@@ -1,6 +1,6 @@
 ---
 name: factory-operations
-description: Production gate (2-human approval), skill-drift PR check, and scheduled skill audit — how the self-improving factory loop works and how to configure it. Use when configuring production approval gates, diagnosing skill-drift CI warnings, setting up the weekly skill audit, or managing Renovate auto-merge behavior.
+description: Production gate (2-human approval), skill-drift PR check, and scheduled skill audit - how the self-improving factory loop works and how to configure it. Use when configuring production approval gates, diagnosing skill-drift CI warnings, setting up the weekly skill audit, or managing Renovate auto-merge behavior.
 metadata:
   type: reference
 ---
@@ -9,9 +9,9 @@ metadata:
 
 Covers three interconnected systems that keep the projectbluefin factory safe and self-improving:
 
-1. **Production gate** — machine-enforced 2-human approval before any build reaches `:stable`
-2. **Skill-drift check** — PR-time warning when code changes without skill file updates
-3. **Skill audit** — weekly scheduled freshness check with automatic issue creation
+1. **Production gate** - machine-enforced 2-human approval before any build reaches `:stable`
+2. **Skill-drift check** - PR-time warning when code changes without skill file updates
+3. **Skill audit** - weekly scheduled freshness check with automatic issue creation
 
 ---
 
@@ -47,7 +47,7 @@ jobs:
 After the workflow change is merged:
 1. Go to the repo → **Settings → Environments → New environment**
 2. Name: `production`
-3. Set **Required reviewers** — list the 4 maintainers (`castrojo`, `p5`, `m2Giles`, `tulilirockz`)
+3. Set **Required reviewers** - list the 4 maintainers (`castrojo`, `p5`, `m2Giles`, `tulilirockz`)
 4. Set the **required count to 2** (two distinct approvals)
 5. Restrict to the `main` branch
 
@@ -62,7 +62,7 @@ After the workflow change is merged:
 ### What it does NOT prevent
 
 Repo admins can bypass Environment rules. All bypasses are permanently visible in:
-- `gh api repos/<org>/<repo>/deployments` — every deployment record
+- `gh api repos/<org>/<repo>/deployments` - every deployment record
 - The Environment's deployment history page in GitHub UI
 
 The protection is friction-ful for accidental/casual bypasses, not cryptographically airtight. This is the appropriate bar for a trusted team of 4.
@@ -73,13 +73,13 @@ The protection is friction-ful for accidental/casual bypasses, not cryptographic
 
 ### What it is
 
-An informational CI check that warns when a PR changes code files without also touching skill/doc files. Always exits 0 — never blocks merging. Emits a `::warning::` annotation visible in the PR Checks tab.
+An informational CI check that warns when a PR changes code files without also touching skill/doc files. Always exits 0 - never blocks merging. Emits a `::warning::` annotation visible in the PR Checks tab.
 
 ### Architecture
 
 Two files:
 
-**`projectbluefin/actions/.github/workflows/skill-drift-check.yml`** — reusable workflow. Takes:
+**`projectbluefin/actions/.github/workflows/skill-drift-check.yml`** - reusable workflow. Takes:
 - `code-paths`: JSON array of globs for code files (e.g. `'[".github/workflows/**", "build_files/**"]'`)
 - `skill-paths`: JSON array of globs for skill/doc files (e.g. `'["docs/skills/**", "AGENTS.md"]'`)
 
@@ -135,7 +135,7 @@ A weekly scheduled workflow (`actions/.github/workflows/skill-audit.yml`) that:
 
 ### Schedule
 
-`cron: '0 9 * * 1'` — Monday 09:00 UTC, before the Tuesday production window. Also triggerable via `workflow_dispatch`.
+`cron: '0 9 * * 1'` - Monday 09:00 UTC, before the Tuesday production window. Also triggerable via `workflow_dispatch`.
 
 ### Staleness heuristic
 
@@ -152,8 +152,8 @@ The workflow auto-creates the `skill-drift` label (color `e4e669`, description "
 
 ### What it does NOT audit
 
-- Per-repo skill files in consumer repos (`bluefin/docs/skills/`, `bluefin-lts/docs/skills/`, `dakota/docs/skills/`) — those are out-of-scope for the `actions`-hosted audit. Consumer repos are responsible for their own skill freshness.
-- Whether skill content is *correct* — only whether it was recently touched.
+- Per-repo skill files in consumer repos (`bluefin/docs/skills/`, `bluefin-lts/docs/skills/`, `dakota/docs/skills/`) - those are out-of-scope for the `actions`-hosted audit. Consumer repos are responsible for their own skill freshness.
+- Whether skill content is *correct* - only whether it was recently touched.
 
 ### Front-matter lint
 
@@ -184,7 +184,7 @@ falls below the success-rate threshold.
 
 ### Schedule
 
-`cron: '0 */6 * * *'` — every 6 hours. Also triggerable via `workflow_dispatch`.
+`cron: '0 */6 * * *'` - every 6 hours. Also triggerable via `workflow_dispatch`.
 
 ### Monitored pipelines
 
@@ -194,7 +194,7 @@ falls below the success-rate threshold.
 | `projectbluefin/bluefin` | E2E | `Nightly E2E` |
 | `projectbluefin/bluefin` | Promote | `Promote testing to main` |
 | `projectbluefin/bluefin-lts` | Build | `Build Bluefin LTS` |
-| `projectbluefin/bluefin-lts` | E2E | `Post-Merge E2E — Testing Parity` |
+| `projectbluefin/bluefin-lts` | E2E | `Post-Merge E2E - Testing Parity` |
 | `projectbluefin/bluefin-lts` | Promote | `Promote testing to main` |
 | `projectbluefin/dakota` | Build | `Build Bluefin dakota` |
 | `projectbluefin/dakota` | Promote | `Publish Bluefin dakota` |
@@ -223,17 +223,17 @@ issues are opened.
 
 ---
 
-## 5. Renovate — Automated Dependency Maintenance
+## 5. Renovate - Automated Dependency Maintenance
 
 ### What it does
 
-Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes — no human review needed.
+Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes - no human review needed.
 
 ### Config
 
 Two files co-exist:
-- `.github/renovate.json5` — base org config (inherited from `projectbluefin/renovate-config`)
-- `renovate.json` — repo-level overrides, including the `packageRules` automerge block
+- `.github/renovate.json5` - base org config (inherited from `projectbluefin/renovate-config`)
+- `renovate.json` - repo-level overrides, including the `packageRules` automerge block
 
 The effective automerge rule in `renovate.json`:
 
@@ -251,7 +251,7 @@ The effective automerge rule in `renovate.json`:
 }
 ```
 
-**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps — when all CI checks pass. These are safe to auto-merge because they carry no behavior change.
+**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps - when all CI checks pass. These are safe to auto-merge because they carry no behavior change.
 
 **What never auto-merges:** Major version bumps and any PR that fails CI.
 
@@ -267,28 +267,84 @@ The repository has `allow_auto_merge: true` enabled. Without this, GitHub ignore
 
 ### Relationship to `@v1`
 
-Renovate keeps SHA pins current **in this repo**. Consumers don't see the updates until a maintainer moves the `@v1` tag:
-
-```bash
-git tag -f v1 && git push --force origin v1
-```
-
-The recommended cadence: move `@v1` periodically after a batch of Renovate bumps has landed and CI is green — not after every individual bump. This is a deliberate human gate because `@v1` affects all consumer repos simultaneously.
+Renovate keeps SHA pins current **for third-party actions in this repo**. Consumers don’t see the updates until a maintainer advances the `@v1` tag. See the `@v1` runbook in AGENTS.md for the exact commands.
 
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | Renovate PR won't auto-merge | `allow_auto_merge` disabled on repo | `gh api -X PATCH repos/projectbluefin/actions -f allow_auto_merge=true` |
-| Renovate PR consumer-validation fails | Bot exemption not firing | Verify author login ends in `[bot]` or starts with `app/` — check `gh pr view NNN --json author` |
+| Renovate PR consumer-validation fails | Bot exemption not firing | Verify author login ends in `[bot]` or starts with `app/` - check `gh pr view NNN --json author` |
 | Renovate PR has merge conflict | Another bump landed first; branches diverged | Locally checkout the branch, `git rebase origin/main`, force-push |
 | Two Renovate PRs update the same action | Both opened before either merged | Close the older/lower version one; merge the newer |
-| Dependency Dashboard (issue #42) shows PRs as "Open" | Renovate dashboard is eventually consistent — PRs may already be merged | Confirm with `gh pr view NNN --json mergedAt` before acting; the dashboard self-corrects on next Renovate run |
-| Renovate warns: "Fallback to renovate.json as preset is deprecated" | Config file named `renovate.json` instead of `default.json` | Rename: `git mv renovate.json default.json` — content stays identical |
+| Dependency Dashboard (issue #42) shows PRs as "Open" | Renovate dashboard is eventually consistent - PRs may already be merged | Confirm with `gh pr view NNN --json mergedAt` before acting; the dashboard self-corrects on next Renovate run |
+| Renovate warns: "Fallback to renovate.json as preset is deprecated" | Config file named `renovate.json` instead of `default.json` | Rename: `git mv renovate.json default.json` - content stays identical |
 
 ---
 
-## How the Five Systems Work Together
+## 6. Promotion PR Format (Design C)
+
+Every `testing → stable` promotion PR in bluefin and dakota uses a consistent
+“Design C” body generated by `scripts/render_pr_body.py`.
+
+### Title format
+
+```
+ci(promote): <primary-image> testing → stable YYYY-MM-DD
+```
+
+Examples: `ci(promote): bluefin testing → stable 2026-06-11`
+
+### Body structure
+
+```markdown
+## 🦕 Bluefin testing → stable · 2026-06-11
+
+> **12 days since the last stable release** · [tag ↗](release-url)
+> Auto-maintained · Updated ISO-timestamp · [Run ↗](run-url)
+
+<!-- gate-section-start -->
+### Release checklist
+**✅ All checks passed**
+| Check | Status | Details |
+|---|---|---|
+| Digest resolution | ✅ passed | ... |
+| Cosign signatures | ✅ passed | ... |
+| E2E | ✅ passed | ... |
+<!-- gate-section-end -->
+
+### Variants being promoted
+(variants table with digests when available)
+
+### Changes since last stable
+(commit count + collapsible commit log — squash workflow only)
+```
+
+The gate checklist starts with ⏳ placeholders written by the promote job,
+then the gate job replaces only the `<!-- gate-section-start/end -->` block
+with live ✅/❌ results via `scripts/render_gate_section.py`.
+
+### Scripts
+
+| Script | Called by | Purpose |
+|---|---|---|
+| `scripts/render_pr_body.py` | promote job | Full PR body with ⏳ gate placeholders |
+| `scripts/render_gate_section.py` | gate job | Targeted gate section replacement only |
+
+### Consumer repo branch targets
+
+| Repo | Workflow | Target branch for PRs |
+|---|---|---|
+| `projectbluefin/bluefin` | `reusable-promote-squash.yml` | `testing` |
+| `projectbluefin/dakota` | `reusable-promote.yml` | `main` |
+| `projectbluefin/bluefin-lts` | not yet adopted — see [bluefin-lts#172](https://github.com/projectbluefin/bluefin-lts/issues/172) | — |
+
+**bluefin-lts** uses a different release model (weekly direct builds on `lts` branch, no promotion PR).
+Tracked in bluefin-lts#172.
+
+---
+
+## How the Systems Work Together
 
 ```
 Factory health monitor runs every 6 hours
@@ -317,8 +373,8 @@ Human reviews warning / issue
         └─▶ skill-drift-check passes cleanly (skill-paths changed)
 
 Batch of Renovate bumps land on main
-  └─▶ Human runs: git tag -f v1 && git push --force origin v1
-        └─▶ All consumer repos pick up updated SHA pins
+  └─▶ Maintainer runs: git tag -f v1 origin/main && git push --force origin v1
+        └─▶ All consumer repos pick up updated SHA pins on next workflow run
 ```
 
 Renovate keeps pins fresh automatically; the PR check and weekly audit keep knowledge current; the
@@ -332,7 +388,7 @@ authorization keep consumers safe.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Skill-drift warning fires on a docs-only PR | `code-paths` glob is too broad | Narrow the glob or apply the bypass label |
-| Audit opens duplicate issues | Issue title changed between runs, so existing search missed it | Check `gh issue list --label skill-drift --search <skill-name>` — if dupe, close the older one |
+| Audit opens duplicate issues | Issue title changed between runs, so existing search missed it | Check `gh issue list --label skill-drift --search <skill-name>` - if dupe, close the older one |
 | Audit `code_ts` returns 0 | `bootc-build/` and reusable workflows have no git history at checkout depth | Ensure `fetch-depth: 0` in the audit workflow's checkout step |
 | Environment gate never appears | `production` Environment not configured in GitHub UI | Follow the Manual GitHub UI setup steps above |
 | Both reviewers approved but job didn't start | GitHub Environments cache can take ~30s to register approvals | Wait 30s and refresh the Actions run page |

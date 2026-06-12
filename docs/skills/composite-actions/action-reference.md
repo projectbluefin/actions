@@ -446,6 +446,19 @@ All install via `brew install cosign oras slsa-verifier`.
 ]
 ```
 
+### Release body size limit
+
+GitHub enforces a hard 125,000-character limit on release bodies (HTTP 422 if exceeded).
+The action guards against this automatically:
+
+- `render_notes.py` assembles the full notes then checks the character count.
+- If over **120,000 chars**, the full notes are written to `release-notes-full.md`
+  and attached to the release as an asset; the release body is trimmed to a compact
+  summary (header + key components + supply chain section) with a pointer to the asset.
+- If even the compact body would overflow (extremely unlikely), it is hard-truncated at 120,000 chars.
+
+This was triggered by the first dakota stable promotion after a 12-day gap (~3,000 packages in the SBOM).
+
 ### Calling from a consumer workflow
 
 The caller is responsible for downloading the SBOM artifact produced by the
