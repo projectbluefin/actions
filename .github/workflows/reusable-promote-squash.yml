@@ -7,9 +7,13 @@
 # Implements consistency-audit C1 from projectbluefin/common.
 #
 # Key improvement over per-repo workflows:
-#   - Squash branch is always rebuilt fresh from origin/main — no staleness,
+#   - Squash branch is always rebuilt fresh from origin/target_branch — no staleness,
 #     no conflict drift, no "parent is stale" failures.
 #   - --auto replaces the 12-step mergeability-polling + GraphQL enqueue loop.
+#
+# Branch model support:
+#   - Default (bluefin): source_branch=testing promotes into target_branch=main
+#   - bluefin-lts:       source_branch=main   promotes into target_branch=lts
 
 name: reusable-promote-squash
 
@@ -48,6 +52,21 @@ on:
         required: false
         type: string
         default: ''
+      source_branch:
+        description: >
+          Branch to promote FROM. Compared against target_branch; if trees
+          differ a squash PR is opened. Default: testing (bluefin model).
+          Use main for repos with a separate production branch (e.g. bluefin-lts).
+        required: false
+        type: string
+        default: 'testing'
+      target_branch:
+        description: >
+          Branch to promote TO. The squash PR targets this branch.
+          Default: main. Use lts for bluefin-lts.
+        required: false
+        type: string
+        default: 'main'
 
 permissions:
   contents: read
@@ -81,44 +100,52 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fetch branches
-        run: git fetch origin main testing
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: git fetch origin "$TARGET_BRANCH" "$SOURCE_BRANCH"
 
-      - name: Compare testing and main trees
+      - name: Compare source and target trees
         id: compare
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
 
-          MAIN_SHA=$(git rev-parse origin/main)
-          TESTING_SHA=$(git rev-parse origin/testing)
-          MAIN_TREE=$(git rev-parse 'origin/main^{tree}')
-          TESTING_TREE=$(git rev-parse 'origin/testing^{tree}')
+          TARGET_SHA=$(git rev-parse "origin/${TARGET_BRANCH}")
+          SOURCE_SHA=$(git rev-parse "origin/${SOURCE_BRANCH}")
+          TARGET_TREE=$(git rev-parse "origin/${TARGET_BRANCH}^{tree}")
+          SOURCE_TREE=$(git rev-parse "origin/${SOURCE_BRANCH}^{tree}")
 
-          if [ "$MAIN_TREE" = "$TESTING_TREE" ]; then
-            echo "::notice::main and testing are identical — nothing to promote"
+          if [ "$TARGET_TREE" = "$SOURCE_TREE" ]; then
+            echo "::notice::${SOURCE_BRANCH} and ${TARGET_BRANCH} are identical — nothing to promote"
             echo "sync_needed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "testing differs from main — promotion needed"
+            echo "${SOURCE_BRANCH} differs from ${TARGET_BRANCH} — promotion needed"
             echo "sync_needed=true" >> "$GITHUB_OUTPUT"
           fi
 
           {
-            echo "testing_sha=${TESTING_SHA}"
-            echo "main_sha=${MAIN_SHA}"
+            echo "testing_sha=${SOURCE_SHA}"
+            echo "target_sha=${TARGET_SHA}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Rebuild squash promotion branch
         if: steps.compare.outputs.sync_needed == 'true'
         env:
           PROMOTION_BRANCH: auto/promote-testing-to-main
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
-          # Always rebuild from current origin/main — eliminates staleness and conflict
+          # Always rebuild from current origin/target_branch — eliminates staleness and conflict
           # drift. Force-push ensures the PR always shows a clean single-commit diff.
-          git checkout -B "$PROMOTION_BRANCH" origin/main
-          git merge --squash origin/testing
-          git commit -m "chore: promote testing to main"
+          git checkout -B "$PROMOTION_BRANCH" "origin/${TARGET_BRANCH}"
+          git merge --squash "origin/${SOURCE_BRANCH}"
+          git commit -m "chore: promote ${SOURCE_BRANCH} to ${TARGET_BRANCH}"
           git push --force origin "$PROMOTION_BRANCH"
-          echo "\u2705 Squash branch rebuilt"
+          echo "✅ Squash branch rebuilt"
 
       - name: Fetch last stable release metadata
         if: steps.compare.outputs.sync_needed == 'true'
@@ -154,13 +181,16 @@ jobs:
       - name: Collect git log for PR body
         if: steps.compare.outputs.sync_needed == 'true'
         id: gitlog
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
-          COUNT=$(git rev-list --count origin/main..origin/testing 2>/dev/null || echo 0)
+          COUNT=$(git rev-list --count "origin/${TARGET_BRANCH}..origin/${SOURCE_BRANCH}" 2>/dev/null || echo 0)
           echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
 
           # Build commits JSON safely — split on tab, never rely on shell JSON escaping
-          COMMITS_JSON=$(git log origin/main..origin/testing \
+          COMMITS_JSON=$(git log "origin/${TARGET_BRANCH}..origin/${SOURCE_BRANCH}" \
             --pretty=format:'%H%x09%s' \
             --max-count=20 \
             | python3 -c '
@@ -172,13 +202,15 @@ jobs:
           print(json.dumps(rows))
           ' 2>/dev/null || echo '[]')
           echo "commits_json=${COMMITS_JSON}" >> "$GITHUB_OUTPUT"
-          echo "compare_url=https://github.com/${{ github.repository }}/compare/main...testing" >> "$GITHUB_OUTPUT"
+          echo "compare_url=https://github.com/${{ github.repository }}/compare/${TARGET_BRANCH}...${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Render promotion PR body
         if: steps.compare.outputs.sync_needed == 'true'
         id: render
         env:
           VARIANTS:     ${{ inputs.variants }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
           RUN_URL:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           COMMIT_COUNT: ${{ steps.gitlog.outputs.count }}
           COMMITS_JSON: ${{ steps.gitlog.outputs.commits_json }}
@@ -212,7 +244,7 @@ jobs:
             --compare-url   "${COMPARE_URL}" \
             --output        /tmp/pr-body.md
 
-          echo "pr_title=ci(promote): ${PRIMARY_IMAGE} testing → stable ${DATE}" >> "$GITHUB_OUTPUT"
+          echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"
 
       - name: Upsert promotion PR
         if: steps.compare.outputs.sync_needed == 'true'
@@ -221,12 +253,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PROMOTION_BRANCH: auto/promote-testing-to-main
           PR_TITLE: ${{ steps.render.outputs.pr_title }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
 
           PR_NUMBER=$(gh pr list \
             --repo "${{ github.repository }}" \
-            --base main \
+            --base "$TARGET_BRANCH" \
             --head "$PROMOTION_BRANCH" \
             --state open \
             --json number \
@@ -241,7 +274,7 @@ jobs:
           else
             PR_NUMBER=$(gh pr create \
               --repo "${{ github.repository }}" \
-              --base main \
+              --base "$TARGET_BRANCH" \
               --head "$PROMOTION_BRANCH" \
               --title "${PR_TITLE}" \
               --body-file /tmp/pr-body.md \
@@ -254,8 +287,8 @@ jobs:
           gh pr merge "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
             --auto 2>/dev/null \
-            && echo "\u2705 Auto-merge enabled on PR #${PR_NUMBER}" \
-            || echo "\u26a0\ufe0f  Auto-merge not available \u2014 maintainer merges when checks pass"
+            && echo "✅ Auto-merge enabled on PR #${PR_NUMBER}" \
+            || echo "⚠️  Auto-merge not available — maintainer merges when checks pass"
 
           PR_URL=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
@@ -301,7 +334,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
-            const title = 'ci: testing\u2192main promotion conflict';
+            const title = 'ci: testing→main promotion conflict';
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -335,8 +368,8 @@ jobs:
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const testingSha = '${{ needs.promote.outputs.testing_sha }}' || 'unknown';
             const prUrl = '${{ needs.promote.outputs.pr_url }}';
-            const title = 'ci: testing\u2192main promotion conflict';
-            const body = `## Testing \u2192 Main Promotion Conflict\n\n**Run:** ${runUrl}\n**Testing SHA:** \`${testingSha}\`${prUrl ? `\n**PR:** ${prUrl}` : ''}\n\n_Automatically opened by promote-testing-to-main.yml_`;
+            const title = 'ci: testing→main promotion conflict';
+            const body = `## Promotion Conflict\n\n**Run:** ${runUrl}\n**Source SHA:** \`${testingSha}\`${prUrl ? `\n**PR:** ${prUrl}` : ''}\n\n_Automatically opened by promote-testing-to-main.yml_`;
 
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
