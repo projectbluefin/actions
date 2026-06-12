@@ -38,7 +38,7 @@ runs:
         mount-opts: compress-force=zstd:2
         loopback-free: "1"
 
-    - name: Update Podman from Ubuntu resolute
+    - name: Add Ubuntu resolute apt source
       if: inputs.update-podman == 'true'
       shell: bash
       run: |
@@ -54,8 +54,37 @@ runs:
           mirror="http://ports.ubuntu.com/ubuntu-ports"
         fi
         echo "deb ${mirror} resolute universe main" | sudo tee /etc/apt/sources.list.d/resolute.list
+
+    - name: Compute apt cache key (weekly rotation)
+      if: inputs.update-podman == 'true'
+      id: apt-cache-key
+      shell: bash
+      run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore apt package cache
+      if: inputs.update-podman == 'true'
+      id: apt-cache-restore
+      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: /var/cache/apt/archives
+        key: apt-resolute-podman-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-cache-key.outputs.week }}
+        restore-keys: |
+          apt-resolute-podman-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install podman stack from Ubuntu resolute
+      if: inputs.update-podman == 'true'
+      shell: bash
+      run: |
+        set -eux
         /bin/time -f '%E %C' sudo apt update
         /bin/time -f '%E %C' sudo apt install -y --allow-downgrades crun/resolute buildah/resolute podman/resolute skopeo/resolute
+
+    - name: Save apt package cache
+      if: inputs.update-podman == 'true' && steps.apt-cache-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: /var/cache/apt/archives
+        key: ${{ steps.apt-cache-restore.outputs.cache-primary-key }}
 
     - name: Install just
       if: contains(fromJSON(inputs.install-tools), 'just')
