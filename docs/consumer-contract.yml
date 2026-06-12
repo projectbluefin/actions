@@ -127,6 +127,13 @@ composite_actions:
       - syft-version
       - image-name
 
+  apply-pkg-intervals:
+    path: bootc-build/apply-pkg-intervals/action.yml
+    required_inputs:
+      - source-image
+    optional_inputs:
+      - intervals-file
+
   chunka:
     path: bootc-build/chunka/action.yml
     required_inputs:
