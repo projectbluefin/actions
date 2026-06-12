@@ -89,6 +89,7 @@ jobs:
       main_sha: ${{ steps.main-sha.outputs.sha }}
       pr_number: ${{ steps.upsert.outputs.pr_number }}
       pr_url: ${{ steps.upsert.outputs.pr_url }}
+      promoted: ${{ steps.rebuild.outputs.promoted }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -157,6 +158,7 @@ jobs:
 
       - name: Rebuild squash promotion branch
         if: steps.compare.outputs.sync_needed == 'true'
+        id: rebuild
         env:
           PROMOTION_BRANCH: auto/promote-testing-to-main
           SOURCE_BRANCH: ${{ inputs.source_branch }}
@@ -167,12 +169,22 @@ jobs:
           # drift. Force-push ensures the PR always shows a clean single-commit diff.
           git checkout -B "$PROMOTION_BRANCH" "origin/${TARGET_BRANCH}"
           git merge --squash "origin/${SOURCE_BRANCH}"
-          git commit -m "chore: promote ${SOURCE_BRANCH} to ${TARGET_BRANCH}"
-          git push --force origin "$PROMOTION_BRANCH"
-          echo "✅ Squash branch rebuilt"
+          # Guard: git merge --squash may report "Already up to date" when source branch
+          # content is already subsumed by target (diverged histories, identical effective
+          # diff). git commit would exit 1 with nothing staged — catch this early.
+          if git diff --cached --quiet; then
+            echo "::notice::Squash produced no staged changes — source content already in target. No PR needed."
+            git push origin --delete "$PROMOTION_BRANCH" 2>/dev/null || true
+            echo "promoted=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore: promote ${SOURCE_BRANCH} to ${TARGET_BRANCH}"
+            git push --force origin "$PROMOTION_BRANCH"
+            echo "✅ Squash branch rebuilt"
+            echo "promoted=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Fetch last stable release metadata
-        if: steps.compare.outputs.sync_needed == 'true'
+        if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: last-release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -203,7 +215,7 @@ jobs:
           fi
 
       - name: Collect git log for PR body
-        if: steps.compare.outputs.sync_needed == 'true'
+        if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: gitlog
         env:
           SOURCE_BRANCH: ${{ inputs.source_branch }}
@@ -229,7 +241,7 @@ jobs:
           echo "compare_url=https://github.com/${{ github.repository }}/compare/${TARGET_BRANCH}...${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Render promotion PR body
-        if: steps.compare.outputs.sync_needed == 'true'
+        if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: render
         env:
           VARIANTS:     ${{ inputs.variants }}
@@ -271,7 +283,7 @@ jobs:
           echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"
 
       - name: Upsert promotion PR
-        if: steps.compare.outputs.sync_needed == 'true'
+        if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: upsert
         env:
           GH_TOKEN: ${{ github.token }}
@@ -326,7 +338,7 @@ jobs:
   gate:
     name: Release gate checks
     needs: [promote]
-    if: needs.promote.outputs.sync_needed == 'true'
+    if: needs.promote.outputs.sync_needed == 'true' && needs.promote.outputs.promoted != 'false'
     permissions:
       actions: read
       contents: read
