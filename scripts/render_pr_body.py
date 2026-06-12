@@ -154,19 +154,9 @@ def _section_footer(repo: str = "") -> str:
     pr_placeholder = "<pr-number>"
     return (
         "---\n\n"
-        "### Merge instructions\n\n"
-        "Requires **2 approvals** from `@projectbluefin/maintainers` then merge with a regular merge commit (not squash — squash breaks the merge base for future promotions):\n\n"
-        f"```bash\n"
-        f"gh pr merge {pr_placeholder}{repo_flag} --merge\n"
-        f"```\n\n"
-        "**Force merge** (emergency / bypass branch protection):\n\n"
-        f"```bash\n"
-        f"gh pr merge {pr_placeholder}{repo_flag} --merge --admin\n"
-        f"```\n"
+        "_Requires 2 approvals from `@projectbluefin/maintainers`. "
+        f"Force: `gh pr merge {pr_placeholder}{repo_flag} --merge --admin`_\n"
     )
-
-
-# ── Title builder ─────────────────────────────────────────────────────────────
 
 def build_title(primary_image: str, date: str) -> str:
     """
@@ -238,4 +228,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
