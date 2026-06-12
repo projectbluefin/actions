@@ -35,6 +35,10 @@ runs:
   using: "composite"
   steps:
     - name: Scan image with Trivy (SARIF)
+      # continue-on-error: Trivy DB errors (e.g. missing CPE indices for a new OS family like
+      # CentOS 10) cause Trivy to exit 1 even when exit-code is '0'. This must not block builds.
+      # See https://github.com/aquasecurity/trivy-db/issues/435
+      continue-on-error: true
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
         scan-type: 'image'
@@ -52,6 +56,8 @@ runs:
         image-config-scanners: secret
 
     - name: Scan image with Trivy (JSON)
+      # continue-on-error: same rationale as the SARIF step above.
+      continue-on-error: true
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
       with:
         scan-type: 'image'
@@ -115,7 +121,15 @@ runs:
         scan_date = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         counts = defaultdict(int)
-        trivy = json.loads(Path("trivy-results.json").read_text(encoding="utf-8"))
+        trivy_results_path = Path("trivy-results.json")
+        if not trivy_results_path.exists():
+            # Trivy crashed before producing output (e.g. DB missing CPE indices for this OS).
+            # Emit a warning and write an empty findings file so downstream steps don't fail.
+            # See https://github.com/aquasecurity/trivy-db/issues/435
+            print("::warning::trivy-results.json not found — Trivy scan likely failed (e.g. DB missing CPE indices for this OS). Skipping CVE summary.")
+            trivy = {"Results": []}
+        else:
+            trivy = json.loads(trivy_results_path.read_text(encoding="utf-8"))
         seen = set()
         critical_entries = []
         for result in trivy.get("Results", []) or []:
