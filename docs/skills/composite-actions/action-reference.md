@@ -138,6 +138,25 @@ gh attestation verify oci://ghcr.io/projectbluefin/bluefin@<digest> --repo proje
 
 ---
 
+## `apply-pkg-intervals`
+
+Sets `user.update-interval` xattrs on RPM-owned files before rechunking, giving chunkah the cadence signal it needs to group packages into layers by how often they actually update. Without these xattrs chunkah defaults everything to `weekly` and packs blind.
+
+**Run order:** must run after `Build Image` and **before** `chunka`. Already wired into `reusable-build.yml` at the correct position — consumers using `reusable-build.yml` get this for free.
+
+**Zero-config opt-in:** the action silently skips if `files/pkg-intervals.tsv` doesn't exist, so builds work before the file is bootstrapped. Add the file by running `reusable-pkg-cadence` once.
+
+| Input | Default | Description |
+|---|---|---|
+| `source-image` | **required** | Local image ref in rootful storage (e.g. `localhost/bluefin:latest`) |
+| `intervals-file` | `files/pkg-intervals.tsv` | Path to the `name<TAB>interval` TSV in the workspace |
+
+**How it works:** creates a `buildah` working container from the image, copies the TSV in, runs a `setfattr` loop over `rpm -ql` output for each package, commits back in-place. No script is shipped in the final image.
+
+**Maintaining `pkg-intervals.tsv`:** use `reusable-pkg-cadence.yml`. See below.
+
+---
+
 ## `chunka`
 
 OCI-native rechunking via [chunkah v0.6.0](https://github.com/coreos/chunkah). Uses `buildah build`

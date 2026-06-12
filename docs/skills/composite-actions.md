@@ -174,6 +174,7 @@ Quick reference — for full details see [`composite-actions/action-reference.md
 | `preflight` | Validate registry auth, normalize image refs |
 | `push-image` | Push with retry, digest capture, skopeo alias tags |
 | `sign-and-publish` | Cosign keyless/key + Syft SBOM + SLSA provenance attestation |
+| `apply-pkg-intervals` | Set `user.update-interval` xattrs on RPM files — run before `chunka` |
 | `chunka` | OCI-native chunkah v0.6.0 rechunking — the single rechunk implementation for all Fedora-based images |
 | `ghcr-cleanup` | Prune old/untagged GHCR images |
 | `detect-changes` | Detect changed paths, compute image-flavor build matrix |
@@ -206,6 +207,68 @@ Invalid (breaking) change: removing `tags`, renaming `github-token`, or changing
 ### Force-compression input rationale
 
 The `chunka` and `push-image` actions expose an optional `force-compression` input (default: `false`). This input exists for CentOS Stream 10 and other non-Fedora consumers that need to migrate existing registry layers from `gzip` to `zstd:chunked`. Fedora consumers should leave it at the default because Fedora images are already `zstd:chunked` and forcing recompression strips `ostree.components` layer annotations.
+
+### Package cadence intervals (apply-pkg-intervals + reusable-pkg-cadence)
+
+`bootc-build/apply-pkg-intervals` is wired into `reusable-build.yml` between the build and rechunk steps. It sets `user.update-interval` xattrs on every RPM-owned file so chunkah can group packages by how often they actually update. A typical weekly update then only pulls layers containing that week's changed packages — not fonts, firmware, or other stable content that shares layers separately.
+
+**Zero-config for existing consumers:** the action silently no-ops if `files/pkg-intervals.tsv` doesn't exist in the consumer repo. No Containerfile changes are needed.
+
+**Adopting as a new consumer:**
+
+1. Add `.github/workflows/pkg-cadence.yml` to your repo:
+
+```yaml
+# Trigger on your stable-push/release workflow completing — not a cron.
+# This ensures you measure exactly the image users just received.
+on:
+  workflow_run:
+    workflows: ["Execute Release"]   # replace with your stable-push workflow name
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      force_reclassify:
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  cadence:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    uses: projectbluefin/actions/.github/workflows/reusable-pkg-cadence.yml@v1
+    with:
+      image: ghcr.io/yourorg/yourimage:stable
+      repo: yourorg/yourimage
+      force_reclassify: ${{ inputs.force_reclassify || false }}
+    secrets: inherit
+```
+
+2. Run the workflow once manually (`workflow_dispatch`) to bootstrap `files/pkg-intervals.tsv`. It commits directly to `main`.
+
+3. From that point, `apply-pkg-intervals` runs automatically on every non-PR, non-testing build via `reusable-build.yml`, and the cadence workflow self-updates after each release.
+
+4. After ~4 weeks, bootstrap heuristics are replaced by observed churn data automatically.
+
+**Bootstrap heuristics** (used for the first 4 weeks):
+
+| Pattern | Interval |
+|---|---|
+| `tailscale`, `bootc`, `distrobox`, `fastfetch`, `uupd` | `weekly` |
+| `*-fonts*`, `google-noto-*`, `liberation-*`, `*cantarell*` | `yearly` |
+| `*firmware*`, `alsa-*-firmware` | `quarterly` |
+| everything else | `monthly` |
+
+**Threshold calibration** (90-day window, weekly stable builds ≈ 13 builds):
+
+| Changes in window | Interval |
+|---|---|
+| ≥ 8 | `weekly` |
+| 2–7 | `monthly` |
+| 1 | `quarterly` |
+| 0 | `yearly` |
+
+If your build cadence differs from weekly, pass `force_reclassify: true` after adjusting the thresholds in the reusable workflow, or open an issue to add a `build_cadence` input.
 
 ### Breaking change policy
 

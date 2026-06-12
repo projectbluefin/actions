@@ -1,0 +1,64 @@
+name: "bootc-build/apply-pkg-intervals"
+description: "Set user.update-interval xattrs on RPM-owned files for chunkah layer packing. Run before bootc-build/chunka."
+author: "projectbluefin"
+
+inputs:
+  source-image:
+    description: "Local image reference in rootful container storage (e.g. localhost/my-image:latest)"
+    required: true
+  intervals-file:
+    description: "Path to pkg-intervals.tsv (name<TAB>interval) — relative to the workspace root"
+    default: "files/pkg-intervals.tsv"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Apply update-interval xattrs
+      shell: bash
+      env:
+        SOURCE: ${{ inputs.source-image }}
+        INTERVALS_FILE: ${{ inputs.intervals-file }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! -f "${INTERVALS_FILE}" ]]; then
+          echo "::warning::apply-pkg-intervals: ${INTERVALS_FILE} not found — skipping"
+          exit 0
+        fi
+
+        echo "::group::apply-pkg-intervals — setting user.update-interval xattrs from ${INTERVALS_FILE}"
+
+        # Create a buildah working container from the built image.
+        # The image is in rootful storage (built with sudo just build-ghcr).
+        CTR=$(sudo buildah from "${SOURCE}")
+
+        cleanup() { sudo buildah rm "${CTR}" 2>/dev/null || true; }
+        trap cleanup EXIT
+
+        # Copy the intervals TSV into the working container so the setfattr
+        # loop can read it without a host bind-mount inside buildah run.
+        sudo buildah copy "${CTR}" "${INTERVALS_FILE}" /tmp/pkg-intervals.tsv
+
+        # Set user.update-interval on every file owned by each package.
+        # buildah run gives us the container's filesystem with xattr support.
+        sudo buildah run "${CTR}" -- bash -euo pipefail -c '
+          total_pkgs=0; total_files=0; skipped=0
+          while IFS=$'"'"'\t'"'"' read -r name interval _comment; do
+            [[ "$name" =~ ^#.*$ || -z "$name" ]] && continue
+            mapfile -t owned < <(rpm -ql "$name" 2>/dev/null || true)
+            if [[ ${#owned[@]} -eq 0 ]]; then (( skipped++ )) || true; continue; fi
+            for fpath in "${owned[@]}"; do
+              [[ -e "$fpath" ]] || continue
+              setfattr -n user.update-interval -v "$interval" "$fpath" 2>/dev/null || true
+              (( total_files++ )) || true
+            done
+            (( total_pkgs++ )) || true
+          done < /tmp/pkg-intervals.tsv
+          rm -f /tmp/pkg-intervals.tsv
+          echo "Set user.update-interval on ${total_files} files across ${total_pkgs} packages (${skipped} not installed)"
+        '
+
+        # Commit back in-place — same tag, no new layer name needed.
+        sudo buildah commit "${CTR}" "${SOURCE}"
+
+        echo "::endgroup::"

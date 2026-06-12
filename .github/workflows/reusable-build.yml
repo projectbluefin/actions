@@ -261,6 +261,17 @@ jobs:
           path: /tmp/sbom-upload/
           retention-days: 7
 
+      - name: Apply package update-interval xattrs
+        # Sets user.update-interval xattrs on RPM-owned files so chunkah can
+        # pack packages by update cadence (weekly/monthly/quarterly/yearly).
+        # files/pkg-intervals.tsv is maintained by the pkg-cadence workflow.
+        # Skip on PRs and testing stream — rechunk is also skipped there.
+        if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
+        uses: projectbluefin/actions/bootc-build/apply-pkg-intervals@v1
+        with:
+          source-image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
+          intervals-file: files/pkg-intervals.tsv
+
       - name: Record rechunk start time
         id: rechunk-timing
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
