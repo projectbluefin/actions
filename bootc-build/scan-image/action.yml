@@ -96,7 +96,7 @@ runs:
 
         def normalize_severity(value):
             text = str(value or "").strip().upper()
-            if text in severity_order:
+            if text in severity_rank:
                 return text
             try:
                 score = float(text)
@@ -192,7 +192,7 @@ runs:
         PY
 
     - name: Upload SARIF to GitHub Security tab
-      if: always()
+      if: always() && hashFiles('trivy-results.sarif') != ''
       uses: github/codeql-action/upload-sarif@9e8d0789d4a0fa9ceb6b1738f7e269594bdd67f0 # v3.28.9
       with:
         sarif_file: trivy-results.sarif
