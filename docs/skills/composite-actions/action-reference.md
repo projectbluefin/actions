@@ -170,6 +170,11 @@ in consumer repos.
   `rechunk` recipe in their Justfile.
 - The `max_layers` workflow input (default: "128") is passed to the action. Upstream chunkah default
   is 64; bootc images benefit from higher values for better layer reuse granularity.
+- **Without `user.update-interval` xattrs, chunkah defaults all RPMs to `weekly` and packs blind.**
+  bluefin ships ~1,831 RPMs and fully saturates all 128 layers (~14 RPMs/layer). Use
+  `bootc-build/apply-pkg-intervals` before `chunka` to give chunkah cadence signal — fonts and
+  firmware get their own stable layers, fast-movers get volatile layers. See the
+  `apply-pkg-intervals` section above.
 - Source image must be `localhost/<IMAGE_NAME>:<DEFAULT_TAG>` in rootful storage (result of
   `just build-ghcr` which runs with sudo).
 
