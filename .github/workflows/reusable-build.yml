@@ -385,6 +385,7 @@ jobs:
             "localhost/${IMAGE_NAME}:${DEFAULT_TAG}"
 
       - name: Scan image for vulnerabilities
+        continue-on-error: true  # Trivy DB issues (e.g. new OS families) must never block builds
         uses: projectbluefin/actions/bootc-build/scan-image@v1
         with:
           image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
