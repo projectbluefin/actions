@@ -94,6 +94,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout actions scripts
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: projectbluefin/actions
+          path: .workflow-scripts
+          sparse-checkout: |
+            scripts/render_pr_body.py
+          sparse-checkout-cone-mode: false
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -230,7 +239,7 @@ jobs:
           TAG_ARGS=()
           [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
 
-          python3 scripts/render_pr_body.py \
+          python3 .workflow-scripts/scripts/render_pr_body.py \
             --project-name  "${PROJECT_NAME}" \
             --primary-image "${PRIMARY_IMAGE}" \
             --variants-json "${VARIANTS}" \
@@ -394,3 +403,4 @@ jobs:
                 labels: ['area/ci', 'kind/bug', 'priority/p1'],
               });
             }
+
