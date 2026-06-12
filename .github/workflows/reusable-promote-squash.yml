@@ -286,7 +286,8 @@ jobs:
               --base "$TARGET_BRANCH" \
               --head "$PROMOTION_BRANCH" \
               --title "${PR_TITLE}" \
-              --body-file /tmp/pr-body.md)
+              --body-file /tmp/pr-body.md \
+              --reviewer "${{ github.repository_owner }}/maintainers")
             PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
             echo "Created PR #${PR_NUMBER}"
           fi
@@ -403,5 +404,6 @@ jobs:
                 labels: ['area/ci', 'kind/bug', 'priority/p1'],
               });
             }
+
 
 
