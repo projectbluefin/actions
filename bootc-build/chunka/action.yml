@@ -79,9 +79,25 @@ runs:
           done
 
           LOWER=$(sudo podman image mount "${SOURCE}")
-          UPPER=$(mktemp -d -p /var/tmp)
-          WORK=$(mktemp -d -p /var/tmp)
-          MERGED=$(mktemp -d -p /var/tmp)
+
+          # Pick the tmpdir with the most free space for the overlay work dirs.
+          # inject-xattrs.py triggers overlayfs copy-up for every file it touches
+          # (700K+ entries on BST images), which can easily exhaust /var/tmp on
+          # runners where setup-runner's BTRFS loopback leaves only ~1 GB on root.
+          # /var/lib/containers is the BTRFS volume (~49 GB) on those runners.
+          _OVERLAY_TMPDIR="/var/tmp"
+          for _candidate in /var/lib/containers /var/tmp; do
+            if [[ -d "$_candidate" ]]; then
+              _free=$(df --output=avail "$_candidate" 2>/dev/null | tail -1 || echo 0)
+              _best=$(df --output=avail "$_OVERLAY_TMPDIR" 2>/dev/null | tail -1 || echo 0)
+              if (( _free > _best )); then _OVERLAY_TMPDIR="$_candidate"; fi
+            fi
+          done
+          echo "==> overlay tmpdir: ${_OVERLAY_TMPDIR} ($(df -h --output=avail "${_OVERLAY_TMPDIR}" | tail -1 | tr -d ' ') free)"
+
+          UPPER=$(mktemp -d -p "$_OVERLAY_TMPDIR")
+          WORK=$(mktemp -d -p "$_OVERLAY_TMPDIR")
+          MERGED=$(mktemp -d -p "$_OVERLAY_TMPDIR")
           sudo chmod 755 "$UPPER" "$WORK" "$MERGED"
 
           cleanup_bst() {
