@@ -17,9 +17,13 @@
 #   jobs:
 #     automerge:
 #       if: github.event.workflow_run.conclusion == 'success'
-#       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@<sha> # v1
+#       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@v1
 #       with:
 #         head_sha: ${{ github.event.workflow_run.head_sha }}
+#       # Optional — only needed when base_branch has review requirements
+#       # with a bypass list that does not include github-actions[bot]:
+#       # secrets:
+#       #   token: ${{ secrets.MERGE_TOKEN }}
 
 name: Reusable Renovate Auto-merge
 
@@ -35,6 +39,14 @@ on:
         type: string
         default: "testing"
         required: false
+    secrets:
+      token:
+        description: >
+          Optional GitHub token with merge permissions. Use when the base
+          branch has review-bypass rules that exclude github-actions[bot]
+          (e.g. a mergeraptor app token). Falls back to github.token when
+          not provided.
+        required: false
 
 permissions:
   contents: write
@@ -48,7 +60,7 @@ jobs:
       - name: Find Renovate PR for this commit
         id: find-pr
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.token || github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           BASE_BRANCH: ${{ inputs.base_branch }}
         run: |
@@ -71,7 +83,7 @@ jobs:
       - name: Merge PR
         if: steps.find-pr.outputs.pr_number != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.token || github.token }}
         run: |
           # Direct squash-merge. --auto is intentionally absent:
           #   1. testing has no branch protection rules; --auto requires them
