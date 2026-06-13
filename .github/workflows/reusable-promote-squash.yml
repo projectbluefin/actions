@@ -262,7 +262,7 @@ jobs:
           set -euo pipefail
           PRIMARY_IMAGE=$(echo "${VARIANTS}" | jq -r 'if .[0] | type == "string" then .[0] else .[0].image end')
           # Title-case slug for display name: bluefin-lts → Bluefin Lts
-          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | sed 's/-/ /g; s/\b\(.\\)/\u\1/g')
+          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | tr '-' ' ' | python3 -c "import sys; print(sys.stdin.read().title().strip())")
           DATE="$(date -u +%Y-%m-%d)"
 
           DAYS_ARGS=()
