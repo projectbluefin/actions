@@ -1,0 +1,66 @@
+name: Prune merged branches
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Weekly on Mondays at 04:00 UTC
+  workflow_dispatch:
+
+jobs:
+  prune:
+    name: Delete branches with merged PRs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Prune merged branches
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const PROTECTED = new Set(['main', 'v1']);
+
+            const { data: branches } = await github.rest.repos.listBranches({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            let deleted = 0;
+            let skipped = 0;
+
+            for (const branch of branches) {
+              const name = branch.name;
+
+              if (PROTECTED.has(name)) {
+                continue;
+              }
+
+              // Find merged PRs whose head branch matches
+              const { data: prs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'closed',
+                head: `${context.repo.owner}:${name}`,
+                per_page: 1,
+              });
+
+              const merged = prs.find(pr => pr.merged_at !== null);
+              if (!merged) {
+                skipped++;
+                continue;
+              }
+
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `heads/${name}`,
+                });
+                core.info(`Deleted branch: ${name} (merged via PR #${merged.number})`);
+                deleted++;
+              } catch (err) {
+                core.warning(`Could not delete ${name}: ${err.message}`);
+              }
+            }
+
+            core.info(`Done — deleted: ${deleted}, skipped (no merged PR): ${skipped}`);
