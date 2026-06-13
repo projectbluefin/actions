@@ -338,6 +338,18 @@ jobs:
             echo "Created PR #${PR_NUMBER}"
           fi
 
+          # Re-request the maintainers team after a force-push (promoted=true).
+          # A force-push dismisses existing reviews and clears reviewer requests,
+          # leaving nobody assigned for the second review. Skip on promoted=skipped
+          # (tree unchanged, existing approvals preserved — no re-request needed).
+          if [ "${{ steps.rebuild.outputs.promoted }}" = "true" ]; then
+            gh pr edit "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --add-reviewer "${{ github.repository_owner }}/maintainers" 2>/dev/null \
+              && echo "✅ Re-requested maintainers review" \
+              || echo "⚠️  Could not re-request reviewers (team may not exist or no permission)"
+          fi
+
           # Enable auto-merge: PR lands as soon as required status checks pass.
           # Falls back gracefully if auto-merge is not enabled on the repo.
           gh pr merge "$PR_NUMBER" \
