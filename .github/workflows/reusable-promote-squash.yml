@@ -168,7 +168,11 @@ jobs:
           # Always rebuild from current origin/target_branch — eliminates staleness and conflict
           # drift. Force-push ensures the PR always shows a clean single-commit diff.
           git checkout -B "$PROMOTION_BRANCH" "origin/${TARGET_BRANCH}"
-          git merge --squash "origin/${SOURCE_BRANCH}"
+          # -X theirs: source branch (main) is always the source of truth for promotions.
+          # Auto-resolve any conflicts (e.g. generated files that diverged on both branches)
+          # in favour of the source. This prevents spurious failure issues from being filed
+          # when target has locally-accumulated changes that differ from source.
+          git merge --squash -X theirs "origin/${SOURCE_BRANCH}"
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
@@ -258,7 +262,7 @@ jobs:
           set -euo pipefail
           PRIMARY_IMAGE=$(echo "${VARIANTS}" | jq -r 'if .[0] | type == "string" then .[0] else .[0].image end')
           # Title-case slug for display name: bluefin-lts → Bluefin Lts
-          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | sed 's/-/ /g; s/\b\(.\)/\u\1/g')
+          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | sed 's/-/ /g; s/\b\(.\\)/\u\1/g')
           DATE="$(date -u +%Y-%m-%d)"
 
           DAYS_ARGS=()
@@ -431,7 +435,3 @@ jobs:
                 labels: ['area/ci', 'kind/bug', 'priority/p1'],
               });
             }
-
-
-
-
