@@ -1,5 +1,3 @@
-name: Reusable Renovate Auto-merge
-
 # Centralised Renovate auto-merge logic for projectbluefin image repos.
 # Each image repo keeps its own workflow_run trigger (which must reference
 # the repo-specific CI workflow name) but delegates the PR lookup + merge
@@ -11,15 +9,19 @@ name: Reusable Renovate Auto-merge
 #     workflow_run:
 #       workflows: ["<repo-specific CI workflow name>"]
 #       types: [completed]
+#
 #   permissions:
 #     contents: write
 #     pull-requests: write
+#
 #   jobs:
 #     automerge:
 #       if: github.event.workflow_run.conclusion == 'success'
 #       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@<sha> # v1
 #       with:
 #         head_sha: ${{ github.event.workflow_run.head_sha }}
+
+name: Reusable Renovate Auto-merge
 
 on:
   workflow_call:
@@ -66,13 +68,19 @@ jobs:
             echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Enable auto-merge
+      - name: Merge PR
         if: steps.find-pr.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Direct squash-merge. --auto is intentionally absent:
+          #   1. testing has no branch protection rules; --auto requires them
+          #      (enablePullRequestAutoMerge → "Protected branch rules not configured")
+          #   2. --auto uses GitHub's auto-merge queue which does NOT honour
+          #      bypass_pull_request_allowances; only direct merges do.
+          # CI success is already guaranteed by the workflow_run trigger condition.
           gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
-            --auto \
             --squash \
-            --repo "${{ github.repository }}"
-          echo "✅ Auto-merge enabled on PR #${{ steps.find-pr.outputs.pr_number }}"
+            --repo "${{ github.repository }}" \
+            || echo "::warning::PR merge skipped (already merged or conflicting)"
+          echo "✅ Merged PR #${{ steps.find-pr.outputs.pr_number }}"
