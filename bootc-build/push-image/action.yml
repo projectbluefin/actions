@@ -104,7 +104,7 @@ runs:
           attempt=$((attempt + 1))
           rm -f "${DIGEST_FILE}"
 
-          sudo -E podman push \
+          buildah push \
             --compression-format "${COMPRESSION_FORMAT}" \
             --compression-level 3 \
             ${FC_FLAG:+${FC_FLAG}} \
