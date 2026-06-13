@@ -181,10 +181,25 @@ jobs:
             git push origin --delete "$PROMOTION_BRANCH" 2>/dev/null || true
             echo "promoted=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "chore: promote ${SOURCE_BRANCH} to ${TARGET_BRANCH}"
-            git push --force origin "$PROMOTION_BRANCH"
-            echo "✅ Squash branch rebuilt"
-            echo "promoted=true" >> "$GITHUB_OUTPUT"
+            # Tree-identity check: if the squash content is unchanged from the existing
+            # promotion branch, skip the force-push. A force-push changes the head SHA
+            # and causes GitHub to dismiss any existing PR approvals — even when the diff
+            # is identical and only the parent commit (main HEAD) moved forward.
+            # Skipping the push preserves approvals so a second maintainer can merge
+            # without the first having to re-approve.
+            # promoted=skipped passes all downstream `!= 'false'` guards so the PR body
+            # and gate section are still refreshed.
+            NEW_TREE=$(git write-tree)
+            EXISTING_TREE=$(git rev-parse "origin/${PROMOTION_BRANCH}^{tree}" 2>/dev/null || echo "")
+            if [ "$NEW_TREE" = "$EXISTING_TREE" ] && [ -n "$EXISTING_TREE" ]; then
+              echo "::notice::Squash tree unchanged — skipping push to preserve PR approvals"
+              echo "promoted=skipped" >> "$GITHUB_OUTPUT"
+            else
+              git commit -m "chore: promote ${SOURCE_BRANCH} to ${TARGET_BRANCH}"
+              git push --force origin "$PROMOTION_BRANCH"
+              echo "✅ Squash branch rebuilt"
+              echo "promoted=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Fetch last stable release metadata
