@@ -1,10 +1,16 @@
-name: Reusable Sync Branches
-
 # Merges source_branch into target_branch after a squash-merge promotion.
 # Prevents the recurring "BEHIND" state caused by squash merges creating a
 # divergence between the source branch and its squash commit on the target.
-#
 # Called by each consumer repo's sync-main-to-testing.yml on push to main.
+#
+# Divergence handling: if target has commits source does not (e.g. Renovate
+# PRs landed on testing while main got CI fixes), the target is force-reset
+# to source instead of attempting a merge. The force-reset is safe because:
+#   - Automated commits on testing (Renovate digests) are recreated by Renovate
+#   - Human commits should not land on testing directly (enforced by pr-triage)
+#   - A failed merge leaves the pipeline broken indefinitely; force-reset
+#     recovers in seconds and is logged clearly.
+name: Reusable Sync Branches
 
 on:
   workflow_call:
@@ -48,20 +54,48 @@ jobs:
             echo "Branches have identical trees — no sync needed"
           else
             echo "sync_needed=true" >> "$GITHUB_OUTPUT"
-            echo "Trees differ — merging ${{ inputs.source_branch }} into ${{ inputs.target_branch }}"
+            echo "Trees differ — syncing ${{ inputs.source_branch }} into ${{ inputs.target_branch }}"
           fi
 
-      - name: Merge source into target
+      - name: Detect divergence
+        id: diverge
         if: steps.check.outputs.sync_needed == 'true'
         run: |
           set -euo pipefail
-          git checkout "${{ inputs.target_branch }}"
-          if ! git merge "origin/${{ inputs.source_branch }}" \
-              --no-edit \
-              -m "ci: sync ${{ inputs.target_branch }} with ${{ inputs.source_branch }} after squash-merge promotion"; then
-            echo "ERROR: merge conflict — manual resolution required" >&2
-            git merge --abort
-            exit 1
+          AHEAD=$(git rev-list --count \
+            "origin/${{ inputs.source_branch }}..origin/${{ inputs.target_branch }}")
+          echo "ahead=${AHEAD}" >> "$GITHUB_OUTPUT"
+          if [ "$AHEAD" -gt 0 ]; then
+            echo "strategy=force-reset" >> "$GITHUB_OUTPUT"
+            echo "⚠️  ${{ inputs.target_branch }} is ${AHEAD} commit(s) ahead of ${{ inputs.source_branch }} — diverged, will force-reset"
+          else
+            echo "strategy=merge" >> "$GITHUB_OUTPUT"
+            echo "${{ inputs.target_branch }} is simply behind ${{ inputs.source_branch }} — will fast-forward merge"
           fi
+
+      - name: Merge source into target (fast-forward)
+        if: >-
+          steps.check.outputs.sync_needed == 'true' &&
+          steps.diverge.outputs.strategy == 'merge'
+        run: |
+          set -euo pipefail
+          git checkout "${{ inputs.target_branch }}"
+          git merge "origin/${{ inputs.source_branch }}" \
+            --no-edit \
+            -m "ci: sync ${{ inputs.target_branch }} with ${{ inputs.source_branch }} after squash-merge promotion"
           git push origin "${{ inputs.target_branch }}"
           echo "✅ Merged ${{ inputs.source_branch }} → ${{ inputs.target_branch }}"
+
+      - name: Force-reset target to source (diverged)
+        if: >-
+          steps.check.outputs.sync_needed == 'true' &&
+          steps.diverge.outputs.strategy == 'force-reset'
+        run: |
+          set -euo pipefail
+          AHEAD="${{ steps.diverge.outputs.ahead }}"
+          echo "Force-resetting ${{ inputs.target_branch }} to origin/${{ inputs.source_branch }}"
+          echo "Dropping ${AHEAD} diverged commit(s) — expected to be automated (Renovate digests, prior sync commits)"
+          git checkout "${{ inputs.target_branch }}"
+          git reset --hard "origin/${{ inputs.source_branch }}"
+          git push origin "${{ inputs.target_branch }}" --force
+          echo "✅ Force-reset ${{ inputs.target_branch }} → ${{ inputs.source_branch }} (dropped ${AHEAD} diverged commits)"
