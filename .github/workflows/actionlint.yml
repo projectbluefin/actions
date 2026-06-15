@@ -26,3 +26,8 @@ jobs:
         with:
           reporter: github-pr-check
           fail_on_error: true
+          # 'workflows' is a valid GITHUB_TOKEN scope (added Feb 2023, needed to push
+          # commits touching .github/workflows/). actionlint's built-in permission list
+          # predates this addition. Suppress the false-positive until actionlint is updated.
+          # https://github.blog/changelog/2023-02-09-github-actions-update-on-code-and-workflow-permissions/
+          actionlint_flags: -ignore 'unknown permission scope "workflows"'
