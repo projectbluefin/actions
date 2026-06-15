@@ -67,6 +67,16 @@ on:
         required: false
         type: string
         default: 'main'
+      use_merge_queue:
+        description: >
+          Set true when the target branch is protected by a GitHub merge queue ruleset.
+          Uses enqueuePullRequest GraphQL instead of enablePullRequestAutoMerge.
+          enablePullRequestAutoMerge is blocked by merge queue rulesets and silently
+          fails. enqueuePullRequest places the PR in the queue and the queue runner
+          merges it once all required approvals and checks pass.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -350,13 +360,28 @@ jobs:
               || echo "⚠️  Could not re-request reviewers (team may not exist or no permission)"
           fi
 
-          # Enable auto-merge: PR lands as soon as required status checks pass.
-          # Falls back gracefully if auto-merge is not enabled on the repo.
-          gh pr merge "$PR_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --auto 2>/dev/null \
-            && echo "✅ Auto-merge enabled on PR #${PR_NUMBER}" \
-            || echo "⚠️  Auto-merge not available — maintainer merges when checks pass"
+          # Enable auto-merge or enqueue in the merge queue.
+          # For repos with a merge queue ruleset on the target branch, --auto calls
+          # enablePullRequestAutoMerge which is blocked — use enqueuePullRequest instead.
+          # The PR will sit in the queue and merge automatically once required approvals
+          # and status checks pass.
+          if [ "${{ inputs.use_merge_queue }}" = "true" ]; then
+            NODE_ID=$(gh pr view "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --json id --jq '.id')
+            # shellcheck disable=SC2016  # $id is a GraphQL variable, not a shell variable
+            gh api graphql \
+              -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' \
+              -f id="$NODE_ID" 2>/dev/null \
+              && echo "✅ PR #${PR_NUMBER} enqueued in merge queue" \
+              || echo "⚠️  Could not enqueue PR #${PR_NUMBER} (may already be queued, or approvals not yet met)"
+          else
+            gh pr merge "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --auto 2>/dev/null \
+              && echo "✅ Auto-merge enabled on PR #${PR_NUMBER}" \
+              || echo "⚠️  Auto-merge not available — maintainer merges when checks pass"
+          fi
 
           PR_URL=$(gh pr view "$PR_NUMBER" \
             --repo "${{ github.repository }}" \
