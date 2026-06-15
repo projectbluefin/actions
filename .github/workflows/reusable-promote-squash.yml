@@ -106,7 +106,8 @@ jobs:
           # Gate queries Actions API by head_sha — must match the branch where e2e actually ran.
           E2E_HEAD_BRANCH: ${{ inputs.source_branch }}
         run: |
-          sha=$(gh api "repos/${{ github.repository }}/git/ref/heads/${E2E_HEAD_BRANCH}" --jq '.object.sha')
+          sha=$(gh api "repos/${{ github.repository }}/git/ref/heads/${E2E_HEAD_BRANCH}" --jq '.object.sha') \
+            || { echo "::error::Branch '${E2E_HEAD_BRANCH}' not found — check inputs.source_branch"; exit 1; }
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout actions scripts
