@@ -80,9 +80,10 @@ jobs:
         run: |
           set -euo pipefail
           git checkout "${{ inputs.target_branch }}"
-          git merge "origin/${{ inputs.source_branch }}" \
-            --no-edit \
-            -m "ci: sync ${{ inputs.target_branch }} with ${{ inputs.source_branch }} after squash-merge promotion"
+          # --ff-only: refuse to create a merge commit. If git cannot fast-forward
+          # (e.g. runner-level merge.ff=false, submodule oddity), fail loudly.
+          git merge --ff-only "origin/${{ inputs.source_branch }}" \
+            --no-edit
           git push origin "${{ inputs.target_branch }}"
           echo "✅ Merged ${{ inputs.source_branch }} → ${{ inputs.target_branch }}"
 
@@ -93,9 +94,13 @@ jobs:
         run: |
           set -euo pipefail
           AHEAD="${{ steps.diverge.outputs.ahead }}"
-          echo "Force-resetting ${{ inputs.target_branch }} to origin/${{ inputs.source_branch }}"
-          echo "Dropping ${AHEAD} diverged commit(s) — expected to be automated (Renovate digests, prior sync commits)"
+          # Capture the exact SHA we fetched for --force-with-lease. If a concurrent
+          # push landed on the target between the Detect step and this push, --force-with-lease
+          # will reject the push and the workflow will fail rather than silently drop new commits.
+          TARGET_SHA=$(git rev-parse "origin/${{ inputs.target_branch }}")
+          echo "::warning::Force-resetting ${{ inputs.target_branch }} to origin/${{ inputs.source_branch }} — dropping ${AHEAD} diverged commit(s). Verify no human work was on this branch."
+          echo "Expected: automated (Renovate digests, prior sync commits)"
           git checkout "${{ inputs.target_branch }}"
           git reset --hard "origin/${{ inputs.source_branch }}"
-          git push origin "${{ inputs.target_branch }}" --force
+          git push origin "${{ inputs.target_branch }}" --force-with-lease="${{ inputs.target_branch }}:${TARGET_SHA}"
           echo "✅ Force-reset ${{ inputs.target_branch }} → ${{ inputs.source_branch }} (dropped ${AHEAD} diverged commits)"
