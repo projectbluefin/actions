@@ -93,10 +93,6 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      # workflows: write is a valid GITHUB_TOKEN scope (added Feb 2023) required to push
-      # commits that touch .github/workflows/. actionlint's built-in list is outdated.
-      # See: https://github.blog/changelog/2023-02-09-github-actions-update-on-code-and-workflow-permissions/
-      workflows: write # actionlint:ignore permissions
     outputs:
       sync_needed: ${{ steps.compare.outputs.sync_needed }}
       testing_sha: ${{ steps.compare.outputs.testing_sha }}
