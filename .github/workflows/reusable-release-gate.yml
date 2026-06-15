@@ -492,6 +492,3 @@ jobs:
             echo '::error::Release gate is blocked after retry/recovery. Review the sticky PR comment and the auto-filed issue for details.'
             exit 1
           fi
-
-
-
