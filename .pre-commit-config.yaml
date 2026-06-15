@@ -14,6 +14,11 @@ repos:
     rev: 03d0035246f3e81f36aed592ffb4bebf33a03106  # v1.7.7
     hooks:
       - id: actionlint
+        args:
+          # 'workflows' is a valid GITHUB_TOKEN scope (Feb 2023). actionlint's
+          # built-in list predates this. Suppress until actionlint is updated.
+          - -ignore
+          - 'unknown permission scope "workflows"'
   - repo: local
     hooks:
       - id: no-floating-action-tags
