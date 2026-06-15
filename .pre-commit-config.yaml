@@ -22,7 +22,7 @@ repos:
       - id: no-floating-action-tags
         name: Block floating GitHub Action tags (@main, @v*)
         language: pygrep
-        entry: 'uses:(?!.*projectbluefin/).*@(main|master|latest|v[0-9])'
+        entry: 'uses:(?!.*projectbluefin/actions/).*@(main|master|latest|v[0-9])'
         types: [yaml]
         files: '(^\.github/workflows/.*\.yml$|action\.yml$)'
       - id: check-consumer-contract
