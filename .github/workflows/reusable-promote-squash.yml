@@ -86,7 +86,7 @@ jobs:
     outputs:
       sync_needed: ${{ steps.compare.outputs.sync_needed }}
       testing_sha: ${{ steps.compare.outputs.testing_sha }}
-      main_sha: ${{ steps.main-sha.outputs.sha }}
+      source_sha: ${{ steps.source-sha.outputs.sha }}
       pr_number: ${{ steps.upsert.outputs.pr_number }}
       pr_url: ${{ steps.upsert.outputs.pr_url }}
       promoted: ${{ steps.rebuild.outputs.promoted }}
@@ -96,18 +96,18 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve main HEAD SHA for e2e gate
-        id: main-sha
+      - name: Resolve source branch HEAD SHA for e2e gate
+        id: source-sha
         env:
           GH_TOKEN: ${{ github.token }}
-          # Use source_branch for the e2e gate HEAD SHA.
-          # E2E workflows (post-testing-e2e, post-merge-e2e) run on builds
-          # to main (not on the promotion target like lts).  This covers:
-          #   bluefin:     source_branch=testing → main HEAD has e2e runs
-          #   bluefin-lts: source_branch=main   → main HEAD has e2e runs
-          E2E_HEAD_BRANCH: main
+          # E2E workflows run on builds to source_branch:
+          #   bluefin:     source_branch=testing  → post-testing-e2e runs carry testing HEAD SHA
+          #   bluefin-lts: source_branch=main     → post-merge-e2e runs carry main HEAD SHA
+          # Gate queries Actions API by head_sha — must match the branch where e2e actually ran.
+          E2E_HEAD_BRANCH: ${{ inputs.source_branch }}
         run: |
-          sha=$(gh api "repos/${{ github.repository }}/git/ref/heads/${E2E_HEAD_BRANCH}" --jq '.object.sha')
+          sha=$(gh api "repos/${{ github.repository }}/git/ref/heads/${E2E_HEAD_BRANCH}" --jq '.object.sha') \
+            || { echo "::error::Branch '${E2E_HEAD_BRANCH}' not found — check inputs.source_branch"; exit 1; }
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout actions scripts
@@ -380,7 +380,7 @@ jobs:
     with:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}
-      head_sha: ${{ needs.promote.outputs.main_sha }}
+      head_sha: ${{ needs.promote.outputs.source_sha }}
       registry: ${{ inputs.registry }}
       variants: ${{ inputs.variants }}
       cosign_identity_regexp: ${{ inputs.cosign_identity_regexp }}
