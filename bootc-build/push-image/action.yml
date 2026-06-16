@@ -63,8 +63,13 @@ runs:
         GITHUB_ACTOR: ${{ github.actor }}
       run: |
         set -euo pipefail
-        # Root login for buildah push (images built via sudo land in root storage)
-        echo "${GITHUB_TOKEN}" | sudo podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
+        # Root login for buildah push (images built via sudo land in root storage).
+        # Use --authfile to avoid XDG_RUNTIME_DIR permission issues under sudo on
+        # Ubuntu 24.04: AppArmor/systemd-logind restricts root processes from
+        # accessing /run/user/<uid>/containers even with sudo env inheritance.
+        echo "${GITHUB_TOKEN}" | sudo podman login \
+          --authfile "${RUNNER_TEMP}/push-auth.json" \
+          "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
         # Rootless logins for skopeo remote-to-remote alias copies
         echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
         echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin 2>/dev/null || true
@@ -110,8 +115,11 @@ runs:
           # sudo required: build-ghcr runs as root, so the image is in root's
           # container storage (/var/lib/containers/storage).  Rootless buildah
           # cannot see root's storage; sudo makes it visible.
+          # --authfile uses the same explicit path as sudo podman login above,
+          # bypassing XDG_RUNTIME_DIR which is inaccessible to sudo on Ubuntu 24.04.
           # --retry-delay requires buildah >= 1.28 (ubuntu-24.04 ships 1.35+)
           sudo buildah push \
+            --authfile "${RUNNER_TEMP}/push-auth.json" \
             --compression-format "${COMPRESSION_FORMAT}" \
             --compression-level 3 \
             ${FC_FLAG:+${FC_FLAG}} \
