@@ -279,7 +279,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p sbom-current
-          "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" \
+          "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" --select-catalogers "rpm" \
             -o spdx-json="sbom-current/${IMAGE_NAME}.sbom.json"
           echo "SBOM generated: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
 
