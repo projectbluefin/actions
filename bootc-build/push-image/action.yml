@@ -63,6 +63,9 @@ runs:
         GITHUB_ACTOR: ${{ github.actor }}
       run: |
         set -euo pipefail
+        # Root login for buildah push (images built via sudo land in root storage)
+        echo "${GITHUB_TOKEN}" | sudo podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
+        # Rootless logins for skopeo remote-to-remote alias copies
         echo "${GITHUB_TOKEN}" | podman login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin
         echo "${GITHUB_TOKEN}" | docker login "${REGISTRY}" -u "${GITHUB_ACTOR}" --password-stdin 2>/dev/null || true
 
@@ -104,8 +107,11 @@ runs:
           attempt=$((attempt + 1))
           rm -f "${DIGEST_FILE}"
 
+          # sudo required: build-ghcr runs as root, so the image is in root's
+          # container storage (/var/lib/containers/storage).  Rootless buildah
+          # cannot see root's storage; sudo makes it visible.
           # --retry-delay requires buildah >= 1.28 (ubuntu-24.04 ships 1.35+)
-          buildah push \
+          sudo buildah push \
             --compression-format "${COMPRESSION_FORMAT}" \
             --compression-level 3 \
             ${FC_FLAG:+${FC_FLAG}} \
