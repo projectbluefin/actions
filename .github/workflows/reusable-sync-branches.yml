@@ -26,10 +26,10 @@ on:
     secrets:
       BLUEFINBOT_APP_ID:
         description: "GitHub App client ID for bypassing protected-branch push rules"
-        required: true
+        required: false
       BLUEFINBOT_PRIVATE_KEY:
         description: "GitHub App private key"
-        required: true
+        required: false
 
 jobs:
   sync:
