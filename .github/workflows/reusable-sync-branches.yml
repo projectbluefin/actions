@@ -24,12 +24,9 @@ on:
         default: testing
         type: string
     secrets:
-      BLUEFINBOT_APP_ID:
-        description: "GitHub App client ID for bypassing protected-branch push rules"
-        required: false
-      BLUEFINBOT_PRIVATE_KEY:
-        description: "GitHub App private key"
-        required: false
+      GH_TOKEN:
+        description: "GitHub App token for bypassing protected-branch push rules. Generate in caller using actions/create-github-app-token and pass here."
+        required: true
 
 jobs:
   sync:
@@ -39,18 +36,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Generate GitHub App token
-        id: generate-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          client-id: ${{ secrets.BLUEFINBOT_APP_ID }}
-          private-key: ${{ secrets.BLUEFINBOT_PRIVATE_KEY }}
-
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
-          token: ${{ steps.generate-token.outputs.token }}
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Configure git
         run: |
@@ -95,8 +85,6 @@ jobs:
         run: |
           set -euo pipefail
           git checkout "${{ inputs.target_branch }}"
-          # --ff-only: refuse to create a merge commit. If git cannot fast-forward
-          # (e.g. runner-level merge.ff=false, submodule oddity), fail loudly.
           git merge --ff-only "origin/${{ inputs.source_branch }}" \
             --no-edit
           git push origin "${{ inputs.target_branch }}"
@@ -109,9 +97,6 @@ jobs:
         run: |
           set -euo pipefail
           AHEAD="${{ steps.diverge.outputs.ahead }}"
-          # Capture the exact SHA we fetched for --force-with-lease. If a concurrent
-          # push landed on the target between the Detect step and this push, --force-with-lease
-          # will reject the push and the workflow will fail rather than silently drop new commits.
           TARGET_SHA=$(git rev-parse "origin/${{ inputs.target_branch }}")
           echo "::warning::Force-resetting ${{ inputs.target_branch }} to origin/${{ inputs.source_branch }} — dropping ${AHEAD} diverged commit(s). Verify no human work was on this branch."
           echo "Expected: automated (Renovate digests, prior sync commits)"
