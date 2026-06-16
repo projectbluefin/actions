@@ -104,11 +104,12 @@ runs:
           attempt=$((attempt + 1))
           rm -f "${DIGEST_FILE}"
 
+          # --retry-delay requires buildah >= 1.28 (ubuntu-24.04 ships 1.35+)
           buildah push \
             --compression-format "${COMPRESSION_FORMAT}" \
             --compression-level 3 \
             ${FC_FLAG:+${FC_FLAG}} \
-            --retry 5 --retry-delay 30s \   # --retry-delay requires buildah >= 1.28 (ubuntu-24.04 ships 1.35+)
+            --retry 5 --retry-delay 30s \
             "${IMAGE_NAME}:${DEFAULT_TAG}" \
             "${REGISTRY_LOWER}/${IMAGE_NAME}:${DEFAULT_TAG}"
 
