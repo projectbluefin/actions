@@ -1,0 +1,30 @@
+name: Promote Bluefin to Stable
+
+# One-shot workflow_dispatch to promote bluefin:testing → bluefin:stable.
+# Created to bypass the broken pull_request:closed trigger in
+# projectbluefin/bluefin execute-release.yml (startup_failure since 2026-06-13).
+# Safe to delete after the execute-release.yml trigger is fixed.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  execute:
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      packages: write
+      pull-requests: write
+    uses: ./.github/workflows/reusable-execute-release.yml
+    with:
+      registry: ghcr.io/projectbluefin
+      variants: >-
+        [
+          {"image":"bluefin","source_tag":"testing","target_tag":"stable"},
+          {"image":"bluefin-nvidia","source_tag":"testing","target_tag":"stable"}
+        ]
+      cosign_identity_regexp: "^https://github\\.com/projectbluefin/(bluefin|actions)/\\.github/workflows/"
+    secrets: inherit
