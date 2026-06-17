@@ -95,9 +95,12 @@ runs:
           done
           echo "==> overlay tmpdir: ${_OVERLAY_TMPDIR} ($(df -h --output=avail "${_OVERLAY_TMPDIR}" | tail -1 | tr -d ' ') free)"
 
-          UPPER=$(mktemp -d -p "$_OVERLAY_TMPDIR")
-          WORK=$(mktemp -d -p "$_OVERLAY_TMPDIR")
-          MERGED=$(mktemp -d -p "$_OVERLAY_TMPDIR")
+          # _OVERLAY_TMPDIR is often /var/lib/containers (the BTRFS volume mounted
+          # by setup-runner, root-owned). Use sudo mktemp so creation succeeds;
+          # sudo chmod 755 follows so the overlay mount can access the dirs.
+          UPPER=$(sudo mktemp -d -p "$_OVERLAY_TMPDIR")
+          WORK=$(sudo mktemp -d -p "$_OVERLAY_TMPDIR")
+          MERGED=$(sudo mktemp -d -p "$_OVERLAY_TMPDIR")
           sudo chmod 755 "$UPPER" "$WORK" "$MERGED"
 
           cleanup_bst() {
