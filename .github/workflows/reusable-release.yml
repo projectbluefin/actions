@@ -262,6 +262,10 @@ jobs:
           fi
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
+      - name: Free disk space for SBOM generation
+        if: inputs.generate_sbom_inline == true
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
       - name: Install Syft
         id: setup-syft
         if: inputs.generate_sbom_inline == true
@@ -281,7 +285,7 @@ jobs:
           mkdir -p sbom-current
           # Use a 3-minute timeout: pulling image layers on a standard runner can OOM.
           # On timeout/failure, create a minimal stub so the release still publishes.
-          if timeout 180 "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" --select-catalogers "rpm" \
+          if timeout --kill-after=10s 180 "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" --select-catalogers "rpm" \
               -o spdx-json="sbom-current/${IMAGE_NAME}.sbom.json"; then
             echo "SBOM generated: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
           else
