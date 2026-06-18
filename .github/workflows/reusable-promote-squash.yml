@@ -178,24 +178,18 @@ jobs:
           # Always rebuild from current origin/target_branch — eliminates staleness and conflict
           # drift. Force-push ensures the PR always shows a clean single-commit diff.
           git checkout -B "$PROMOTION_BRANCH" "origin/${TARGET_BRANCH}"
-          # -X theirs: source branch (main) is always the source of truth for promotions.
-          # Auto-resolve any conflicts (e.g. generated files that diverged on both branches)
-          # in favour of the source. This prevents spurious failure issues from being filed
-          # when target has locally-accumulated changes that differ from source.
-          git merge --squash -X theirs "origin/${SOURCE_BRANCH}" || {
-            # git exits 1 on rename/delete conflicts even when -X theirs resolved them all.
-            # git ls-files --unmerged is too broad: rename/delete entries remain even after
-            # -X theirs places the resolved file. Use diff-filter=U which only reports
-            # files that still have content conflict markers in the working tree.
-            TRULY_UNRESOLVED=$(git diff --name-only --diff-filter=U)
-            if [ -n "$TRULY_UNRESOLVED" ]; then
-              echo "::error::Unresolved conflicts remain after -X theirs — aborting"
-              echo "$TRULY_UNRESOLVED"
-              exit 1
-            fi
-            echo "::notice::Rename/delete conflicts auto-resolved by -X theirs — staging resolved files"
-            git add -A
-          }
+          # Build the squash content by checking out source's full tree.
+          # Using 'git checkout <source> -- .' avoids all merge-conflict scenarios
+          # (rename/delete, add/add, etc.) while still producing the correct delta:
+          # the resulting commit on auto/promote-* has lts as parent but main's tree,
+          # so merging it into lts makes lts identical to main.
+          git checkout "origin/${SOURCE_BRANCH}" -- .
+          git add -A
+          # Restore index-only deletions: files deleted in main but present in lts
+          # must be staged as deletions so the squash commit removes them from lts.
+          git diff --name-only --diff-filter=D "origin/${TARGET_BRANCH}" "origin/${SOURCE_BRANCH}" \
+            | xargs -r git rm -f --ignore-unmatch -- 2>/dev/null || true
+          git add -A
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
