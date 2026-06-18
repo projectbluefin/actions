@@ -184,9 +184,13 @@ jobs:
           # when target has locally-accumulated changes that differ from source.
           git merge --squash -X theirs "origin/${SOURCE_BRANCH}" || {
             # git exits 1 on rename/delete conflicts even when -X theirs resolved them all.
-            # Check for truly unresolved files; if none, stage the resolved tree and continue.
-            if [ -n "$(git ls-files --unmerged)" ]; then
+            # git ls-files --unmerged is too broad: rename/delete entries remain even after
+            # -X theirs places the resolved file. Use diff-filter=U which only reports
+            # files that still have content conflict markers in the working tree.
+            TRULY_UNRESOLVED=$(git diff --name-only --diff-filter=U)
+            if [ -n "$TRULY_UNRESOLVED" ]; then
               echo "::error::Unresolved conflicts remain after -X theirs — aborting"
+              echo "$TRULY_UNRESOLVED"
               exit 1
             fi
             echo "::notice::Rename/delete conflicts auto-resolved by -X theirs — staging resolved files"
