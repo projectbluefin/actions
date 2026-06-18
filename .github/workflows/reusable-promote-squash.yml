@@ -182,7 +182,16 @@ jobs:
           # Auto-resolve any conflicts (e.g. generated files that diverged on both branches)
           # in favour of the source. This prevents spurious failure issues from being filed
           # when target has locally-accumulated changes that differ from source.
-          git merge --squash -X theirs "origin/${SOURCE_BRANCH}"
+          git merge --squash -X theirs "origin/${SOURCE_BRANCH}" || {
+            # git exits 1 on rename/delete conflicts even when -X theirs resolved them all.
+            # Check for truly unresolved files; if none, stage the resolved tree and continue.
+            if [ -n "$(git ls-files --unmerged)" ]; then
+              echo "::error::Unresolved conflicts remain after -X theirs — aborting"
+              exit 1
+            fi
+            echo "::notice::Rename/delete conflicts auto-resolved by -X theirs — staging resolved files"
+            git add -A
+          }
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
