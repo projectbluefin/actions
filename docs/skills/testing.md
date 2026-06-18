@@ -137,6 +137,50 @@ matching instead:
 [[ "$(<"$GITHUB_OUTPUT")" == *"bluefin|sha256:deadbeef"* ]]
 ```
 
+### Testing shell logic embedded in action YAML
+
+Composite action steps often have non-trivial shell logic inline in `action.yml` with no
+corresponding standalone script file. The canonical approach:
+
+1. **Capture the snippet verbatim** in a bats variable — this serves as a change detector:
+   any edit to the action that alters testable behavior must update the test.
+
+```bash
+# In the bats file, at the top:
+PUSH_LOGIC='
+set -euo pipefail
+...
+# exact shell from action.yml run: block
+'
+```
+
+2. **Run it with `bash -c`** in each test, setting env vars to simulate inputs:
+
+```bash
+@test "empty TAGS exits with error" {
+  export TAGS=""
+  run bash -c "$PUSH_LOGIC"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"At least one tag"* ]]
+}
+```
+
+3. **Mock external binaries** via `PATH` injection (see "Mock external binaries" above).
+
+**When the action has `sudo` calls:** add a pass-through `sudo` mock so tests run without
+privilege. The mock just calls `"$@"`, then mock the real tool (`buildah`, `podman`) separately.
+
+**Quoting pitfall:** embedding single-quoted shell inside a double-quoted heredoc requires
+escaping with `'"'"'`. Use `'"'"'` to produce a literal `'` inside the shell snippet string:
+
+```bash
+# Produces: echo 'image_flavors=["main"]' >> "$GITHUB_OUTPUT"
+SNIPPET='echo '"'"'image_flavors=["main"]'"'"' >> "$GITHUB_OUTPUT"'
+```
+
+Alternatively, assign the snippet via a POSIX `$(cat <<'EOF'...EOF)` block in `setup()`
+if the quoting becomes unmanageable.
+
 ## Adding a new script
 
 When a new Python script is added to any covered directory:
