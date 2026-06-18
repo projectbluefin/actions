@@ -28,10 +28,14 @@ Coverage gate: `--cov-fail-under=75`
 | `bootc-build/generate-tags/generate_tags.sh` | `tests/bats/test_generate_tags.bats` |
 | `actions/retry/retry.sh` | `tests/bats/test_retry.bats` |
 | `actions/check-token-health/check_token_health.sh` | `tests/bats/test_check_token_health.bats` |
-| `scripts/resolve_digests.sh` | `tests/bats/test_resolve_digests.bats` |
-| `scripts/verify_signatures.sh` | `tests/bats/test_verify_signatures.bats` |
+| `scripts/resolve_digests.sh` | `tests/bats/test_resolve_digests.bats` (10 tests) |
+| `scripts/verify_signatures.sh` | `tests/bats/test_verify_signatures.bats` (15 tests) |
+| `scripts/release_gate.sh` | `tests/bats/test_release_gate.bats` |
+| `detect-changes` image_flavors shell logic | `tests/bats/test_detect_changes.bats` (8 tests) |
+| `push-image` push/retry/alias shell logic | `tests/bats/test_push_image.bats` (16 tests) |
+| `sign-and-publish` keyless/key validation | `tests/bats/test_sign_and_publish.bats` (12 tests) |
 
-The bats suite is run as a separate job in `unit-tests.yml` (see `bats/` job). Run locally:
+The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
 ```bash
 bats tests/bats/test_resolve_digests.bats
