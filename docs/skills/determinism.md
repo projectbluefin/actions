@@ -35,7 +35,26 @@ Then verify that e2e tests passed **on that exact SHA** before proceeding. This 
 
 **Why it works:** Git SHAs are immutable content hashes. Once locked, the repository state is deterministic.
 
-### 2. Pinned build engine in dakota (`dakota/.github/actions/check-bst2-pin/`)
+### 2. E2E gate locks to source_branch HEAD SHA — not a hardcoded ref
+
+**Pattern:** The promote-squash E2E gate queries the *branch* that E2E workflows run against
+(e.g. `testing`), resolves its current HEAD SHA at gate-time, and verifies that E2E passed
+**on that exact SHA**:
+
+```bash
+SHA=$(gh api repos/$REPO/git/ref/heads/$E2E_HEAD_BRANCH --jq '.object.sha')
+```
+
+Never use a hardcoded branch name (`main`) or the caller's `github.ref` as the gate target.
+Either can match a commit that hasn't had E2E run yet, allowing untested code through.
+
+**Why it matters:** Git branch refs are mutable. The same branch name resolves to a different
+commit between the E2E run and the gate check if any push lands in between. Locking to the
+resolved SHA at gate-time closes this race.
+
+---
+
+### 3. Pinned build engine in dakota (`dakota/.github/actions/check-bst2-pin/`)
 
 **Pattern:** BuildStream 2 (the compilation engine) is pinned to an exact container image SHA in both the Justfile and CI workflow:
 

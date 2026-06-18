@@ -229,6 +229,44 @@ in images remains not putting them there (`detect-private-key` pre-commit hook +
 
 ---
 
+## Pattern: Syft SBOM generation for large images
+
+Generating SBOMs inline with Syft on large bootc images (5+ GB) hits three failure modes.
+All three mitigations are live in `reusable-release.yml` (`generate_sbom_inline: true` path).
+
+**Disk-full:** Syft's default pull downloads the full image to disk before scanning.
+Use the `registry:` prefix to scan in-registry without pulling:
+
+```bash
+syft registry:ghcr.io/projectbluefin/bluefin:stable \
+  --catalogers rpm \
+  -o spdx-json=/tmp/sbom.spdx.json
+```
+
+**OOM:** Syft's default cataloger set scans every file type. Limit to `rpm` only for
+Fedora-based bootc images — it captures all installed packages without touching binary content:
+
+```bash
+synft registry:... --catalogers rpm -o spdx-json=...
+```
+
+**Hang on rate-limit / transient errors:** Wrap Syft in `timeout` and fall back to a minimal
+stub SBOM so the release pipeline continues rather than blocking:
+
+```bash
+if ! timeout 300 syft registry:... --catalogers rpm -o spdx-json=sbom.spdx.json 2>/dev/null; then
+  echo '{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"stub","packages":[]}' \
+    > sbom.spdx.json
+  echo '::warning::Syft timed out — stub SBOM used'
+fi
+```
+
+**Do not** pass a local image name to Syft when the image was built by a `sudo buildah` process.
+Syft runs as the unprivileged runner user and cannot see root's container storage. Always
+push the image first and use the `registry:` prefix.
+
+---
+
 ## Policy: PAT ban — no new unapproved secrets
 
 **PATs (Personal Access Tokens) are banned.** Use `GITHUB_TOKEN` or GitHub App tokens instead.

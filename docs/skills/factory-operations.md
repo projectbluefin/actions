@@ -357,6 +357,64 @@ Tracked in bluefin-lts#172.
 
 ---
 
+## 7. Promotion and sync-branches known patterns
+
+### enqueuePullRequest vs enablePullRequestAutoMerge
+
+For repos with a **merge queue** enabled, `enablePullRequestAutoMerge` is blocked by GitHub.
+Use the `enqueuePullRequest` GraphQL mutation instead:
+
+```bash
+gh api graphql \
+  -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' \
+  -f id="$(gh pr view <PR> --json id -q .id)"
+```
+
+`reusable-promote-squash.yml` uses this pattern when enabling auto-merge on promotion PRs.
+
+### E2E gate must use source_branch HEAD SHA — not a hardcoded ref
+
+The promote-squash workflow queries the E2E gate against the `source_branch` HEAD SHA
+(e.g. `testing` HEAD), **not** a hardcoded `main` or the caller's `github.ref`:
+
+```bash
+# Correct — lock to the branch that the E2E workflows ran against
+SHA=$(gh api repos/$REPO/git/ref/heads/$E2E_HEAD_BRANCH --jq '.object.sha')
+```
+
+Using a hardcoded branch or `github.ref` can match a more-recent commit that hasn't had
+E2E run yet, silently allowing un-tested code through the promotion gate.
+
+### Force-push guard: skip when squash tree is unchanged
+
+Before force-pushing the squash branch to an existing promotion PR, compare the squash tree
+to the PR's current HEAD. If they match, skip the force-push entirely — force-pushing an
+identical tree dismisses reviewers' approvals for no reason:
+
+```bash
+SQUASH_TREE=$(git rev-parse HEAD^{tree})
+REMOTE_TREE=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1 | xargs git cat-file -p | grep tree | cut -d' ' -f2)
+[ "$SQUASH_TREE" = "$REMOTE_TREE" ] && echo "no-op, skipping force-push"
+```
+
+### reusable-sync-branches: optional GH_TOKEN + force-reset for diverged branches
+
+`reusable-sync-branches.yml` merges `source_branch` into `target_branch` after a promotion.
+Two patterns to know:
+
+**Protected branches:** The workflow accepts an optional `GH_TOKEN` secret from the caller.
+When provided, it uses a GitHub App token to bypass protected-branch push rules. Without it,
+`github.token` is used — which fails on protected branches.
+
+**Diverged target:** If the target branch has commits not in source (e.g. direct CI fixes on
+`main` while `testing` was being promoted), the workflow force-resets `target` to `source`
+instead of attempting a merge. This is safe because:
+- `main` only receives CI fixes that don't need cherry-picking
+- A failed merge leaves the pipeline broken indefinitely
+- Force-reset produces a clean, predictable state
+
+---
+
 ## How the Systems Work Together
 
 ```

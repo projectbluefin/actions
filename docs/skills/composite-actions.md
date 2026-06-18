@@ -403,6 +403,8 @@ Always add `workflow_dispatch` alongside `workflow_run` so the workflow can be t
 | `-v $(pwd):/run/src` + `--security-opt=label=disable` | `chunka` | buildah < v1.44 drops bind-mounts without these; needed for the OCI output dir (`out/`) to survive to the final stage |
 | `sudo rm -rf out` | `chunka` | Containerfile.splitter leaves `out/` dir in CWD (v0.6.0+; was `out.ociarchive` in v0.5.0); stale dir breaks re-runs |
 | `sudo podman save \| podman load` | `chunka` | buildah (root) and podman (user) use separate container stores |
+| `sudo buildah push --authfile ${RUNNER_TEMP}/push-auth.json` | `push-image` | `sudo podman push` cannot reach root container storage; `--authfile` bypasses `XDG_RUNTIME_DIR` inaccessible to sudo on Ubuntu 24.04 |
+| Largest-free tmpdir selection + `sudo mktemp -d -p <dir>` + `sudo chmod 755` for overlay dirs | `chunka` | BTRFS volume is root-owned; default `/var/tmp` is only ~1 GB on runners with BTRFS loopback; picks `/var/lib/containers` (~49 GB) when it has more free space; `sudo mktemp` needed because the dir is root-owned |
 
 ### Reusable workflow caller permissions ceiling
 
