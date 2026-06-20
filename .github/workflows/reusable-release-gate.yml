@@ -308,6 +308,7 @@ jobs:
               .workflow_runs[]
               | select(
                   ((.path // "") | endswith("post-testing-e2e.yml"))
+                  or ((.path // "") | endswith("post-merge-e2e.yml"))
                   or (((.name // "") | ascii_downcase) | contains("post-testing-e2e"))
                   or (((.name // "") | ascii_downcase) | contains("post-merge e2e"))
                 )
