@@ -159,6 +159,40 @@ Image release notes also embed the latest testsuite desktop screenshot at:
 where `<slug>` is the image ref with the registry/org prefix removed and `:` replaced by `-`
 (for example `ghcr.io/projectbluefin/bluefin:stable` → `bluefin-stable`).
 
+### Image inline-SBOM mode (promote-from-testing path)
+
+Use `generate_sbom_inline: true` when promotion retags a testing image directly (no intermediate build run with a SBOM artifact to download). The workflow pulls the promoted image via `skopeo copy` to a local OCI archive, then scans it with Syft using all catalogers. The job fails hard if Syft fails — no silent stub.
+
+```yaml
+    with:
+      stream_name: stable
+      image: ghcr.io/projectbluefin/bluefin
+      generate_sbom_inline: true
+      checkout_ref: main
+      # ... other inputs
+```
+
+**Do NOT use `generate_sbom_inline: true` for BST-built images** (e.g. dakota). BST images have no RPM/dpkg database — Syft returns 0 or 1 packages. Use the artifact path instead and upload the BST-native SBOM (from `just sbom` / `buildstream-sbom`) with a static artifact name.
+
+### `notable_packages` — SPDX name reference
+
+`sbom_name` must match the exact `name` field in the SPDX packages array. Values differ by image type:
+
+| Package | Fedora/CentOS RPM (`sbom_name`) | BST/GNOME OS (`sbom_name`) |
+|---|---|---|
+| Kernel | `kernel` | `linux` |
+| GNOME Shell | `gnome-shell` | `gnome-shell` |
+| Mesa | `mesa-filesystem` | `mesa` |
+| Flatpak | `flatpak` | `flatpak` |
+| systemd | `systemd` | `systemd` |
+| bootc | `bootc` | `bootc` |
+
+Unmatched entries are silently skipped — no error. Verify against a real SBOM if the Key Components table is empty.
+
+### Variants table (multi-image promotions)
+
+`reusable-release.yml` generates release notes for a single primary image. For repos that promote multiple variants (e.g. `bluefin` + `bluefin-nvidia`), add a `post-release-variants` job that prepends a digest table after `release-notes` completes. See `projectbluefin/bluefin:.github/workflows/execute-release.yml` for the reference implementation.
+
 ### Legacy semver mode
 
 ```yaml
