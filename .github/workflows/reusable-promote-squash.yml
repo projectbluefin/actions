@@ -318,7 +318,14 @@ jobs:
             --compare-url   "${COMPARE_URL}" \
             --output        "${PR_BODY_FILE}"
 
-          SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
+          # Slug from e2e_image (full ref tested): strip ghcr.io/<org>/, replace : with -
+          # e.g. ghcr.io/projectbluefin/bluefin:testing → bluefin-testing
+          E2E_IMAGE="${{ inputs.e2e_image }}"
+          if [[ -n "$E2E_IMAGE" ]]; then
+            SCREENSHOT_SLUG=$(echo "$E2E_IMAGE" | sed 's|ghcr.io/[^/]*/||' | tr ':' '-')
+          else
+            SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
+          fi
           SCREENSHOT_URL="https://projectbluefin.github.io/testsuite/screenshots/${SCREENSHOT_SLUG}-smoke-latest.png"
           cat >> "${PR_BODY_FILE}" <<EOF
 
