@@ -77,8 +77,15 @@ def _section_card(tag: str, repo: str) -> str:
 
 
 def _screenshot_slug(image: str) -> str:
+    """Derive gh-pages screenshot slug from an image ref.
+
+    Screenshots are captured against the :testing image during e2e gate, so
+    always map to the testing slug regardless of the tag being released.
+    e.g. ghcr.io/projectbluefin/bluefin:stable → bluefin-testing
+    """
     slug = re.sub(r"^[^/]+/[^/]+/", "", image)
-    return slug.replace(":", "-")
+    slug = re.sub(r":[^-]+$", "", slug)  # strip tag (:stable, :main, :latest, etc.)
+    return f"{slug}-testing"
 
 
 def _section_screenshot(image: str, label: str) -> str:
