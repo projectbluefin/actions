@@ -135,7 +135,9 @@ When the latest relevant `post-testing-e2e` / `post-merge-e2e` run is older than
 
 ## `reusable-release.yml` — calling from a consuming repo
 
-### Image stable-release mode
+### Image stable-release mode (artifact path)
+
+Use this when your build workflow uploads a `*.sbom.json` artifact via `reusable-build.yml`:
 
 ```yaml
 jobs:
@@ -150,9 +152,51 @@ jobs:
       image: ghcr.io/projectbluefin/bluefin
       project_name: Bluefin
       cert_identity_regexp: ^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/
+      notable_packages: >-
+        [
+          {"sbom_name": "kernel",         "label": "Kernel"},
+          {"sbom_name": "gnome-shell",    "label": "GNOME Shell"},
+          {"sbom_name": "mesa-filesystem","label": "Mesa"},
+          {"sbom_name": "flatpak",        "label": "Flatpak"},
+          {"sbom_name": "systemd",        "label": "systemd"}
+        ]
 ```
 
 This mode finds the latest successful build run for the requested stream, downloads the uploaded SBOM artifact, resolves the current image digest, and calls `bootc-build/create-release` to publish the GitHub Release. The reusable workflow owns the `production` environment gate and grants only `contents: write` plus `actions: read` to the image release job.
+
+### Image inline-SBOM mode (promote-from-testing path)
+
+Use `generate_sbom_inline: true` when promotion retags a testing image directly (no intermediate build run with a SBOM artifact to download). The workflow pulls the promoted image via `skopeo copy` to a local OCI archive, then scans it with Syft using all catalogers. The job fails hard if Syft fails — no silent stub.
+
+```yaml
+    with:
+      stream_name: stable
+      image: ghcr.io/projectbluefin/bluefin
+      generate_sbom_inline: true
+      checkout_ref: main
+      # ... other inputs
+```
+
+**Do NOT use `generate_sbom_inline: true` for BST-built images** (e.g. dakota). BST images have no RPM/dpkg database — Syft returns 0 or 1 packages. Use the artifact path instead and upload the BST-native SBOM (from `just sbom` / `buildstream-sbom`) with a static artifact name.
+
+### `notable_packages` — SPDX name reference
+
+`sbom_name` must match the exact `name` field in the SPDX packages array. Values differ by image type:
+
+| Package | Fedora/CentOS RPM (`sbom_name`) | BST/GNOME OS (`sbom_name`) |
+|---|---|---|
+| Kernel | `kernel` | `linux` |
+| GNOME Shell | `gnome-shell` | `gnome-shell` |
+| Mesa | `mesa-filesystem` | `mesa` |
+| Flatpak | `flatpak` | `flatpak` |
+| systemd | `systemd` | `systemd` |
+| bootc | `bootc` | `bootc` |
+
+Unmatched entries are silently skipped — no error. Verify against a real SBOM if the Key Components table is empty.
+
+### Variants table (multi-image promotions)
+
+`reusable-release.yml` generates release notes for a single primary image. For repos that promote multiple variants (e.g. `bluefin` + `bluefin-nvidia`), add a `post-release-variants` job that prepends a digest table after `release-notes` completes. See `projectbluefin/bluefin-lts:.github/workflows/execute-release.yml` for the reference implementation.
 
 ### Legacy semver mode
 
