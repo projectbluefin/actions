@@ -283,16 +283,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p sbom-current
-          # Use a 3-minute timeout: pulling image layers on a standard runner can OOM.
-          # On timeout/failure, create a minimal stub so the release still publishes.
-          if timeout --kill-after=10s 180 "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" --select-catalogers "rpm" \
-              -o spdx-json="sbom-current/${IMAGE_NAME}.sbom.json"; then
-            echo "SBOM generated: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
-          else
-            echo "::warning::Syft timed out or failed — creating minimal SBOM stub"
-            printf '{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"%s","packages":[]}' \
-              "${IMAGE_NAME}" > "sbom-current/${IMAGE_NAME}.sbom.json"
-          fi
+          # Pull to local OCI archive first — skopeo handles chunked pull far better than
+          # syft's registry: mode and avoids the OOM/timeout that plagued registry: scans.
+          skopeo copy --insecure-policy \
+            "docker://${IMAGE}:${STREAM_NAME}" \
+            "oci-archive:/tmp/sbom-image.tar"
+          "${SYFT_CMD}" "oci-archive:/tmp/sbom-image.tar" \
+            -o spdx-json="sbom-current/${IMAGE_NAME}.sbom.json"
+          echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
+          rm -f /tmp/sbom-image.tar
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

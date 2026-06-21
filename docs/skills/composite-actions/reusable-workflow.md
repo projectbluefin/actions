@@ -135,7 +135,9 @@ When the latest relevant `post-testing-e2e` / `post-merge-e2e` run is older than
 
 ## `reusable-release.yml` — calling from a consuming repo
 
-### Image stable-release mode
+### Image stable-release mode (artifact path)
+
+Use this when your build workflow uploads a `*.sbom.json` artifact via `reusable-build.yml`:
 
 ```yaml
 jobs:
@@ -150,6 +152,14 @@ jobs:
       image: ghcr.io/projectbluefin/bluefin
       project_name: Bluefin
       cert_identity_regexp: ^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/
+      notable_packages: >-
+        [
+          {"sbom_name": "kernel",         "label": "Kernel"},
+          {"sbom_name": "gnome-shell",    "label": "GNOME Shell"},
+          {"sbom_name": "mesa-filesystem","label": "Mesa"},
+          {"sbom_name": "flatpak",        "label": "Flatpak"},
+          {"sbom_name": "systemd",        "label": "systemd"}
+        ]
 ```
 
 This mode finds the latest successful build run for the requested stream, downloads the uploaded SBOM artifact, resolves the current image digest, and calls `bootc-build/create-release` to publish the GitHub Release. The reusable workflow owns the `production` environment gate and grants only `contents: write` plus `actions: read` to the image release job.
@@ -211,13 +221,3 @@ jobs:
 The legacy semver mode checks out with `fetch-depth: 0` (required by git-cliff), runs `generate-release-notes`, and creates a GitHub Release with the generated body.
 
 **`cliff.toml` requirement:** a `cliff.toml` must exist in the caller's repo root (or override via `cliff-config` input). A factory-wide config is available at the root of this repo and can be copied verbatim.
-
----
-
-## Red Flags
-
-- **`generate_sbom_inline: true` on a BST image** — BST images have no RPM/dpkg DB; Syft returns 0–1 packages. Use `build_workflow` + `sbom_artifact` (artifact path) instead.
-- **`syft registry:` in any workflow** — unreliable on multi-GB images; OOMs or times out. Always pre-pull with `skopeo copy` to a local OCI archive, then `syft oci-archive:`.
-- **`continue-on-error: true` on SBOM publish steps** — a green run with no artifact silently breaks the downstream release job with a cryptic "artifact not found" error. Only set `continue-on-error: true` on genuinely optional variant uploads (e.g. nvidia-only artifacts).
-- **Dynamic artifact names** (e.g. `sbom-${{ github.sha }}`) — unfindable by `reusable-release.yml` without knowing the exact SHA. Always use a static name like `sbom-<image-name>`.
-- **`notable_packages` `sbom_name` pointing to RPM package names on a BST image** (e.g. `kernel` instead of `linux`, `mesa-filesystem` instead of `mesa`) — unmatched entries are silently skipped, producing an empty Key Components table with no error.
