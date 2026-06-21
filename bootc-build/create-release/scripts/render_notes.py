@@ -76,6 +76,28 @@ def _section_card(tag: str, repo: str) -> str:
     return f"![Release card]({url})\n"
 
 
+def _screenshot_slug(image: str) -> str:
+    """Derive gh-pages screenshot slug from an image ref.
+
+    Screenshots are captured against the :testing image during e2e gate, so
+    always map to the testing slug regardless of the tag being released.
+    e.g. ghcr.io/projectbluefin/bluefin:stable → bluefin-testing
+    """
+    slug = re.sub(r"^[^/]+/[^/]+/", "", image)
+    slug = re.sub(r":[^-]+$", "", slug)  # strip tag (:stable, :main, :latest, etc.)
+    return f"{slug}-testing"
+
+
+def _section_screenshot(image: str, label: str) -> str:
+    slug = _screenshot_slug(image)
+    url = f"https://projectbluefin.github.io/testsuite/screenshots/{slug}-smoke-latest.png"
+    return (
+        "## Desktop Screenshot\n\n"
+        "> Captured automatically after e2e validation.\n\n"
+        f"![{label}]({url})\n"
+    )
+
+
 def _section_notable(notable: list[dict]) -> str:
     if not notable:
         return ""
@@ -357,6 +379,8 @@ def main() -> None:
     sections = [
         _section_card(args.tag, args.repo),
         "",
+        _section_screenshot(args.image, args.tag),
+        "",
         _section_diff_summary(versions["diff"], versions["has_prev"], total),
         "",
         _section_notable(versions["notable"]),
@@ -400,6 +424,8 @@ def main() -> None:
         )
         compact_sections = [
             _section_card(args.tag, args.repo),
+            "",
+            _section_screenshot(args.image, args.tag),
             "",
             _section_diff_summary(versions["diff"], versions["has_prev"], total),
             "",

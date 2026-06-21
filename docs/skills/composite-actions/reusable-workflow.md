@@ -154,6 +154,11 @@ jobs:
 
 This mode finds the latest successful build run for the requested stream, downloads the uploaded SBOM artifact, resolves the current image digest, and calls `bootc-build/create-release` to publish the GitHub Release. The reusable workflow owns the `production` environment gate and grants only `contents: write` plus `actions: read` to the image release job.
 
+Image release notes also embed the latest testsuite desktop screenshot at:
+`https://projectbluefin.github.io/testsuite/screenshots/<slug>-smoke-latest.png`
+where `<slug>` is the image ref with the registry/org prefix removed and `:` replaced by `-`
+(for example `ghcr.io/projectbluefin/bluefin:stable` → `bluefin-stable`).
+
 ### Legacy semver mode
 
 ```yaml
