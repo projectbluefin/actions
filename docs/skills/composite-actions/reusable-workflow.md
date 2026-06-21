@@ -201,8 +201,7 @@ Unmatched entries are silently skipped — no error. Verify against a real SBOM 
 
 ### Variants table (multi-image promotions)
 
-`reusable-release.yml` generates release notes for a single primary image. For repos that promote multiple variants (e.g. `bluefin` + `bluefin-nvidia`), add a `post-release-variants` job that prepends a digest table after `release-notes` completes. See `projectbluefin/bluefin-lts:.github/workflows/execute-release.yml` for the reference implementation.
->>>>>>> 8a12545 (docs(skills): document inline vs artifact SBOM modes, BST notable_packages, variants table)
+`reusable-release.yml` generates release notes for a single primary image. For repos that promote multiple variants (e.g. `bluefin` + `bluefin-nvidia`), add a `post-release-variants` job that prepends a digest table after `release-notes` completes. See `projectbluefin/bluefin:.github/workflows/execute-release.yml` for the reference implementation.
 
 ### Legacy semver mode
 
