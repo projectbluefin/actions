@@ -211,3 +211,13 @@ jobs:
 The legacy semver mode checks out with `fetch-depth: 0` (required by git-cliff), runs `generate-release-notes`, and creates a GitHub Release with the generated body.
 
 **`cliff.toml` requirement:** a `cliff.toml` must exist in the caller's repo root (or override via `cliff-config` input). A factory-wide config is available at the root of this repo and can be copied verbatim.
+
+---
+
+## Red Flags
+
+- **`generate_sbom_inline: true` on a BST image** — BST images have no RPM/dpkg DB; Syft returns 0–1 packages. Use `build_workflow` + `sbom_artifact` (artifact path) instead.
+- **`syft registry:` in any workflow** — unreliable on multi-GB images; OOMs or times out. Always pre-pull with `skopeo copy` to a local OCI archive, then `syft oci-archive:`.
+- **`continue-on-error: true` on SBOM publish steps** — a green run with no artifact silently breaks the downstream release job with a cryptic "artifact not found" error. Only set `continue-on-error: true` on genuinely optional variant uploads (e.g. nvidia-only artifacts).
+- **Dynamic artifact names** (e.g. `sbom-${{ github.sha }}`) — unfindable by `reusable-release.yml` without knowing the exact SHA. Always use a static name like `sbom-<image-name>`.
+- **`notable_packages` `sbom_name` pointing to RPM package names on a BST image** (e.g. `kernel` instead of `linux`, `mesa-filesystem` instead of `mesa`) — unmatched entries are silently skipped, producing an empty Key Components table with no error.
