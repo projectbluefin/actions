@@ -318,11 +318,24 @@ Examples: `ci(promote): bluefin testing → stable 2026-06-11`
 
 ### Changes since last stable
 (commit count + collapsible commit log — squash workflow only)
+
+## Desktop Screenshot
+
+> [!CAUTION]
+> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**
+> To block this release: add the `do-not-merge` label to this PR before that time.
+> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.
+
+![bluefin desktop](https://projectbluefin.github.io/testsuite/screenshots/bluefin-smoke-latest.png)
 ```
 
 The gate checklist starts with ⏳ placeholders written by the promote job,
 then the gate job replaces only the `<!-- gate-section-start/end -->` block
 with live ✅/❌ results via `scripts/render_gate_section.py`.
+
+Promotion PRs must carry the screenshot + caution block in the **body**, not a
+separate GitHub comment. If the PR is labelled `do-not-merge`, the reusable
+workflow skips auto-merge / merge-queue enrollment until the label is removed.
 
 ### Scripts
 
