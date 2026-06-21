@@ -281,6 +281,7 @@ jobs:
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: render
         env:
+          PR_BODY_FILE: ${{ runner.temp }}/promotion-pr-body.md
           VARIANTS:     ${{ inputs.variants }}
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
@@ -315,7 +316,21 @@ jobs:
             --commit-count  "${COMMIT_COUNT}" \
             --commits-json  "${COMMITS_JSON}" \
             --compare-url   "${COMPARE_URL}" \
-            --output        /tmp/pr-body.md
+            --output        "${PR_BODY_FILE}"
+
+          SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
+          SCREENSHOT_URL="https://projectbluefin.github.io/testsuite/screenshots/${SCREENSHOT_SLUG}-smoke-latest.png"
+          cat >> "${PR_BODY_FILE}" <<EOF
+
+          ## Desktop Screenshot
+
+          > [!CAUTION]
+          > **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**
+          > To block this release: add the \`do-not-merge\` label to this PR before that time.
+          > Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.
+
+          ![${PRIMARY_IMAGE} desktop](${SCREENSHOT_URL})
+          EOF
 
           echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"
 
@@ -324,6 +339,7 @@ jobs:
         id: upsert
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_BODY_FILE: ${{ runner.temp }}/promotion-pr-body.md
           PROMOTION_BRANCH: auto/promote-testing-to-main
           PR_TITLE: ${{ steps.render.outputs.pr_title }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
@@ -342,7 +358,7 @@ jobs:
             gh pr edit "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
               --title "${PR_TITLE}" \
-              --body-file /tmp/pr-body.md
+              --body-file "${PR_BODY_FILE}"
             echo "Updated existing PR #${PR_NUMBER}"
           else
             PR_URL=$(gh pr create \
@@ -350,7 +366,7 @@ jobs:
               --base "$TARGET_BRANCH" \
               --head "$PROMOTION_BRANCH" \
               --title "${PR_TITLE}" \
-              --body-file /tmp/pr-body.md \
+              --body-file "${PR_BODY_FILE}" \
               --reviewer "${{ github.repository_owner }}/maintainers")
             PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
             echo "Created PR #${PR_NUMBER}"
@@ -368,6 +384,37 @@ jobs:
               || echo "⚠️  Could not re-request reviewers (team may not exist or no permission)"
           fi
 
+          PR_URL=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json url --jq '.url')
+          {
+            echo "pr_number=${PR_NUMBER}"
+            echo "pr_url=${PR_URL}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check do-not-merge label
+        if: steps.upsert.outputs.pr_number != ''
+        id: check-dnm
+        run: |
+          LABELS=$(gh pr view "${{ steps.upsert.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --json labels \
+            --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
+          if echo "$LABELS" | grep -q "do-not-merge"; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge or enqueue promotion PR
+        if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.upsert.outputs.pr_number }}
+        run: |
+          set -euo pipefail
           # Enable auto-merge or enqueue in the merge queue.
           # For repos with a merge queue ruleset on the target branch, --auto calls
           # enablePullRequestAutoMerge which is blocked — use enqueuePullRequest instead.
@@ -391,13 +438,12 @@ jobs:
               || echo "⚠️  Auto-merge not available — maintainer merges when checks pass"
           fi
 
-          PR_URL=$(gh pr view "$PR_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --json url --jq '.url')
-          {
-            echo "pr_number=${PR_NUMBER}"
-            echo "pr_url=${PR_URL}"
-          } >> "$GITHUB_OUTPUT"
+      - name: Report do-not-merge label block
+        if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'true'
+        env:
+          PR_NUMBER: ${{ steps.upsert.outputs.pr_number }}
+        run: |
+          echo "::notice::PR #${PR_NUMBER} has the do-not-merge label; auto-merge/queue enrollment skipped."
 
   gate:
     name: Release gate checks
