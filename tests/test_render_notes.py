@@ -107,6 +107,21 @@ class TestSectionDiffDetails:
         assert md == ""
 
 
+class TestSectionScreenshot:
+    def test_strips_registry_prefix_from_slug(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin") == "bluefin"
+
+    def test_replaces_colon_with_dash(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin:stable") == "bluefin-stable"
+
+    def test_renders_screenshot_section(self):
+        md = render_notes._section_screenshot("ghcr.io/projectbluefin/bluefin", "stable-20260621")
+        assert "## Desktop Screenshot" in md
+        assert "Captured automatically after e2e validation." in md
+        assert "https://projectbluefin.github.io/testsuite/screenshots/bluefin-smoke-latest.png" in md
+        assert "![stable-20260621]" in md
+
+
 # ── _section_supply_chain ─────────────────────────────────────────────────────
 
 # ── _section_full_inventory ──────────────────────────────────────────────────

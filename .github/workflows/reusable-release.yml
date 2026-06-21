@@ -344,11 +344,28 @@ jobs:
           config: ${{ inputs.cliff-config }}
           github-token: ${{ github.token }}
 
+      - name: Append desktop screenshot to release notes
+        if: inputs.image != ''
+        env:
+          IMAGE: ${{ inputs.image }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          SLUG=$(printf '%s' "${IMAGE}" | sed -E 's|^[^/]*/[^/]*/||' | tr ':' '-')
+          cat >> CHANGELOG.md <<EOF
+
+          ## Desktop Screenshot
+
+          > Captured automatically after e2e validation.
+
+          ![${TAG}](https://projectbluefin.github.io/testsuite/screenshots/${SLUG}-smoke-latest.png)
+          EOF
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ inputs.tag }}
           name: ${{ inputs.tag }}
-          body: ${{ steps.release-notes.outputs.content }}
+          body_path: CHANGELOG.md
           draft: ${{ inputs.draft }}
           prerelease: ${{ inputs.prerelease }}

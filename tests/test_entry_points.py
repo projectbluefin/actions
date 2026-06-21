@@ -139,6 +139,8 @@ class TestRenderNotesMain:
         assert out.exists()
         content = out.read_text()
         assert "bluefin" in content.lower()
+        assert "## Desktop Screenshot" in content
+        assert "https://projectbluefin.github.io/testsuite/screenshots/bluefin-smoke-latest.png" in content
 
     def test_missing_versions_file_exits(self, tmp_path, current_sbom):
         out = tmp_path / "release-notes.md"
