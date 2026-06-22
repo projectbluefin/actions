@@ -1,0 +1,82 @@
+name: Render gate section
+description: >
+  Fetch the promotion PR body, replace the gate checklist section, and push
+  it back. Accesses the script via $GITHUB_ACTION_PATH — no repo checkout required.
+
+inputs:
+  gh_token:
+    description: 'GitHub token with pull-requests write permission'
+    required: true
+  repo:
+    description: 'owner/repo of the promotion PR'
+    required: true
+  pr_number:
+    description: 'Promotion PR number'
+    required: true
+  resolve_ok:
+    description: 'Digest resolution passed (true/false)'
+    required: true
+  resolve_summary:
+    description: 'Digest resolution summary text'
+    required: true
+  verify_ok:
+    description: 'Cosign verification passed (true/false)'
+    required: true
+  verify_summary:
+    description: 'Cosign verification summary text'
+    required: true
+  e2e_state:
+    description: 'E2E gate state (pass/fail/skip)'
+    required: true
+  e2e_summary:
+    description: 'E2E gate summary text'
+    required: true
+  e2e_details:
+    description: 'E2E gate details (optional)'
+    required: false
+    default: ''
+  ready:
+    description: 'Overall release readiness (true/false)'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Render and update gate section
+      shell: bash
+      env:
+        GH_TOKEN:        ${{ inputs.gh_token }}
+        REPO:            ${{ inputs.repo }}
+        PR_NUMBER:       ${{ inputs.pr_number }}
+        RESOLVE_OK:      ${{ inputs.resolve_ok }}
+        RESOLVE_SUMMARY: ${{ inputs.resolve_summary }}
+        VERIFY_OK:       ${{ inputs.verify_ok }}
+        VERIFY_SUMMARY:  ${{ inputs.verify_summary }}
+        E2E_STATE:       ${{ inputs.e2e_state }}
+        E2E_SUMMARY:     ${{ inputs.e2e_summary }}
+        E2E_DETAILS:     ${{ inputs.e2e_details }}
+        READY:           ${{ inputs.ready }}
+      run: |
+        set -euo pipefail
+        gh pr view "${PR_NUMBER}" --repo "${REPO}" --json body --jq '.body' > /tmp/current-pr-body.md
+
+        if ! grep -q '<!-- gate-section-start -->' /tmp/current-pr-body.md; then
+          echo "::notice::PR body has no gate section markers — skipping body update."
+          exit 0
+        fi
+
+        python3 "$GITHUB_ACTION_PATH/render_gate_section.py" \
+          --body-file       /tmp/current-pr-body.md \
+          --output          /tmp/updated-pr-body.md \
+          --resolve-ok      "${RESOLVE_OK}" \
+          --resolve-summary "${RESOLVE_SUMMARY}" \
+          --verify-ok       "${VERIFY_OK}" \
+          --verify-summary  "${VERIFY_SUMMARY}" \
+          --e2e-state       "${E2E_STATE}" \
+          --e2e-summary     "${E2E_SUMMARY}" \
+          --e2e-details     "${E2E_DETAILS}" \
+          --ready           "${READY}"
+
+        gh pr edit "${PR_NUMBER}" --repo "${REPO}" --body-file /tmp/updated-pr-body.md
+        echo "PR body gate section updated."
+

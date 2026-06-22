@@ -10,6 +10,7 @@ on:
       - "bootc-build/detect-changes/**"
       - "bootc-build/generate-tags/**"
       - "scripts/**"
+      - ".github/actions/**"
       - "tests/**"
       - ".github/workflows/unit-tests.yml"
   pull_request:
@@ -20,6 +21,7 @@ on:
       - "bootc-build/detect-changes/**"
       - "bootc-build/generate-tags/**"
       - "scripts/**"
+      - ".github/actions/**"
       - "tests/**"
       - ".github/workflows/unit-tests.yml"
 
@@ -52,6 +54,8 @@ jobs:
             --cov=bootc-build/chunka \
             --cov=bootc-build/create-release/scripts \
             --cov=scripts \
+            --cov=.github/actions/render-pr-body \
+            --cov=.github/actions/render-gate-section \
             --cov-report=term-missing \
             --cov-fail-under=75
 

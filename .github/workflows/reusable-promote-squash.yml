@@ -121,15 +121,6 @@ jobs:
             || { echo "::error::Branch '${E2E_HEAD_BRANCH}' not found — check inputs.source_branch"; exit 1; }
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout actions scripts
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          repository: projectbluefin/actions
-          path: ${{ runner.temp }}/.workflow-scripts
-          sparse-checkout: |
-            scripts/render_pr_body.py
-          sparse-checkout-cone-mode: false
-
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -280,66 +271,21 @@ jobs:
       - name: Render promotion PR body
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: render
-        env:
-          PR_BODY_FILE: ${{ runner.temp }}/promotion-pr-body.md
-          VARIANTS:     ${{ inputs.variants }}
-          SOURCE_BRANCH: ${{ inputs.source_branch }}
-          TARGET_BRANCH: ${{ inputs.target_branch }}
-          RUN_URL:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_COUNT: ${{ steps.gitlog.outputs.count }}
-          COMMITS_JSON: ${{ steps.gitlog.outputs.commits_json }}
-          COMPARE_URL:  ${{ steps.gitlog.outputs.compare_url }}
-          DAYS_AGO:     ${{ steps.last-release.outputs.days }}
-          LAST_TAG:     ${{ steps.last-release.outputs.tag }}
-          LAST_URL:     ${{ steps.last-release.outputs.url }}
-        run: |
-          set -euo pipefail
-          PRIMARY_IMAGE=$(echo "${VARIANTS}" | jq -r 'if .[0] | type == "string" then .[0] else .[0].image end')
-          # Title-case slug for display name: bluefin-lts → Bluefin Lts
-          PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | tr '-' ' ' | python3 -c "import sys; print(sys.stdin.read().title().strip())")
-          DATE="$(date -u +%Y-%m-%d)"
-
-          DAYS_ARGS=()
-          [[ -n "${DAYS_AGO}" ]] && DAYS_ARGS+=(--days-since-stable "${DAYS_AGO}")
-          TAG_ARGS=()
-          [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
-
-          python3 "$RUNNER_TEMP/.workflow-scripts/scripts/render_pr_body.py" \
-            --project-name  "${PROJECT_NAME}" \
-            --primary-image "${PRIMARY_IMAGE}" \
-            --variants-json "${VARIANTS}" \
-            --repo          "${{ github.repository }}" \
-            --run-url       "${RUN_URL}" \
-            --date          "${DATE}" \
-            "${DAYS_ARGS[@]}" \
-            "${TAG_ARGS[@]}" \
-            --commit-count  "${COMMIT_COUNT}" \
-            --commits-json  "${COMMITS_JSON}" \
-            --compare-url   "${COMPARE_URL}" \
-            --output        "${PR_BODY_FILE}"
-
-          # Slug from e2e_image (full ref tested): strip ghcr.io/<org>/, replace : with -
-          # e.g. ghcr.io/projectbluefin/bluefin:testing → bluefin-testing
-          E2E_IMAGE="${{ inputs.e2e_image }}"
-          if [[ -n "$E2E_IMAGE" ]]; then
-            SCREENSHOT_SLUG=$(echo "$E2E_IMAGE" | sed 's|ghcr.io/[^/]*/||' | tr ':' '-')
-          else
-            SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
-          fi
-          SCREENSHOT_URL="https://projectbluefin.github.io/testsuite/screenshots/${SCREENSHOT_SLUG}-smoke-latest.png"
-          cat >> "${PR_BODY_FILE}" <<EOF
-
-          ## Desktop Screenshot
-
-          > [!CAUTION]
-          > **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**
-          > To block this release: add the \`do-not-merge\` label to this PR before that time.
-          > Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.
-
-          ![${PRIMARY_IMAGE} desktop](${SCREENSHOT_URL})
-          EOF
-
-          echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"
+        uses: projectbluefin/actions/.github/actions/render-pr-body@v1
+        with:
+          variants:          ${{ inputs.variants }}
+          repo:              ${{ github.repository }}
+          run_url:           ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          source_branch:     ${{ inputs.source_branch }}
+          target_branch:     ${{ inputs.target_branch }}
+          days_since_stable: ${{ steps.last-release.outputs.days }}
+          last_release_tag:  ${{ steps.last-release.outputs.tag }}
+          last_release_url:  ${{ steps.last-release.outputs.url }}
+          commit_count:      ${{ steps.gitlog.outputs.count }}
+          commits_json:      ${{ steps.gitlog.outputs.commits_json }}
+          compare_url:       ${{ steps.gitlog.outputs.compare_url }}
+          e2e_image:         ${{ inputs.e2e_image }}
+          output:            ${{ runner.temp }}/promotion-pr-body.md
 
       - name: Upsert promotion PR
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'

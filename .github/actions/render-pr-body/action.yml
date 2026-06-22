@@ -1,0 +1,116 @@
+name: Render promotion PR body
+description: >
+  Generate the promotion PR body (testing -> stable) using render_pr_body.py.
+  Accesses the script via $GITHUB_ACTION_PATH — no repo checkout required.
+
+inputs:
+  variants:
+    description: 'JSON array of variant objects, e.g. [{"image":"bluefin"}]'
+    required: true
+  repo:
+    description: 'owner/repo'
+    required: true
+  run_url:
+    description: 'GitHub Actions run URL'
+    required: true
+  source_branch:
+    description: 'Source branch being promoted'
+    required: false
+    default: 'testing'
+  target_branch:
+    description: 'Target branch'
+    required: false
+    default: 'main'
+  days_since_stable:
+    description: 'Days since last stable release (omit if no prior release)'
+    required: false
+    default: ''
+  last_release_tag:
+    description: 'Tag of last stable release'
+    required: false
+    default: ''
+  last_release_url:
+    description: 'HTML URL of last stable release'
+    required: false
+    default: ''
+  commit_count:
+    description: 'Number of commits testing is ahead of main/stable'
+    required: false
+    default: '0'
+  commits_json:
+    description: 'JSON array of {sha, subject} objects'
+    required: false
+    default: '[]'
+  compare_url:
+    description: 'GitHub compare URL (main...testing)'
+    required: false
+    default: ''
+  e2e_image:
+    description: 'Full image ref for screenshot URL slug (e.g. ghcr.io/projectbluefin/bluefin:testing)'
+    required: false
+    default: ''
+  output:
+    description: 'Output file path for the rendered PR body'
+    required: true
+
+outputs:
+  pr_title:
+    description: 'Generated PR title (conventional commit format)'
+    value: ${{ steps.render.outputs.pr_title }}
+
+runs:
+  using: composite
+  steps:
+    - name: Render PR body
+      id: render
+      shell: bash
+      env:
+        VARIANTS:      ${{ inputs.variants }}
+        REPO:          ${{ inputs.repo }}
+        RUN_URL:       ${{ inputs.run_url }}
+        SOURCE_BRANCH: ${{ inputs.source_branch }}
+        TARGET_BRANCH: ${{ inputs.target_branch }}
+        DAYS_AGO:      ${{ inputs.days_since_stable }}
+        LAST_TAG:      ${{ inputs.last_release_tag }}
+        LAST_URL:      ${{ inputs.last_release_url }}
+        COMMIT_COUNT:  ${{ inputs.commit_count }}
+        COMMITS_JSON:  ${{ inputs.commits_json }}
+        COMPARE_URL:   ${{ inputs.compare_url }}
+        E2E_IMAGE:     ${{ inputs.e2e_image }}
+        PR_BODY_FILE:  ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+        PRIMARY_IMAGE=$(echo "${VARIANTS}" | jq -r 'if .[0] | type == "string" then .[0] else .[0].image end')
+        PROJECT_NAME=$(echo "${PRIMARY_IMAGE}" | tr '-' ' ' | python3 -c "import sys; print(sys.stdin.read().title().strip())")
+        DATE="$(date -u +%Y-%m-%d)"
+
+        DAYS_ARGS=()
+        [[ -n "${DAYS_AGO}" ]] && DAYS_ARGS+=(--days-since-stable "${DAYS_AGO}")
+        TAG_ARGS=()
+        [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
+
+        python3 "$GITHUB_ACTION_PATH/render_pr_body.py" \
+          --project-name  "${PROJECT_NAME}" \
+          --primary-image "${PRIMARY_IMAGE}" \
+          --variants-json "${VARIANTS}" \
+          --repo          "${REPO}" \
+          --run-url       "${RUN_URL}" \
+          --date          "${DATE}" \
+          "${DAYS_ARGS[@]}" \
+          "${TAG_ARGS[@]}" \
+          --commit-count  "${COMMIT_COUNT}" \
+          --commits-json  "${COMMITS_JSON}" \
+          --compare-url   "${COMPARE_URL}" \
+          --output        "${PR_BODY_FILE}"
+
+        # Append screenshot section
+        if [[ -n "$E2E_IMAGE" ]]; then
+          SCREENSHOT_SLUG=$(echo "$E2E_IMAGE" | sed 's|ghcr.io/[^/]*/||' | tr ':' '-')
+        else
+          SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
+        fi
+        SCREENSHOT_URL="https://projectbluefin.github.io/testsuite/screenshots/${SCREENSHOT_SLUG}-smoke-latest.png"
+        printf '\n## Desktop Screenshot\n\n> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n\n![%s desktop](%s)\n' \
+          "${PRIMARY_IMAGE}" "${SCREENSHOT_URL}" >> "${PR_BODY_FILE}"
+
+        echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"
