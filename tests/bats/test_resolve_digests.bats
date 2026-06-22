@@ -3,9 +3,8 @@
 # Covers: successful resolution, partial failure, empty variants, object variant
 # format, digests JSON correctness, rows output, ok/summary values.
 
-SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/resolve_digests.sh"
-
 setup() {
+  SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/resolve_digests.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"

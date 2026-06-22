@@ -3,9 +3,8 @@
 # Covers: stream routing, kernel-pin parsing, PR tag format, promotion day
 # detection, version label prefix stripping, and stable-daily aliasing.
 
-SCRIPT="${BATS_TEST_DIRNAME}/../../bootc-build/generate-tags/generate_tags.sh"
-
 setup() {
+  SCRIPT="${BATS_TEST_DIRNAME}/../../bootc-build/generate-tags/generate_tags.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"

@@ -7,6 +7,7 @@ on:
       - "actions/**"
       - "bootc-build/create-release/scripts/**"
       - "bootc-build/chunka/**"
+      - "bootc-build/detect-changes/**"
       - "bootc-build/generate-tags/**"
       - "scripts/**"
       - "tests/**"
@@ -16,6 +17,7 @@ on:
       - "actions/**"
       - "bootc-build/chunka/**"
       - "bootc-build/create-release/scripts/**"
+      - "bootc-build/detect-changes/**"
       - "bootc-build/generate-tags/**"
       - "scripts/**"
       - "tests/**"
@@ -52,3 +54,20 @@ jobs:
             --cov=scripts \
             --cov-report=term-missing \
             --cov-fail-under=75
+
+  bats:
+    name: bats
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install bats
+        run: |
+          sudo npm install -g bats@1.13.0
+          bats --version
+
+      - name: Run bats tests
+        run: bats --print-output-on-failure tests/bats/

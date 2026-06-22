@@ -2,9 +2,8 @@
 # Tests for actions/check-token-health/check_token_health.sh
 # Uses mock curl to exercise each code path without real GitHub API calls.
 
-SCRIPT="${BATS_TEST_DIRNAME}/../../actions/check-token-health/check_token_health.sh"
-
 setup() {
+  SCRIPT="${BATS_TEST_DIRNAME}/../../actions/check-token-health/check_token_health.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"

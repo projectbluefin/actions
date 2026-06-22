@@ -3,9 +3,8 @@
 # Covers: RESOLVE_OK short-circuit, successful verification, failed verification,
 # missing digest, object variant format, partial failure, output variable correctness.
 
-SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/verify_signatures.sh"
-
 setup() {
+  SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/verify_signatures.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"
