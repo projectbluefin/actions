@@ -93,7 +93,21 @@ jobs:
             fi
           done
 
-          # ── Check 2: cliff.toml presence in image repos ───────────────────────
+          # ── Check 2: consumers must use @v1, not SHA pins, for actions refs ───
+          for repo in "${CONSUMER_REPOS[@]}"; do
+            short="${repo#projectbluefin/}"
+            sha_pinned=$(
+              grep -rh 'uses:.*projectbluefin/actions.*@[0-9a-f]\{40\}' \
+                "/tmp/workflows/${short}/" 2>/dev/null \
+              | grep -v '^\s*#' \
+              || true
+            )
+            if [[ -n "${sha_pinned}" ]]; then
+              drift_items+=("${repo}|actions-sha-pin|Consumer pins projectbluefin/actions to a commit SHA instead of @v1")
+            fi
+          done
+
+          # ── Check 3: cliff.toml presence in image repos ───────────────────────
           for repo in "${IMAGE_REPOS[@]}"; do
             has_cliff=$(
               gh api "repos/${repo}/contents/cliff.toml" --jq '.name' 2>/dev/null \
@@ -104,7 +118,7 @@ jobs:
             fi
           done
 
-          # ── Check 3: promote-testing-to-main LoC threshold ───────────────────
+          # ── Check 4: promote-testing-to-main LoC threshold ───────────────────
           for repo in "${CONSUMER_REPOS[@]}"; do
             short="${repo#projectbluefin/}"
             promote_wf="/tmp/workflows/${short}/promote-testing-to-main.yml"
@@ -116,7 +130,7 @@ jobs:
             fi
           done
 
-          # ── Check 4: Testsuite SHA divergence ────────────────────────────────
+          # ── Check 5: Testsuite SHA divergence ────────────────────────────────
           testsuite_shas=()
           for repo in "${CONSUMER_REPOS[@]}"; do
             short="${repo#projectbluefin/}"
