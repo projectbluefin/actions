@@ -31,7 +31,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add upgrade/rollback testing to a bootc image repo | `docs/skills/consumer-guide/upgrade-and-migration.md` → "Upgrade test" |
 | Use these actions in a new or external bootc image repo | `docs/skills/consumer-guide.md` |
 | Understand the Justfile contract for the reusable workflow | `docs/skills/consumer-guide.md` → "Path 1" |
-| Wire a skill-drift check to a consumer repo | `docs/skills/consumer-guide.md` → "Checklist" + `docs/skills/factory-operations.md` |
+| Wire a new bootc image repo to use these actions | `docs/skills/consumer-guide.md` → "Checklist" |
 | Understand `force-compression` for CentOS Stream consumers | `docs/skills/composite-actions.md` → "Force-compression input rationale" |
 | Understand zstd:chunked compression invariants or run regression tests | `docs/skills/composite-actions/action-reference.md` → "chunka" |
 | Audit non-deterministic surfaces in the factory | `docs/skills/determinism.md` |
@@ -52,8 +52,6 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Vendor or hash-verify an external build file | `docs/skills/supply-chain.md` → "vendor external build instruction files" |
 | Understand or configure the production gate (2-human approval) | `docs/skills/factory-operations.md` → "Production Gate" |
 | Monitor factory success rates or configure scheduled health alerts | `docs/skills/factory-operations.md` → "Factory Health Monitor" |
-| Understand the skill-drift PR check | `docs/skills/factory-operations.md` → "Skill-Drift PR Check" |
-| Understand the weekly skill audit | `docs/skills/factory-operations.md` → "Skill Audit" |
 | Debug a stuck or missing Environment approval gate | `docs/skills/factory-operations.md` → "Troubleshooting" |
 | Understand dakota-specific action adoption | `docs/skills/consumer-guide/upgrade-and-migration.md` → "Dakota" |
 | Wire migration testing across registries | `docs/skills/consumer-guide/upgrade-and-migration.md` → "Migration test" |
@@ -70,5 +68,5 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`consumer-guide/upgrade-and-migration.md`](skills/consumer-guide/upgrade-and-migration.md) | Upgrade test gate, migration test, dakota Path 2 notes, live consumer examples |
 | [`consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius before merge |
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
-| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), skill-drift PR check, scheduled skill audit, Renovate auto-merge, promotion PR format (Design C) |
+| [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), factory health monitor, Renovate auto-merge, promotion PR format (Design C) |
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |

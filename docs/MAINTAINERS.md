@@ -18,8 +18,6 @@ Agent reads AGENTS.md → docs/SKILL.md → relevant skill in docs/skills/
   ↓
 Opens PR with code change AND skill update in the same commit
   ↓
-skill-drift-check.yml fires (warns if skill update missing — never blocks)
-  ↓
 CODEOWNERS routes review to all four maintainers (bootc-build/, .github/, docs/)
   ↓
 Human reviews and merges
@@ -56,11 +54,6 @@ Promotion workflows in bluefin, bluefin-lts, and dakota require **2 distinct hum
 
 ## The self-improving loop
 
-| Workflow | Trigger | What it does |
-|---|---|---|
-| `skill-drift-check.yml` | Every PR | Warns (never blocks) when code changes without a skill update |
-| `skill-audit.yml` | Weekly | Checks skill file freshness; opens a GitHub issue when stale |
-
 **Knowledge routing rule:** All learnings go to `docs/skills/`. Never to `.github/copilot-instructions.md` (pointer-only, do not edit), and never to a personal agent config. A fix found here belongs to every future agent in this repo.
 
 ## When an agent goes off-script
@@ -68,7 +61,6 @@ Promotion workflows in bluefin, bluefin-lts, and dakota require **2 distinct hum
 | Symptom | Response |
 |---|---|
 | Floating tag (`@main`, `@v3`) introduced | Request changes; cite `docs/skills/determinism.md` |
-| PR has no skill update | Request changes; point to the `skill-drift` annotation in the Checks tab |
 | Agent pushes directly to `main` | Branch protection blocks it; no action needed |
 | PR comment spam / duplicate status | Enforce one-comment-per-PR-event policy (from `AGENTS.md`) |
 | Agent asks to move `@v1` | Decline — that action is human-only |
@@ -84,6 +76,6 @@ Promotion workflows in bluefin, bluefin-lts, and dakota require **2 distinct hum
 | [`docs/skills/consumer-guide.md`](skills/consumer-guide.md) | Onboarding a new image repo |
 | [`docs/skills/consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius |
 | [`docs/skills/determinism.md`](skills/determinism.md) | SHA pinning, non-deterministic surfaces |
-| [`docs/skills/factory-operations.md`](skills/factory-operations.md) | Production gate, skill-drift check, weekly audit |
+| [`docs/skills/factory-operations.md`](skills/factory-operations.md) | Production gate, factory health monitor |
 | [`.github/CODEOWNERS`](../.github/CODEOWNERS) | Per-path review routing |
-| [`.github/workflows/`](../.github/workflows/) | `actionlint`, `skill-drift-check`, `skill-audit` |
+| [`.github/workflows/`](../.github/workflows/) | `actionlint`, CI checks |
