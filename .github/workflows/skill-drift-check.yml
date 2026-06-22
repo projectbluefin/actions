@@ -1,0 +1,28 @@
+name: Skill Drift Check (deprecated no-op)
+# Retained as a no-op stub so consumer repos calling it at @v1 do not break.
+# Consumer repos should delete their skill-drift.yml on next maintenance pass.
+
+on:
+  workflow_call:
+    inputs:
+      code-paths:
+        description: "Unused (deprecated)"
+        required: false
+        type: string
+        default: "[]"
+      skill-paths:
+        description: "Unused (deprecated)"
+        required: false
+        type: string
+        default: "[]"
+
+permissions: {}
+
+jobs:
+  check:
+    name: skill-drift (deprecated no-op)
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: No-op
+        run: echo "Skill drift check removed. Delete skill-drift.yml from consumer repo."
