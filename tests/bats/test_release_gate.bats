@@ -3,10 +3,9 @@
 # Exercises: successful resolution, partial failure, cosign pass/fail,
 # skipped verification on failed resolution, and missing digest handling.
 
-RESOLVE_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/resolve_digests.sh"
-VERIFY_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/verify_signatures.sh"
-
 setup() {
+  RESOLVE_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/resolve_digests.sh"
+  VERIFY_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/verify_signatures.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"

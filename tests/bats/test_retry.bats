@@ -3,9 +3,8 @@
 # Covers: success on first attempt, retry on failure, pattern-filtered retry,
 # max-attempts exhaustion, exponential backoff doubling.
 
-SCRIPT="${BATS_TEST_DIRNAME}/../../actions/retry/retry.sh"
-
 setup() {
+  SCRIPT="${BATS_TEST_DIRNAME}/../../actions/retry/retry.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"
