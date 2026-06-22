@@ -121,15 +121,6 @@ jobs:
             || { echo "::error::Branch '${E2E_HEAD_BRANCH}' not found — check inputs.source_branch"; exit 1; }
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout actions scripts
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          repository: projectbluefin/actions
-          path: .workflow-scripts
-          sparse-checkout: |
-            scripts/render_pr_body.py
-          sparse-checkout-cone-mode: false
-
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -191,12 +182,6 @@ jobs:
           git diff --name-only --diff-filter=D "origin/${TARGET_BRANCH}" "origin/${SOURCE_BRANCH}" \
             | xargs -r git rm -f --ignore-unmatch -- 2>/dev/null || true
           git add -A
-          # The runner checks out projectbluefin/actions into .workflow-scripts earlier in
-          # this job. `git add -A` captures that as an undeclared gitlink (mode 160000) with
-          # no .gitmodules entry. Consumer builds that use `submodules: recursive` abort with
-          # "No url found for submodule path .workflow-scripts".  Remove it from the index
-          # before writing the tree so the squash commit is clean.
-          git update-index --force-remove .workflow-scripts 2>/dev/null || true
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
@@ -282,6 +267,16 @@ jobs:
           ' 2>/dev/null || echo '[]')
           echo "commits_json=${COMMITS_JSON}" >> "$GITHUB_OUTPUT"
           echo "compare_url=https://github.com/${{ github.repository }}/compare/${TARGET_BRANCH}...${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout actions scripts
+        if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          repository: projectbluefin/actions
+          path: .workflow-scripts
+          sparse-checkout: |
+            scripts/render_pr_body.py
+          sparse-checkout-cone-mode: false
 
       - name: Render promotion PR body
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
