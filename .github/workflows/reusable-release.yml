@@ -283,15 +283,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p sbom-current
-          # Pull to local OCI archive first — skopeo handles chunked pull far better than
-          # syft's registry: mode and avoids the OOM/timeout that plagued registry: scans.
+          # Pull to local OCI dir — skopeo handles chunked pull far better than
+          # syft's registry: mode. oci-dir stores each layer as a separate file,
+          # avoiding the 2 GB per-entry decompression limit that oci-archive hits
+          # on large images (e.g. bluefin-lts-hwe).
           skopeo copy --insecure-policy \
             "docker://${IMAGE}:${STREAM_NAME}" \
-            "oci-archive:/tmp/sbom-image.tar"
-          "${SYFT_CMD}" "oci-archive:/tmp/sbom-image.tar" \
+            "oci:/tmp/sbom-image-dir"
+          "${SYFT_CMD}" "oci-dir:/tmp/sbom-image-dir" \
             -o spdx-json="sbom-current/${IMAGE_NAME}.sbom.json"
           echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
-          rm -f /tmp/sbom-image.tar
+          rm -rf /tmp/sbom-image-dir
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
