@@ -45,6 +45,12 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 
 **Bot/Renovate exemption:** PRs authored by a bot (login ending in `[bot]` or starting with `app/`, e.g. `renovate[bot]`, `mergeraptor[bot]`) are automatically exempt — they skip all three evidence checks. SHA pin bumps carry no behavior change and cannot provide consumer PR URLs.
 
+**`no-floating-action-tags` pre-commit exemption scope:** The hook exempts `@v1` refs to
+`projectbluefin/actions` only — not all `projectbluefin/*` repos. If a workflow in this repo
+references another first-party repo (e.g. `projectbluefin/bonedigger`) with a floating tag,
+the hook will flag it. Either SHA-pin the reference or add an explicit exemption to
+`.pre-commit-config.yaml` with a comment explaining why.
+
 **N/A rules — which fields accept it:**
 
 | Field | Accepts "N/A"? | Requirement |
