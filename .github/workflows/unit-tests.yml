@@ -70,4 +70,4 @@ jobs:
           bats --version
 
       - name: Run bats tests
-        run: bats tests/bats/
+        run: bats --print-output-on-failure tests/bats/
