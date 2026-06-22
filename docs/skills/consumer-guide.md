@@ -268,7 +268,6 @@ Move back to `@v1` after the branch merges. Renovate manages SHA bumps automatic
 - [ ] `image_flavors` and `architecture` use double-quoted strings inside the JSON array: `'["main"]'` not `"['main']"`
 - [ ] Tested with `stream_name: testing` first (faster feedback loop)
 - [ ] Opened a draft PR in your repo to validate the integration before merging
-- [ ] Added a `skill-drift.yml` wrapper calling `skill-drift-check.yml@v1` — see `docs/skills/factory-operations.md` → "Skill-Drift PR Check"
 - [ ] Production promotion workflow gated behind `environment: production` with 2 required reviewers
 
 ---
