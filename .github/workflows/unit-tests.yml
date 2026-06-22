@@ -66,7 +66,7 @@ jobs:
 
       - name: Install bats
         run: |
-          sudo npm install -g bats@1.11.1
+          sudo npm install -g bats@1.13.0
           bats --version
 
       - name: Run bats tests
