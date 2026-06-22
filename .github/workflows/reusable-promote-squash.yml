@@ -191,6 +191,12 @@ jobs:
           git diff --name-only --diff-filter=D "origin/${TARGET_BRANCH}" "origin/${SOURCE_BRANCH}" \
             | xargs -r git rm -f --ignore-unmatch -- 2>/dev/null || true
           git add -A
+          # The runner checks out projectbluefin/actions into .workflow-scripts earlier in
+          # this job. `git add -A` captures that as an undeclared gitlink (mode 160000) with
+          # no .gitmodules entry. Consumer builds that use `submodules: recursive` abort with
+          # "No url found for submodule path .workflow-scripts".  Remove it from the index
+          # before writing the tree so the squash commit is clean.
+          git rm --cached .workflow-scripts 2>/dev/null || true
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
