@@ -67,7 +67,6 @@ teardown() {
 @test "valid token passes with no required scopes" {
   make_curl_mock 200 "repo, workflow"
   run bash "$SCRIPT"
-  echo "STATUS=$status OUTPUT=$output SCRIPT=$SCRIPT" >&3
   [ "$status" -eq 0 ]
   grep -q "valid=true" "$GITHUB_OUTPUT"
   grep -q "rate_remaining=5000" "$GITHUB_OUTPUT"
