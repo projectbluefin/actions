@@ -125,7 +125,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           repository: projectbluefin/actions
-          path: .workflow-scripts
+          path: ${{ runner.temp }}/.workflow-scripts
           sparse-checkout: |
             scripts/render_pr_body.py
           sparse-checkout-cone-mode: false
@@ -191,12 +191,6 @@ jobs:
           git diff --name-only --diff-filter=D "origin/${TARGET_BRANCH}" "origin/${SOURCE_BRANCH}" \
             | xargs -r git rm -f --ignore-unmatch -- 2>/dev/null || true
           git add -A
-          # The runner checks out projectbluefin/actions into .workflow-scripts earlier in
-          # this job. `git add -A` captures that as an undeclared gitlink (mode 160000) with
-          # no .gitmodules entry. Consumer builds that use `submodules: recursive` abort with
-          # "No url found for submodule path .workflow-scripts".  Remove it from the index
-          # before writing the tree so the squash commit is clean.
-          git update-index --force-remove .workflow-scripts 2>/dev/null || true
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
@@ -310,7 +304,7 @@ jobs:
           TAG_ARGS=()
           [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
 
-          python3 .workflow-scripts/scripts/render_pr_body.py \
+          python3 "$RUNNER_TEMP/.workflow-scripts/scripts/render_pr_body.py" \
             --project-name  "${PROJECT_NAME}" \
             --primary-image "${PRIMARY_IMAGE}" \
             --variants-json "${VARIANTS}" \
