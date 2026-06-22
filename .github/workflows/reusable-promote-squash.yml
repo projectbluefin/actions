@@ -196,7 +196,7 @@ jobs:
           # no .gitmodules entry. Consumer builds that use `submodules: recursive` abort with
           # "No url found for submodule path .workflow-scripts".  Remove it from the index
           # before writing the tree so the squash commit is clean.
-          git rm --cached .workflow-scripts 2>/dev/null || true
+          git update-index --force-remove .workflow-scripts 2>/dev/null || true
           # Guard: git merge --squash may report "Already up to date" when source branch
           # content is already subsumed by target (diverged histories, identical effective
           # diff). git commit would exit 1 with nothing staged — catch this early.
