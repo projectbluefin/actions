@@ -28,10 +28,14 @@ Coverage gate: `--cov-fail-under=75`
 | `bootc-build/generate-tags/generate_tags.sh` | `tests/bats/test_generate_tags.bats` |
 | `actions/retry/retry.sh` | `tests/bats/test_retry.bats` |
 | `actions/check-token-health/check_token_health.sh` | `tests/bats/test_check_token_health.bats` |
-| `scripts/resolve_digests.sh` | `tests/bats/test_resolve_digests.bats` |
-| `scripts/verify_signatures.sh` | `tests/bats/test_verify_signatures.bats` |
+| `scripts/resolve_digests.sh` | `tests/bats/test_resolve_digests.bats` (10 tests) |
+| `scripts/verify_signatures.sh` | `tests/bats/test_verify_signatures.bats` (15 tests) |
+| `scripts/release_gate.sh` | `tests/bats/test_release_gate.bats` |
+| `detect-changes` image_flavors shell logic | `tests/bats/test_detect_changes.bats` (8 tests) |
+| `push-image` push/retry/alias shell logic | `tests/bats/test_push_image.bats` (16 tests) |
+| `sign-and-publish` keyless/key validation | `tests/bats/test_sign_and_publish.bats` (12 tests) |
 
-The bats suite is run as a separate job in `unit-tests.yml` (see `bats/` job). Run locally:
+The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
 ```bash
 bats tests/bats/test_resolve_digests.bats
@@ -132,6 +136,50 @@ matching instead:
 ```bash
 [[ "$(<"$GITHUB_OUTPUT")" == *"bluefin|sha256:deadbeef"* ]]
 ```
+
+### Testing shell logic embedded in action YAML
+
+Composite action steps often have non-trivial shell logic inline in `action.yml` with no
+corresponding standalone script file. The canonical approach:
+
+1. **Capture the snippet verbatim** in a bats variable — this serves as a change detector:
+   any edit to the action that alters testable behavior must update the test.
+
+```bash
+# In the bats file, at the top:
+PUSH_LOGIC='
+set -euo pipefail
+...
+# exact shell from action.yml run: block
+'
+```
+
+2. **Run it with `bash -c`** in each test, setting env vars to simulate inputs:
+
+```bash
+@test "empty TAGS exits with error" {
+  export TAGS=""
+  run bash -c "$PUSH_LOGIC"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"At least one tag"* ]]
+}
+```
+
+3. **Mock external binaries** via `PATH` injection (see "Mock external binaries" above).
+
+**When the action has `sudo` calls:** add a pass-through `sudo` mock so tests run without
+privilege. The mock just calls `"$@"`, then mock the real tool (`buildah`, `podman`) separately.
+
+**Quoting pitfall:** embedding single-quoted shell inside a double-quoted heredoc requires
+escaping with `'"'"'`. Use `'"'"'` to produce a literal `'` inside the shell snippet string:
+
+```bash
+# Produces: echo 'image_flavors=["main"]' >> "$GITHUB_OUTPUT"
+SNIPPET='echo '"'"'image_flavors=["main"]'"'"' >> "$GITHUB_OUTPUT"'
+```
+
+Alternatively, assign the snippet via a POSIX `$(cat <<'EOF'...EOF)` block in `setup()`
+if the quoting becomes unmanageable.
 
 ## Adding a new script
 

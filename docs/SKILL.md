@@ -39,6 +39,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add or scan an image for CVEs before push | `docs/skills/supply-chain.md` → "shift-left CVE scanning" + `docs/skills/composite-actions/action-reference.md` → "scan-image" |
 | Add or modify Python unit tests | `docs/skills/testing.md` |
 | Understand or change the pytest coverage threshold | `docs/skills/testing.md` |
+| Add bats tests for a shell script or inline action shell step | `docs/skills/testing.md` → "Shell scripts (bats)" + "Testing shell logic embedded in action YAML" |
+| Wire a new bats test into CI | `docs/skills/testing.md` → "Shell scripts (bats)" (bats job in `unit-tests.yml`) |
 | Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
 | Understand or debug the promotion PR body or gate checklist | `docs/skills/factory-operations.md` → "Promotion PR Format" |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
