@@ -51,22 +51,22 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> str:
            [" | ".join(row) for row in rows])
 
 
-# ── SBOM inventory ────────────────────────────────────────────────────────────
+def _load_extra_components(path: str | None) -> list[dict]:
+    """Load extra key-component rows from a JSON file.
 
-def _load_full_inventory(sbom_path: str) -> list[dict]:
-    """Return all named packages from the SPDX-JSON sorted alphabetically."""
-    with open(sbom_path, encoding="utf-8") as f:
-        sbom = json.load(f)
-    seen: dict[str, str] = {}
-    for p in sbom.get("packages", []):
-        name = p.get("name", "").strip()
-        ver  = p.get("versionInfo", "").strip()
-        if not name:
-            continue
-        # Keep first occurrence; prefer non-empty version
-        if name not in seen or (not seen[name] and ver):
-            seen[name] = ver
-    return [{"name": k, "version": v} for k, v in sorted(seen.items())]
+    File format: [{"label": "Kernel (Base)", "version": "6.12.0"}]
+    Returns rows in the same shape as notable package dicts so they can be
+    appended directly to the notable list and rendered by _section_notable().
+    Returns [] when path is None or file does not exist.
+    """
+    if not path or not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return [
+        {"name": item["label"], "version": item["version"], "prev": None, "changed": False}
+        for item in data
+    ]
 
 
 # ── Section builders ──────────────────────────────────────────────────────────
@@ -74,6 +74,27 @@ def _load_full_inventory(sbom_path: str) -> list[dict]:
 def _section_card(tag: str, repo: str) -> str:
     url = f"https://github.com/{repo}/releases/download/{tag}/release-card.png"
     return f"![Release card]({url})\n"
+
+
+def _section_variants(variants: list[dict] | None) -> str:
+    """Render promoted variants table. Returns '' when variants is None or empty."""
+    if not variants:
+        return ""
+    rows = []
+    notes = []
+    for v in variants:
+        rows.append(f"| `{v['name']}` | `{v['tag']}` | `{v['digest']}` |")
+        if v.get("note"):
+            notes.append(v["note"])
+    table = (
+        "## Variants promoted\n\n"
+        "| Variant | Tag | Digest |\n"
+        "|---|---|---|\n"
+        + "\n".join(rows)
+    )
+    if notes:
+        table += "\n\n" + "\n\n".join(f"> {n}" for n in notes)
+    return table + "\n"
 
 
 def _screenshot_slug(image: str) -> str:
@@ -146,20 +167,6 @@ def _section_diff_summary(diff: dict, has_prev: bool, total: int) -> str:
     return (
         f"> {summary} since the previous release. "
         f"**{total} packages** total — full inventory below.\n"
-    )
-
-
-def _section_full_inventory(inventory: list[dict], total: int) -> str:
-    rows = "\n".join(
-        f"| `{p['name']}` | `{p['version']}` |" for p in inventory
-    )
-    return (
-        f"<details>\n"
-        f"<summary>📦 Full SPDX package inventory — {total} packages</summary>\n\n"
-        f"| Package | Version |\n"
-        f"|---|---|\n"
-        f"{rows}\n\n"
-        f"</details>\n"
     )
 
 
@@ -240,7 +247,7 @@ def _section_supply_chain(
     """
     image_at_digest = f"{image}@{digest}"
 
-    return f"""\
+    body = f"""\
 ## Supply chain
 
 This image is signed, attested, and ships a full SPDX-JSON SBOM.
@@ -339,6 +346,7 @@ cosign verify-attestation \\
 
 Full changelog and verification guide → {docs_url}
 """
+    return f"<details>\n<summary>Supply chain verification</summary>\n\n{body}\n</details>\n"
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -384,8 +392,7 @@ def main() -> None:
 
     sbom_filename = args.sbom_filename or os.path.basename(args.sbom)
 
-    inventory = _load_full_inventory(args.sbom)
-    total     = versions.get("total_packages", len(inventory))
+    total = versions.get("total_packages", 0)
 
     sections = [
         _section_card(args.tag, args.repo),
@@ -395,8 +402,6 @@ def main() -> None:
         _section_diff_summary(versions["diff"], versions["has_prev"], total),
         "",
         _section_notable(versions["notable"]),
-        "",
-        _section_full_inventory(inventory, total),
         "",
         _section_diff_details(versions["diff"], versions["has_prev"]),
         "",

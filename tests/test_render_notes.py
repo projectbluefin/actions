@@ -161,28 +161,6 @@ class TestSectionScreenshot:
 
 # ── _section_supply_chain ─────────────────────────────────────────────────────
 
-# ── _section_full_inventory ──────────────────────────────────────────────────
-
-class TestSectionFullInventory:
-    def test_contains_package_names(self):
-        inv = [{"name": "bash", "version": "5.2"}, {"name": "zsh", "version": "5.9"}]
-        md = render_notes._section_full_inventory(inv, 2)
-        assert "bash" in md
-        assert "zsh" in md
-        assert "5.2" in md
-
-    def test_shows_total_count(self):
-        inv = [{"name": "p", "version": "1.0"}]
-        md = render_notes._section_full_inventory(inv, 1)
-        assert "1" in md
-
-    def test_is_collapsible_details_block(self):
-        inv = [{"name": "p", "version": "1.0"}]
-        md = render_notes._section_full_inventory(inv, 1)
-        assert "<details>" in md
-        assert "</details>" in md
-
-
 # ── overflow / body-size guard ────────────────────────────────────────────────
 
 class TestOverflowGuard:
@@ -287,7 +265,7 @@ class TestOverflowGuard:
             "Full notes must be longer than the trimmed body"
 
     def test_overflow_body_stays_under_github_limit(self, tmp_path):
-        """Even with a huge SBOM, the trimmed body stays under 120k chars."""
+        """Even with a huge SBOM, the release body stays under 120k chars."""
         import json, os, sys
         # Simulate a large image: 3000 packages
         sbom = {
@@ -330,9 +308,8 @@ class TestOverflowGuard:
         body = output_path.read_text()
         assert len(body) <= 120_000, \
             f"Release body must stay ≤ 120 000 chars even for large images (got {len(body)})"
-        # Overflow file should have been written for 3000 packages
-        assert overflow_path.exists(), \
-            "Overflow file should be present for a 3000-package image"
+        # With the full inventory removed, notes are much smaller and no overflow is needed
+        # for 3000 packages. This test just verifies that body stays under the limit.
 
 
 class TestSectionSupplyChain:
@@ -376,3 +353,100 @@ class TestSectionSupplyChain:
     def test_sbom_filename_injected(self):
         md = self._call(sbom_filename="custom.spdx.json")
         assert "custom.spdx.json" in md
+
+
+class TestSectionVariants:
+    def test_empty_returns_empty_string(self):
+        assert render_notes._section_variants(None) == ""
+        assert render_notes._section_variants([]) == ""
+
+    def test_single_variant_appears_in_table(self):
+        variants = [{"name": "bluefin-lts", "tag": ":stable", "digest": "sha256:abc123"}]
+        md = render_notes._section_variants(variants)
+        assert "bluefin-lts" in md
+        assert ":stable" in md
+        assert "sha256:abc123" in md
+
+    def test_multiple_variants_all_appear(self):
+        variants = [
+            {"name": "bluefin-lts", "tag": ":stable", "digest": "sha256:aaa"},
+            {"name": "bluefin-lts-hwe", "tag": ":stable", "digest": "sha256:bbb"},
+            {"name": "bluefin-lts-hwe-nvidia", "tag": ":stable", "digest": "sha256:ccc"},
+        ]
+        md = render_notes._section_variants(variants)
+        assert "bluefin-lts" in md
+        assert "bluefin-lts-hwe" in md
+        assert "bluefin-lts-hwe-nvidia" in md
+        assert "sha256:aaa" in md
+        assert "sha256:bbb" in md
+        assert "sha256:ccc" in md
+
+    def test_optional_note_appears(self):
+        variants = [{"name": "img", "tag": ":stable", "digest": "sha256:x",
+                     "note": "Uses HWE kernel"}]
+        md = render_notes._section_variants(variants)
+        assert "Uses HWE kernel" in md
+
+    def test_has_variants_promoted_heading(self):
+        variants = [{"name": "img", "tag": ":stable", "digest": "sha256:x"}]
+        md = render_notes._section_variants(variants)
+        assert "## Variants promoted" in md
+
+    def test_is_markdown_table(self):
+        variants = [{"name": "img", "tag": ":stable", "digest": "sha256:x"}]
+        md = render_notes._section_variants(variants)
+        assert "|" in md
+
+
+class TestLoadExtraComponents:
+    def test_none_path_returns_empty(self):
+        assert render_notes._load_extra_components(None) == []
+
+    def test_missing_file_returns_empty(self):
+        assert render_notes._load_extra_components("/nonexistent/path.json") == []
+
+    def test_parses_label_version(self, tmp_path):
+        f = tmp_path / "extra.json"
+        f.write_text('[{"label": "Kernel (Base)", "version": "6.12.0-22.el10"}]')
+        result = render_notes._load_extra_components(str(f))
+        assert len(result) == 1
+        assert result[0]["name"] == "Kernel (Base)"
+        assert result[0]["version"] == "6.12.0-22.el10"
+        assert result[0]["prev"] is None
+        assert result[0]["changed"] is False
+
+    def test_multiple_components(self, tmp_path):
+        f = tmp_path / "extra.json"
+        f.write_text('[{"label": "A", "version": "1.0"}, {"label": "B", "version": "2.0"}]')
+        result = render_notes._load_extra_components(str(f))
+        assert len(result) == 2
+
+
+class TestSupplyChainCollapsed:
+    def test_wrapped_in_details_block(self):
+        md = render_notes._section_supply_chain(
+            image="ghcr.io/projectbluefin/bluefin",
+            digest="sha256:abc123",
+            repo="projectbluefin/bluefin",
+            tag="2026-05-14-abc1234",
+            cert_regexp="^https://github.com/",
+            sbom_filename="bluefin.spdx.json",
+            docs_url="https://docs.projectbluefin.io/changelogs",
+        )
+        assert "<details>" in md
+        assert "</details>" in md
+        assert "<summary>Supply chain verification</summary>" in md
+
+    def test_commands_still_present(self):
+        md = render_notes._section_supply_chain(
+            image="ghcr.io/projectbluefin/bluefin",
+            digest="sha256:abc123",
+            repo="projectbluefin/bluefin",
+            tag="2026-05-14-abc1234",
+            cert_regexp="^https://github.com/",
+            sbom_filename="bluefin.spdx.json",
+            docs_url="https://docs.projectbluefin.io/changelogs",
+        )
+        assert "cosign verify" in md
+        assert "oras discover" in md
+        assert "slsa-verifier" in md
