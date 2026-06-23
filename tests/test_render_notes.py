@@ -607,9 +607,9 @@ class TestSectionOrder:
 
     def test_full_inventory_not_in_body(self, tmp_path):
         md = self._run_main(tmp_path)
-        # Full inventory would produce hundreds of table rows; supply chain has ~3-4
+        # Full inventory would produce hundreds of table rows; supply chain has ~3
         # This catches regression if the full SPDX package inventory is reintroduced
-        assert md.count("\n|") < 20, "Too many table rows; full inventory may have been introduced"
+        assert md.count("\n|") < 7, "Too many table rows; full inventory may have been introduced"
         # Also verify specific inventory section headers are absent
         assert "## SPDX Packages" not in md
         assert "## Full package inventory" not in md
