@@ -6,32 +6,18 @@
 # separate overflow file (default release-notes-full.md) so they can be
 # attached as a release asset, and a trimmed body is written to --output.
 """
-render_notes.py — Generate release notes markdown with full SBOM display
-and step-by-step supply chain verification instructions using CNCF tools.
+render_notes.py — Generate release notes markdown.
 
-Usage:
-    python3 render_notes.py \\
-        --versions       versions.json \\
-        --sbom           current.spdx.json \\
-        --tag            2026-05-14-abc1234 \\
-        --title          "Bluefin Stable 2026-05-14" \\
-        --image          ghcr.io/projectbluefin/bluefin \\
-        --digest         sha256:abc123... \\
-        --repo           projectbluefin/bluefin \\
-        --project-name   "Bluefin" \\
-        --cert-regexp    "^https://github\\.com/projectbluefin/(bluefin|actions)/.github/workflows/" \\
-        --docs-url       "https://docs.projectbluefin.io/changelogs" \\
-        --sbom-filename  bluefin.spdx.json \\
-        --output         release-notes.md
-
-The generated release notes include:
-  1. Release card image embed
-  2. Key component versions (notable packages)
-  3. Full SPDX package inventory in a collapsible <details> block
-  4. Supply chain verification section using CNCF / OpenSSF tools:
-       - cosign  (Sigstore — image signature + attestations)
-       - oras    (CNCF graduated — SBOM OCI referrer)
-       - slsa-verifier (OpenSSF — SLSA Build L2 provenance)
+Section order:
+  1. Release card image
+  2. Variants promoted table (optional, multi-image releases)
+  3. Key components (notable packages from SBOM + extra-components)
+  4. Package diff summary and details (collapsible)
+  5. Contributors (human only, linked, no @ping)
+  6. PR changelog (non-bot, grouped by type, collapsible)
+  7. Desktop screenshot
+  8. Supply chain verification (collapsible)
+  9. Changelog link
 """
 import argparse
 import json
@@ -67,6 +53,14 @@ def _load_extra_components(path: str | None) -> list[dict]:
         {"name": item["label"], "version": item["version"], "prev": None, "changed": False}
         for item in data
     ]
+
+
+def _load_variants(path: str | None) -> list[dict] | None:
+    """Load variants JSON from disk. Returns None when path is absent."""
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 # ── Section builders ──────────────────────────────────────────────────────────
@@ -154,7 +148,7 @@ def _section_diff_summary(diff: dict, has_prev: bool, total: int) -> str:
     if not has_prev:
         return (
             f"> **{total} packages** in this image. "
-            "No previous release baseline — full inventory below.\n"
+            "No previous release baseline.\n"
         )
     parts = []
     if diff["changed_count"]:
@@ -166,7 +160,7 @@ def _section_diff_summary(diff: dict, has_prev: bool, total: int) -> str:
     summary = ", ".join(parts) if parts else "no package changes"
     return (
         f"> {summary} since the previous release. "
-        f"**{total} packages** total — full inventory below.\n"
+        f"**{total} packages** total.\n"
     )
 
 
@@ -439,34 +433,37 @@ Full changelog and verification guide → {docs_url}
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--versions",      required=True, help="versions.json from sbom_diff.py")
-    ap.add_argument("--sbom",          required=True, help="Current SPDX-JSON SBOM path")
-    ap.add_argument("--tag",           required=True)
-    ap.add_argument("--title",         required=True)
-    ap.add_argument("--image",         required=True,
-                    help="Full image ref without tag, e.g. ghcr.io/projectbluefin/bluefin")
-    ap.add_argument("--digest",        required=True, help="sha256:...")
-    ap.add_argument("--repo",          required=True, help="org/repo")
-    ap.add_argument("--project-name",  default="Bluefin")
-    ap.add_argument("--cert-regexp",   required=True,
+    ap = argparse.ArgumentParser(description="Generate release notes markdown.")
+    ap.add_argument("--versions",         required=True,
+                    help="Path to versions.json (from sbom_diff.py)")
+    ap.add_argument("--sbom",             required=True,
+                    help="Path to current SPDX-JSON SBOM")
+    ap.add_argument("--tag",              required=True)
+    ap.add_argument("--title",            required=True)
+    ap.add_argument("--image",            required=True,
+                    help="Full image ref without tag (e.g. ghcr.io/projectbluefin/bluefin)")
+    ap.add_argument("--digest",           required=True,
+                    help="Image digest (sha256:...)")
+    ap.add_argument("--repo",             required=True,
+                    help="GitHub repo slug (org/repo)")
+    ap.add_argument("--project-name",     default="Bluefin")
+    ap.add_argument("--cert-regexp",      required=True,
                     help="cosign --certificate-identity-regexp value")
-    ap.add_argument("--docs-url",      default="https://docs.projectbluefin.io/changelogs")
-    ap.add_argument("--sbom-filename", default="",
-                    help="Filename of SBOM asset attached to the release (e.g. bluefin.spdx.json)")
-    ap.add_argument("--output",        default="release-notes.md")
-    ap.add_argument(
-        "--max-chars",
-        type=int,
-        default=120_000,
-        help="Hard cap on the release body (default 120 000; GitHub limit is 125 000)",
-    )
-    ap.add_argument(
-        "--overflow-file",
-        default="release-notes-full.md",
-        help="Path to write the *full* notes when truncation occurs "
-             "(attach this file as a release asset)",
-    )
+    ap.add_argument("--docs-url",
+                    default="https://docs.projectbluefin.io/changelogs")
+    ap.add_argument("--sbom-filename",    default="",
+                    help="Filename of the SBOM release asset")
+    ap.add_argument("--variants",         default=None,
+                    help="Path to variants JSON file (optional)")
+    ap.add_argument("--extra-components", default=None,
+                    help="Path to extra key-component rows JSON (optional)")
+    ap.add_argument("--github-notes",     default=None,
+                    help="Path to GitHub generate-notes API JSON response (optional)")
+    ap.add_argument("--output",           default="release-notes.md")
+    ap.add_argument("--max-chars",        type=int, default=120_000,
+                    help="Hard cap on release body (GitHub limit is 125 000)")
+    ap.add_argument("--overflow-file",    default="release-notes-full.md",
+                    help="Path to write full notes when truncation occurs")
     args = ap.parse_args()
 
     for path, label in [(args.versions, "--versions"), (args.sbom, "--sbom")]:
@@ -479,18 +476,34 @@ def main() -> None:
 
     sbom_filename = args.sbom_filename or os.path.basename(args.sbom)
 
-    total = versions.get("total_packages", 0)
+    # Load optional inputs
+    variants       = _load_variants(args.variants)
+    extra_comps    = _load_extra_components(args.extra_components)
+    github_parsed  = _parse_github_notes(
+        json.load(open(args.github_notes, encoding="utf-8")).get("body", "")
+        if args.github_notes and os.path.isfile(args.github_notes)
+        else ""
+    )
+
+    notable_all = versions["notable"] + extra_comps
+    total       = versions.get("total_packages", 0)
 
     sections = [
         _section_card(args.tag, args.repo),
         "",
-        _section_screenshot(args.image, args.tag, args.project_name),
+        _section_variants(variants),
+        "",
+        _section_notable(notable_all),
         "",
         _section_diff_summary(versions["diff"], versions["has_prev"], total),
         "",
-        _section_notable(versions["notable"]),
-        "",
         _section_diff_details(versions["diff"], versions["has_prev"]),
+        "",
+        _section_contributors(github_parsed["contributors"]),
+        "",
+        _section_pr_changelog(github_parsed["prs"]),
+        "",
+        _section_screenshot(args.image, args.tag, args.project_name),
         "",
         _section_supply_chain(
             image=args.image,
@@ -501,13 +514,13 @@ def main() -> None:
             sbom_filename=sbom_filename,
             docs_url=args.docs_url,
         ),
+        "",
+        f"Full changelog \u2192 {args.docs_url}\n",
     ]
 
-    notes = "\n".join(sections)
+    notes = "\n".join(s for s in sections if s is not None)
 
-    # ── Guard: GitHub enforces a 125 000-char limit on release bodies ────────
     if len(notes) > args.max_chars:
-        # Persist the full notes as a separate asset so nothing is lost.
         with open(args.overflow_file, "w", encoding="utf-8") as f:
             f.write(notes)
         print(
@@ -517,24 +530,27 @@ def main() -> None:
             file=sys.stderr,
         )
 
-        # Build a compact body: drop the full inventory + diff details blocks;
-        # replace them with a pointer to the overflow asset.
         asset_ref = os.path.basename(args.overflow_file)
         overflow_note = (
-            f"_The full package inventory and diff details exceed GitHub's "
-            f"release-body limit.  "
+            f"_The full package diff details exceed GitHub's release-body limit. "
             f"They are attached as [`{asset_ref}`]({asset_ref})._\n"
         )
         compact_sections = [
             _section_card(args.tag, args.repo),
             "",
-            _section_screenshot(args.image, args.tag, args.project_name),
+            _section_variants(variants),
+            "",
+            _section_notable(notable_all),
             "",
             _section_diff_summary(versions["diff"], versions["has_prev"], total),
             "",
-            _section_notable(versions["notable"]),
-            "",
             overflow_note,
+            "",
+            _section_contributors(github_parsed["contributors"]),
+            "",
+            _section_pr_changelog(github_parsed["prs"]),
+            "",
+            _section_screenshot(args.image, args.tag, args.project_name),
             "",
             _section_supply_chain(
                 image=args.image,
@@ -545,14 +561,15 @@ def main() -> None:
                 sbom_filename=sbom_filename,
                 docs_url=args.docs_url,
             ),
+            "",
+            f"Full changelog \u2192 {args.docs_url}\n",
         ]
-        notes = "\n".join(compact_sections)
+        notes = "\n".join(s for s in compact_sections if s is not None)
 
-        # Absolute last resort: hard-truncate if even the compact body is over.
         if len(notes) > args.max_chars:
-            notes = notes[: args.max_chars - 12] + "\n\n…*(truncated)*"
+            notes = notes[: args.max_chars - 12] + "\n\n\u2026*(truncated)*"
             print(
-                "::warning::Compact release notes still exceeded the limit — "
+                "::warning::Compact release notes still exceeded the limit \u2014 "
                 "hard-truncated.",
                 file=sys.stderr,
             )

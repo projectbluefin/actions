@@ -166,124 +166,26 @@ class TestSectionScreenshot:
 class TestOverflowGuard:
     """Tests for the 125k-char GitHub limit guard."""
 
-    def _make_args(self, tmp_path, max_chars=120_000):
-        """Build a minimal argparse.Namespace sufficient for main()."""
-        import argparse, json
+    def _make_argv(self, tmp_path, max_chars=120_000, extra_sbom_pkgs=10):
+        """Build argv list for render_notes.main() with the new arg surface."""
+        import json
 
-        # Minimal SPDX-JSON SBOM
         sbom = {
             "spdxVersion": "SPDX-2.3",
-            "packages": [{"name": f"pkg-{i}", "versionInfo": f"1.{i}"} for i in range(10)],
+            "packages": [
+                {"name": f"pkg-{i}", "versionInfo": f"1.{i}"}
+                for i in range(extra_sbom_pkgs)
+            ],
         }
         sbom_path = tmp_path / "test.sbom.json"
         sbom_path.write_text(json.dumps(sbom))
 
-        # Minimal versions.json
         versions = {
             "notable": [],
             "diff": {"changed_count": 0, "added_count": 0, "removed_count": 0,
                      "changed": [], "added": [], "removed": []},
             "has_prev": False,
-            "total_packages": 10,
-        }
-        versions_path = tmp_path / "versions.json"
-        versions_path.write_text(json.dumps(versions))
-
-        output_path    = tmp_path / "release-notes.md"
-        overflow_path  = tmp_path / "release-notes-full.md"
-
-        return argparse.Namespace(
-            versions=str(versions_path),
-            sbom=str(sbom_path),
-            tag="2026-06-01-abc1234",
-            title="Test Stable 2026-06-01",
-            image="ghcr.io/example/img",
-            digest="sha256:deadbeef",
-            repo="example/img",
-            project_name="Test",
-            cert_regexp="^https://github.com/example/",
-            docs_url="https://docs.example.com",
-            sbom_filename="img.spdx.json",
-            output=str(output_path),
-            max_chars=max_chars,
-            overflow_file=str(overflow_path),
-        )
-
-    def test_no_overflow_when_under_limit(self, tmp_path):
-        """Normal case: no overflow file is created when body is within limits."""
-        args = self._make_args(tmp_path, max_chars=120_000)
-        import json, os
-        # 10 packages is tiny — no overflow expected
-        render_notes.main.__wrapped__ = None  # ensure no patching issues
-        # Run via the internal logic instead of argparse to keep it fast:
-        import sys
-        old_argv = sys.argv
-        sys.argv = ["render_notes.py",
-                    "--versions", args.versions, "--sbom", args.sbom,
-                    "--tag", args.tag, "--title", args.title,
-                    "--image", args.image, "--digest", args.digest,
-                    "--repo", args.repo, "--cert-regexp", args.cert_regexp,
-                    "--overflow-file", args.overflow_file,
-                    "--output", args.output]
-        try:
-            render_notes.main()
-        finally:
-            sys.argv = old_argv
-        assert os.path.exists(args.output)
-        assert not os.path.exists(args.overflow_file), \
-            "Overflow file should NOT be created when notes are within limits"
-
-    def test_overflow_file_created_when_over_limit(self, tmp_path):
-        """When max_chars is tiny, overflow file is written and body is trimmed."""
-        import json, os, sys
-        args = self._make_args(tmp_path, max_chars=500)  # unrealistically small
-
-        old_argv = sys.argv
-        sys.argv = ["render_notes.py",
-                    "--versions", args.versions, "--sbom", args.sbom,
-                    "--tag", args.tag, "--title", args.title,
-                    "--image", args.image, "--digest", args.digest,
-                    "--repo", args.repo, "--cert-regexp", args.cert_regexp,
-                    "--max-chars", "500",
-                    "--overflow-file", args.overflow_file,
-                    "--output", args.output]
-        try:
-            render_notes.main()
-        finally:
-            sys.argv = old_argv
-
-        assert os.path.exists(args.output), "Trimmed output must still be created"
-        assert os.path.exists(args.overflow_file), \
-            "Overflow file must be created when notes exceed max_chars"
-
-        body = open(args.output).read()
-        full = open(args.overflow_file).read()
-
-        assert len(body) <= 500 + 20, \
-            f"Trimmed body must be within max_chars (got {len(body)})"
-        assert len(full) > len(body), \
-            "Full notes must be longer than the trimmed body"
-
-    def test_overflow_body_stays_under_github_limit(self, tmp_path):
-        """Even with a huge SBOM, the release body stays under 120k chars."""
-        import json, os, sys
-        # Simulate a large image: 3000 packages
-        sbom = {
-            "spdxVersion": "SPDX-2.3",
-            "packages": [
-                {"name": f"long-package-name-{i:04d}", "versionInfo": f"1.{i}.0-r3.el9"}
-                for i in range(3000)
-            ],
-        }
-        sbom_path = tmp_path / "big.sbom.json"
-        sbom_path.write_text(json.dumps(sbom))
-
-        versions = {
-            "notable": [],
-            "diff": {"changed_count": 0, "added_count": 0, "removed_count": 0,
-                     "changed": [], "added": [], "removed": []},
-            "has_prev": False,
-            "total_packages": 3000,
+            "total_packages": extra_sbom_pkgs,
         }
         versions_path = tmp_path / "versions.json"
         versions_path.write_text(json.dumps(versions))
@@ -291,25 +193,69 @@ class TestOverflowGuard:
         output_path   = tmp_path / "release-notes.md"
         overflow_path = tmp_path / "release-notes-full.md"
 
+        return (
+            [
+                "render_notes.py",
+                "--versions", str(versions_path),
+                "--sbom",     str(sbom_path),
+                "--tag",      "2026-06-01-abc1234",
+                "--title",    "Test Stable 2026-06-01",
+                "--image",    "ghcr.io/example/img",
+                "--digest",   "sha256:deadbeef",
+                "--repo",     "example/img",
+                "--cert-regexp", "^https://github.com/example/",
+                "--overflow-file", str(overflow_path),
+                "--output",   str(output_path),
+                "--max-chars", str(max_chars),
+            ],
+            str(output_path),
+            str(overflow_path),
+        )
+
+    def test_no_overflow_when_under_limit(self, tmp_path):
+        import os, sys
+        argv, output_path, overflow_path = self._make_argv(tmp_path, max_chars=120_000)
         old_argv = sys.argv
-        sys.argv = ["render_notes.py",
-                    "--versions", str(versions_path), "--sbom", str(sbom_path),
-                    "--tag", "stable-20260611", "--title", "Big Image Stable",
-                    "--image", "ghcr.io/example/big", "--digest", "sha256:00beef",
-                    "--repo", "example/big", "--cert-regexp", "^https://github.com/",
-                    "--overflow-file", str(overflow_path),
-                    "--output", str(output_path)]
+        sys.argv = argv
         try:
             render_notes.main()
         finally:
             sys.argv = old_argv
+        assert os.path.exists(output_path)
+        assert not os.path.exists(overflow_path), \
+            "Overflow file should NOT be created when notes are within limits"
 
-        assert output_path.exists()
-        body = output_path.read_text()
+    def test_overflow_file_created_when_over_limit(self, tmp_path):
+        import os, sys
+        argv, output_path, overflow_path = self._make_argv(tmp_path, max_chars=500)
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            render_notes.main()
+        finally:
+            sys.argv = old_argv
+        assert os.path.exists(output_path), "Trimmed output must still be created"
+        assert os.path.exists(overflow_path), \
+            "Overflow file must be created when notes exceed max_chars"
+        body = open(output_path).read()
+        full = open(overflow_path).read()
+        assert len(body) <= 520, f"Trimmed body must be within max_chars (got {len(body)})"
+        assert len(full) > len(body), "Full notes must be longer than the trimmed body"
+
+    def test_overflow_body_stays_under_github_limit(self, tmp_path):
+        import os, sys
+        argv, output_path, overflow_path = self._make_argv(tmp_path, extra_sbom_pkgs=3000)
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            render_notes.main()
+        finally:
+            sys.argv = old_argv
+        assert os.path.exists(output_path)
+        body = open(output_path).read()
+        # With inventory removed from body, even 3000 packages won't overflow
         assert len(body) <= 120_000, \
-            f"Release body must stay ≤ 120 000 chars even for large images (got {len(body)})"
-        # With the full inventory removed, notes are much smaller and no overflow is needed
-        # for 3000 packages. This test just verifies that body stays under the limit.
+            f"Release body must stay <= 120 000 chars (got {len(body)})"
 
 
 class TestSectionSupplyChain:
@@ -578,3 +524,98 @@ class TestSectionPrChangelog:
     def test_pr_number_appears(self):
         md = render_notes._section_pr_changelog(self.FEAT_PRS)
         assert "#1" in md
+
+
+class TestSectionOrder:
+    def _run_main(self, tmp_path, variants=None, extra_components=None):
+        import json, sys
+        sbom = {"spdxVersion": "SPDX-2.3", "packages": [
+            {"name": "kernel", "versionInfo": "6.10.0"}
+        ]}
+        versions = {
+            "notable": [{"name": "Kernel", "version": "6.10.0", "prev": None, "changed": False}],
+            "diff": {"changed_count": 0, "added_count": 0, "removed_count": 0,
+                     "changed": [], "added": [], "removed": []},
+            "has_prev": False,
+            "total_packages": 1,
+        }
+        sbom_path = tmp_path / "s.sbom.json"
+        sbom_path.write_text(json.dumps(sbom))
+        versions_path = tmp_path / "versions.json"
+        versions_path.write_text(json.dumps(versions))
+        output_path = tmp_path / "notes.md"
+
+        argv = [
+            "render_notes.py",
+            "--versions", str(versions_path),
+            "--sbom", str(sbom_path),
+            "--tag", "stable-20260621",
+            "--title", "Test",
+            "--image", "ghcr.io/example/img",
+            "--digest", "sha256:abc",
+            "--repo", "example/img",
+            "--cert-regexp", "^https://",
+            "--output", str(output_path),
+        ]
+        if variants:
+            v_path = tmp_path / "variants.json"
+            v_path.write_text(json.dumps(variants))
+            argv += ["--variants", str(v_path)]
+        if extra_components:
+            e_path = tmp_path / "extra.json"
+            e_path.write_text(json.dumps(extra_components))
+            argv += ["--extra-components", str(e_path)]
+
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            render_notes.main()
+        finally:
+            sys.argv = old_argv
+        return output_path.read_text()
+
+    def test_card_appears_before_key_components(self, tmp_path):
+        md = self._run_main(tmp_path)
+        card_pos = md.find("release-card.png")
+        components_pos = md.find("## Key components")
+        assert card_pos < components_pos, "Card must appear before key components"
+
+    def test_key_components_appears_before_screenshot(self, tmp_path):
+        md = self._run_main(tmp_path)
+        components_pos = md.find("## Key components")
+        screenshot_pos = md.find("## Desktop Screenshot")
+        assert components_pos < screenshot_pos
+
+    def test_screenshot_appears_before_supply_chain(self, tmp_path):
+        md = self._run_main(tmp_path)
+        screenshot_pos = md.find("## Desktop Screenshot")
+        supply_pos = md.find("Supply chain verification")
+        assert screenshot_pos < supply_pos
+
+    def test_variants_appear_after_card(self, tmp_path):
+        variants = [{"name": "img", "tag": ":stable", "digest": "sha256:x"}]
+        md = self._run_main(tmp_path, variants=variants)
+        card_pos = md.find("release-card.png")
+        variants_pos = md.find("## Variants promoted")
+        assert card_pos < variants_pos
+
+    def test_extra_components_in_key_components_table(self, tmp_path):
+        extra = [{"label": "Kernel (Base)", "version": "6.12.0-22.el10"}]
+        md = self._run_main(tmp_path, extra_components=extra)
+        assert "Kernel (Base)" in md
+        assert "6.12.0-22.el10" in md
+
+    def test_full_inventory_not_in_body(self, tmp_path):
+        md = self._run_main(tmp_path)
+        # Should not contain the full SPDX inventory marker
+        assert "Full SPDX package inventory" not in md
+        assert "📦" not in md
+
+    def test_supply_chain_is_collapsed(self, tmp_path):
+        md = self._run_main(tmp_path)
+        assert "<details>" in md
+        assert "Supply chain verification" in md
+        # cosign commands should be inside a details block
+        details_start = md.find("<details>")
+        cosign_pos = md.find("cosign verify")
+        assert cosign_pos > details_start
