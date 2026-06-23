@@ -59,6 +59,19 @@ inputs:
       Filename for the SBOM asset attached to the release
       (e.g. bluefin.spdx.json). Defaults to the basename of sbom-path.
     default: ""
+  variants-json:
+    description: >
+      Optional JSON array of promoted variants for the release notes table.
+      Each element: {"name":"bluefin-lts","tag":":stable","digest":"sha256:...","note":"..."}
+    required: false
+    default: ""
+  extra-components-json:
+    description: >
+      Optional JSON array of extra key-component rows not derivable from the primary SBOM.
+      Each element: {"label":"Kernel (Base)","version":"6.12.0-22.el10"}
+      Appended to the Key Components table after SBOM-derived notable packages.
+    required: false
+    default: ""
   draft:
     description: "Create the release as a draft"
     default: "false"
@@ -150,6 +163,18 @@ runs:
         set -euo pipefail
         echo "${NOTABLE_JSON}" > _notable_packages.json
 
+    # ── Write optional inputs to disk ──────────────────────────────────────────
+    - name: Write optional inputs to disk
+      shell: bash
+      env:
+        VARIANTS_JSON:          ${{ inputs.variants-json }}
+        EXTRA_COMPONENTS_JSON:  ${{ inputs.extra-components-json }}
+      run: |
+        set -euo pipefail
+        [[ -n "${VARIANTS_JSON:-}" ]]         && echo "${VARIANTS_JSON}"         > _variants.json
+        [[ -n "${EXTRA_COMPONENTS_JSON:-}" ]] && echo "${EXTRA_COMPONENTS_JSON}" > _extra_components.json
+        true
+
     # ── Diff SBOMs ────────────────────────────────────────────────────────────
     - name: Diff SBOMs
       shell: bash
@@ -169,6 +194,27 @@ runs:
           "${PREV_ARGS[@]}" \
           --notable-packages _notable_packages.json \
           --output           _versions.json
+
+    # ── Fetch GitHub generate-notes ───────────────────────────────────────────
+    - name: Fetch GitHub generate-notes
+      shell: bash
+      env:
+        GH_TOKEN:  ${{ inputs.github-token }}
+        REPO:      ${{ inputs.repo }}
+        TAG:       ${{ inputs.tag }}
+        PREV_TAG:  ${{ steps.prev-sbom.outputs.tag }}
+      run: |
+        set -euo pipefail
+        PREV_ARGS=()
+        if [[ -n "${PREV_TAG:-}" ]]; then
+          PREV_ARGS=(--field "previous_tag_name=${PREV_TAG}")
+        fi
+        gh api "repos/${REPO}/releases/generate-notes" \
+          --method POST \
+          --field "tag_name=${TAG}" \
+          "${PREV_ARGS[@]}" \
+          > _github_notes.json 2>/dev/null \
+          || echo '{"name":"","body":""}' > _github_notes.json
 
     # ── Install Playwright + Chromium ─────────────────────────────────────────
     - name: Install Playwright and Chromium
@@ -231,6 +277,13 @@ runs:
         ACTION_PATH:   ${{ github.action_path }}
       run: |
         set -euo pipefail
+        VARIANTS_ARG=()
+        [[ -f "_variants.json" ]]          && VARIANTS_ARG=(--variants _variants.json)
+        EXTRA_ARG=()
+        [[ -f "_extra_components.json" ]]  && EXTRA_ARG=(--extra-components _extra_components.json)
+        GITHUB_NOTES_ARG=()
+        [[ -f "_github_notes.json" ]]      && GITHUB_NOTES_ARG=(--github-notes _github_notes.json)
+
         python3 "${ACTION_PATH}/scripts/render_notes.py" \
           --versions       _versions.json \
           --sbom           "${SBOM_PATH}" \
@@ -244,7 +297,10 @@ runs:
           --docs-url       "${DOCS_URL}" \
           --sbom-filename  "${SBOM_FILENAME}" \
           --overflow-file  release-notes-full.md \
-          --output         release-notes.md
+          --output         release-notes.md \
+          "${VARIANTS_ARG[@]}" \
+          "${EXTRA_ARG[@]}" \
+          "${GITHUB_NOTES_ARG[@]}"
 
     # ── Resolve SBOM asset filename ───────────────────────────────────────────
     - name: Resolve SBOM filename
@@ -331,4 +387,4 @@ runs:
     - name: Cleanup
       if: always()
       shell: bash
-      run: rm -f _versions.json _notable_packages.json release-notes-full.md
+      run: rm -f _versions.json _notable_packages.json _variants.json _extra_components.json _github_notes.json release-notes-full.md
