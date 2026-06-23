@@ -304,11 +304,30 @@ jobs:
           # --scope squashed scans only the final merged filesystem, not every layer,
           # which significantly reduces memory use on layered images.
           # --parallelism 1 prevents concurrent cataloger memory spikes.
+          # --select-catalogers rpm-db reads only the RPM database (the relevant packages
+          # for Fedora-based images are all RPMs), avoiding the full filesystem walk that
+          # OOM-kills 7 GB runners scanning large desktop images.
           "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" \
             --scope squashed \
             --parallelism 1 \
+            --select-catalogers "rpm-db" \
             -o "spdx-json=sbom-current/${IMAGE_NAME}.sbom.json"
           echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
+
+      - name: Create minimal SBOM fallback if generation failed
+        if: inputs.generate_sbom_inline == true && steps.generate-sbom.outcome == 'failure'
+        env:
+          IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
+          IMAGE: ${{ inputs.image }}
+          STREAM_NAME: ${{ inputs.stream_name }}
+        run: |
+          mkdir -p sbom-current
+          # Minimal valid SPDX JSON — used when inline Syft generation fails (e.g. OOM).
+          # The release proceeds; SBOM contents will be empty but the release is not blocked.
+          cat > "sbom-current/${IMAGE_NAME}.sbom.json" << SPDXEOF
+          {"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"${IMAGE_NAME}","documentNamespace":"https://github.com/projectbluefin/${IMAGE_NAME}/sbom-fallback","packages":[],"relationships":[{"spdxElementId":"SPDXRef-DOCUMENT","relationshipType":"DESCRIBES","relatedSpdxElement":"SPDXRef-DOCUMENT"}],"documentDescribes":["SPDXRef-DOCUMENT"]}
+          SPDXEOF
+          echo "WARNING: Using placeholder SBOM — inline generation failed (OOM or runner eviction)"
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
