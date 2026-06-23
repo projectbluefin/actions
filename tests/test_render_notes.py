@@ -108,18 +108,55 @@ class TestSectionDiffDetails:
 
 
 class TestSectionScreenshot:
-    def test_strips_registry_prefix_from_slug(self):
-        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin") == "bluefin-testing"
+    def test_strips_registry_prefix(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin") == "bluefin"
 
-    def test_replaces_colon_with_dash(self):
-        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin:stable") == "bluefin-testing"
+    def test_strips_tag(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin:stable") == "bluefin"
 
-    def test_renders_screenshot_section(self):
-        md = render_notes._section_screenshot("ghcr.io/projectbluefin/bluefin", "stable-20260621")
-        assert "## Desktop Screenshot" in md
-        assert "Captured automatically after e2e validation." in md
-        assert "https://projectbluefin.github.io/testsuite/screenshots/bluefin-testing-smoke-latest.png" in md
-        assert "![stable-20260621]" in md
+    def test_strips_hwe_suffix(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin-lts-hwe") == "bluefin-lts"
+
+    def test_strips_hwe_nvidia_suffix(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin-lts-hwe-nvidia") == "bluefin-lts"
+
+    def test_strips_nvidia_suffix(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/bluefin-nvidia") == "bluefin"
+
+    def test_dakota_unchanged(self):
+        assert render_notes._screenshot_slug("ghcr.io/projectbluefin/dakota") == "dakota"
+
+    def test_renders_html_img_tag(self):
+        md = render_notes._section_screenshot(
+            "ghcr.io/projectbluefin/bluefin-lts-hwe", "stable-20260621", "Bluefin LTS"
+        )
+        assert '<img src=' in md
+        assert 'width="100%"' in md
+
+    def test_correct_url_for_hwe(self):
+        md = render_notes._section_screenshot(
+            "ghcr.io/projectbluefin/bluefin-lts-hwe", "stable-20260621", "Bluefin LTS"
+        )
+        assert "bluefin-lts-testing-smoke-latest.png" in md
+        assert "bluefin-lts-hwe" not in md.split("screenshots/")[1].split(".png")[0]
+
+    def test_alt_text_uses_project_name(self):
+        md = render_notes._section_screenshot(
+            "ghcr.io/projectbluefin/bluefin", "stable-20260621", "Bluefin"
+        )
+        assert "Bluefin desktop" in md
+
+    def test_caption_identifies_image(self):
+        md = render_notes._section_screenshot(
+            "ghcr.io/projectbluefin/bluefin-lts-hwe", "stable-20260621", "Bluefin LTS"
+        )
+        assert "bluefin-lts-hwe:testing" in md
+
+    def test_testsuite_link_present(self):
+        md = render_notes._section_screenshot(
+            "ghcr.io/projectbluefin/bluefin", "stable-20260621", "Bluefin"
+        )
+        assert "github.com/projectbluefin/testsuite" in md
 
 
 # ── _section_supply_chain ─────────────────────────────────────────────────────

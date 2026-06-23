@@ -77,24 +77,35 @@ def _section_card(tag: str, repo: str) -> str:
 
 
 def _screenshot_slug(image: str) -> str:
-    """Derive gh-pages screenshot slug from an image ref.
+    """Derive testsuite screenshot family slug from an image ref.
 
-    Screenshots are captured against the :testing image during e2e gate, so
-    always map to the testing slug regardless of the tag being released.
-    e.g. ghcr.io/projectbluefin/bluefin:stable → bluefin-testing
+    Screenshots live at: {slug}-testing-smoke-latest.png
+    One screenshot per image family — strip registry, tag, and variant suffixes.
+
+    Examples:
+        ghcr.io/projectbluefin/bluefin-lts-hwe  → bluefin-lts
+        ghcr.io/projectbluefin/bluefin:stable    → bluefin
+        ghcr.io/projectbluefin/dakota            → dakota
     """
-    slug = re.sub(r"^[^/]+/[^/]+/", "", image)
-    slug = re.sub(r":[^-]+$", "", slug)  # strip tag (:stable, :main, :latest, etc.)
-    return f"{slug}-testing"
+    slug = re.sub(r"^[^/]+/[^/]+/", "", image)               # strip registry/org prefix
+    slug = re.sub(r":.*$", "", slug)                           # strip tag
+    slug = re.sub(r"-(hwe-nvidia|hwe|nvidia)$", "", slug)     # strip variant suffix
+    return slug
 
 
-def _section_screenshot(image: str, label: str) -> str:
+def _section_screenshot(image: str, tag: str, project_name: str) -> str:
+    """Render desktop screenshot section with HTML img tag and caption."""
     slug = _screenshot_slug(image)
-    url = f"https://projectbluefin.github.io/testsuite/screenshots/{slug}-smoke-latest.png"
+    url = (
+        f"https://projectbluefin.github.io/testsuite/screenshots/"
+        f"{slug}-testing-smoke-latest.png"
+    )
+    base_image = re.sub(r"^[^/]+/[^/]+/", "", image)
     return (
         "## Desktop Screenshot\n\n"
-        "> Captured automatically after e2e validation.\n\n"
-        f"![{label}]({url})\n"
+        f'<img src="{url}" alt="{project_name} desktop — {tag}" width="100%">\n\n'
+        f"*Captured from `{base_image}:testing` during automated e2e validation — "
+        f"[testsuite](https://github.com/projectbluefin/testsuite)*\n"
     )
 
 
@@ -379,7 +390,7 @@ def main() -> None:
     sections = [
         _section_card(args.tag, args.repo),
         "",
-        _section_screenshot(args.image, args.tag),
+        _section_screenshot(args.image, args.tag, args.project_name),
         "",
         _section_diff_summary(versions["diff"], versions["has_prev"], total),
         "",
@@ -425,7 +436,7 @@ def main() -> None:
         compact_sections = [
             _section_card(args.tag, args.repo),
             "",
-            _section_screenshot(args.image, args.tag),
+            _section_screenshot(args.image, args.tag, args.project_name),
             "",
             _section_diff_summary(versions["diff"], versions["has_prev"], total),
             "",
