@@ -107,6 +107,20 @@ on:
         default: ""
         required: false
         type: string
+      variants_json:
+        description: >
+          Optional JSON array of promoted variants passed to create-release variants-json input.
+          Each element: {"name":"image","tag":":stable","digest":"sha256:...","note":"..."}
+        required: false
+        default: ""
+        type: string
+      extra_components_json:
+        description: >
+          Optional JSON array of extra key-component rows passed to create-release
+          extra-components-json input. Each element: {"label":"Kernel (Base)","version":"..."}
+        required: false
+        default: ""
+        type: string
 permissions: {}
 
 jobs:
@@ -320,6 +334,8 @@ jobs:
           cert-identity-regexp: ${{ inputs.cert_identity_regexp }}
           notable-packages: ${{ inputs.notable_packages }}
           docs-url: ${{ inputs.docs_url }}
+          variants-json: ${{ inputs.variants_json }}
+          extra-components-json: ${{ inputs.extra_components_json }}
           github-token: ${{ github.token }}
 
   semver-release:
