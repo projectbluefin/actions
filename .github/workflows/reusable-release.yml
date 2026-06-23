@@ -275,6 +275,8 @@ jobs:
 
       - name: Generate SBOM inline from promoted image
         if: inputs.generate_sbom_inline == true
+        continue-on-error: true  # Syft is memory-intensive on large images; SBOM must never block the release
+        id: generate-sbom
         env:
           IMAGE: ${{ inputs.image }}
           STREAM_NAME: ${{ inputs.stream_name }}
