@@ -94,7 +94,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    outputs:
+      statuses: write       # post validate=success on squash branch head before enqueuePullRequest
       sync_needed: ${{ steps.compare.outputs.sync_needed }}
       testing_sha: ${{ steps.compare.outputs.testing_sha }}
       source_sha: ${{ steps.source-sha.outputs.sha }}
