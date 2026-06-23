@@ -6,32 +6,18 @@
 # separate overflow file (default release-notes-full.md) so they can be
 # attached as a release asset, and a trimmed body is written to --output.
 """
-render_notes.py — Generate release notes markdown with full SBOM display
-and step-by-step supply chain verification instructions using CNCF tools.
+render_notes.py — Generate release notes markdown.
 
-Usage:
-    python3 render_notes.py \\
-        --versions       versions.json \\
-        --sbom           current.spdx.json \\
-        --tag            2026-05-14-abc1234 \\
-        --title          "Bluefin Stable 2026-05-14" \\
-        --image          ghcr.io/projectbluefin/bluefin \\
-        --digest         sha256:abc123... \\
-        --repo           projectbluefin/bluefin \\
-        --project-name   "Bluefin" \\
-        --cert-regexp    "^https://github\\.com/projectbluefin/(bluefin|actions)/.github/workflows/" \\
-        --docs-url       "https://docs.projectbluefin.io/changelogs" \\
-        --sbom-filename  bluefin.spdx.json \\
-        --output         release-notes.md
-
-The generated release notes include:
-  1. Release card image embed
-  2. Key component versions (notable packages)
-  3. Full SPDX package inventory in a collapsible <details> block
-  4. Supply chain verification section using CNCF / OpenSSF tools:
-       - cosign  (Sigstore — image signature + attestations)
-       - oras    (CNCF graduated — SBOM OCI referrer)
-       - slsa-verifier (OpenSSF — SLSA Build L2 provenance)
+Section order:
+  1. Release card image
+  2. Variants promoted table (optional, multi-image releases)
+  3. Key components (notable packages from SBOM + extra-components)
+  4. Package diff summary and details (collapsible)
+  5. Contributors (human only, linked, no @ping)
+  6. PR changelog (non-bot, grouped by type, collapsible)
+  7. Desktop screenshot
+  8. Supply chain verification (collapsible)
+  9. Changelog link
 """
 import argparse
 import json
@@ -51,22 +37,30 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> str:
            [" | ".join(row) for row in rows])
 
 
-# ── SBOM inventory ────────────────────────────────────────────────────────────
+def _load_extra_components(path: str | None) -> list[dict]:
+    """Load extra key-component rows from a JSON file.
 
-def _load_full_inventory(sbom_path: str) -> list[dict]:
-    """Return all named packages from the SPDX-JSON sorted alphabetically."""
-    with open(sbom_path, encoding="utf-8") as f:
-        sbom = json.load(f)
-    seen: dict[str, str] = {}
-    for p in sbom.get("packages", []):
-        name = p.get("name", "").strip()
-        ver  = p.get("versionInfo", "").strip()
-        if not name:
-            continue
-        # Keep first occurrence; prefer non-empty version
-        if name not in seen or (not seen[name] and ver):
-            seen[name] = ver
-    return [{"name": k, "version": v} for k, v in sorted(seen.items())]
+    File format: [{"label": "Kernel (Base)", "version": "6.12.0"}]
+    Returns rows in the same shape as notable package dicts so they can be
+    appended directly to the notable list and rendered by _section_notable().
+    Returns [] when path is None or file does not exist.
+    """
+    if not path or not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    return [
+        {"name": item["label"], "version": item["version"], "prev": None, "changed": False}
+        for item in data
+    ]
+
+
+def _load_variants(path: str | None) -> list[dict] | None:
+    """Load variants JSON from disk. Returns None when path is absent."""
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 # ── Section builders ──────────────────────────────────────────────────────────
@@ -76,25 +70,57 @@ def _section_card(tag: str, repo: str) -> str:
     return f"![Release card]({url})\n"
 
 
+def _section_variants(variants: list[dict] | None) -> str:
+    """Render promoted variants table. Returns '' when variants is None or empty."""
+    if not variants:
+        return ""
+    rows = []
+    notes = []
+    for v in variants:
+        rows.append(f"| `{v['name']}` | `{v['tag']}` | `{v['digest']}` |")
+        if v.get("note"):
+            notes.append(v["note"])
+    table = (
+        "## Variants promoted\n\n"
+        "| Variant | Tag | Digest |\n"
+        "|---|---|---|\n"
+        + "\n".join(rows)
+    )
+    if notes:
+        table += "\n\n" + "\n\n".join(f"> {n}" for n in notes)
+    return table + "\n"
+
+
 def _screenshot_slug(image: str) -> str:
-    """Derive gh-pages screenshot slug from an image ref.
+    """Derive testsuite screenshot family slug from an image ref.
 
-    Screenshots are captured against the :testing image during e2e gate, so
-    always map to the testing slug regardless of the tag being released.
-    e.g. ghcr.io/projectbluefin/bluefin:stable → bluefin-testing
+    Screenshots live at: {slug}-testing-smoke-latest.png
+    One screenshot per image family — strip registry, tag, and variant suffixes.
+
+    Examples:
+        ghcr.io/projectbluefin/bluefin-lts-hwe  → bluefin-lts
+        ghcr.io/projectbluefin/bluefin:stable    → bluefin
+        ghcr.io/projectbluefin/dakota            → dakota
     """
-    slug = re.sub(r"^[^/]+/[^/]+/", "", image)
-    slug = re.sub(r":[^-]+$", "", slug)  # strip tag (:stable, :main, :latest, etc.)
-    return f"{slug}-testing"
+    slug = re.sub(r"^[^/]+/[^/]+/", "", image)               # strip registry/org prefix
+    slug = re.sub(r":.*$", "", slug)                           # strip tag
+    slug = re.sub(r"-(hwe-nvidia|hwe|nvidia)$", "", slug)     # strip variant suffix
+    return slug
 
 
-def _section_screenshot(image: str, label: str) -> str:
+def _section_screenshot(image: str, tag: str, project_name: str) -> str:
+    """Render desktop screenshot section with HTML img tag and caption."""
     slug = _screenshot_slug(image)
-    url = f"https://projectbluefin.github.io/testsuite/screenshots/{slug}-smoke-latest.png"
+    url = (
+        f"https://projectbluefin.github.io/testsuite/screenshots/"
+        f"{slug}-testing-smoke-latest.png"
+    )
+    base_image = re.sub(r"^[^/]+/[^/]+/", "", image)
     return (
         "## Desktop Screenshot\n\n"
-        "> Captured automatically after e2e validation.\n\n"
-        f"![{label}]({url})\n"
+        f'<img src="{url}" alt="{project_name} desktop — {tag}" width="100%">\n\n'
+        f"*Captured from `{base_image}:testing` during automated e2e validation — "
+        f"[testsuite](https://github.com/projectbluefin/testsuite)*\n"
     )
 
 
@@ -122,7 +148,7 @@ def _section_diff_summary(diff: dict, has_prev: bool, total: int) -> str:
     if not has_prev:
         return (
             f"> **{total} packages** in this image. "
-            "No previous release baseline — full inventory below.\n"
+            "No previous release baseline.\n"
         )
     parts = []
     if diff["changed_count"]:
@@ -134,21 +160,7 @@ def _section_diff_summary(diff: dict, has_prev: bool, total: int) -> str:
     summary = ", ".join(parts) if parts else "no package changes"
     return (
         f"> {summary} since the previous release. "
-        f"**{total} packages** total — full inventory below.\n"
-    )
-
-
-def _section_full_inventory(inventory: list[dict], total: int) -> str:
-    rows = "\n".join(
-        f"| `{p['name']}` | `{p['version']}` |" for p in inventory
-    )
-    return (
-        f"<details>\n"
-        f"<summary>📦 Full SPDX package inventory — {total} packages</summary>\n\n"
-        f"| Package | Version |\n"
-        f"|---|---|\n"
-        f"{rows}\n\n"
-        f"</details>\n"
+        f"**{total} packages** total.\n"
     )
 
 
@@ -204,6 +216,93 @@ def _section_diff_details(diff: dict, has_prev: bool) -> str:
     return "## Package changes\n\n" + "\n\n".join(blocks) + "\n"
 
 
+# ── GitHub generate-notes parsing ─────────────────────────────────────────────
+
+_BOT_PATTERN = re.compile(r"\[bot\]$|^github-actions$|^renovate$|^dependabot$")
+
+
+def _parse_github_notes(body: str) -> dict:
+    """Parse GitHub generate-notes API response body.
+
+    Returns {"contributors": list[str], "prs": list[dict]}
+    where prs are non-bot entries with keys: title, number, author, type.
+    type is one of: "feat", "fix", "other".
+    """
+    contributors: list[str] = []
+    prs: list[dict] = []
+
+    # ── Extract contributors from ## New Contributors section ─────────────
+    contrib_section = re.search(
+        r"## New Contributors\n(.*?)(?:\n## |\n\*\*Full Changelog|$)",
+        body, re.DOTALL
+    )
+    if contrib_section:
+        for m in re.finditer(r"@([A-Za-z0-9_-]+(?:\[bot\])?)", contrib_section.group(1)):
+            username = m.group(1)
+            if not _BOT_PATTERN.search(username):
+                contributors.append(username)
+
+    # ── Extract PRs from ## What's Changed section ────────────────────────
+    changed_section = re.search(
+        r"## What's Changed\n(.*?)(?:\n## |\n\*\*Full Changelog|$)",
+        body, re.DOTALL
+    )
+    if changed_section:
+        # Each line: "* {title} by @{author} in https://.../{number}"
+        pr_pattern = re.compile(
+            r"^\* (.+?) by @([A-Za-z0-9_-]+(?:\[bot\])?) in https://[^\s]+/(\d+)\s*$",
+            re.MULTILINE,
+        )
+        for m in pr_pattern.finditer(changed_section.group(1)):
+            title, author, number = m.group(1), m.group(2), m.group(3)
+            if _BOT_PATTERN.search(author):
+                continue
+            pr_type = "other"
+            if title.startswith("feat"):
+                pr_type = "feat"
+            elif title.startswith("fix"):
+                pr_type = "fix"
+            prs.append({"title": title, "number": number, "author": author, "type": pr_type})
+
+    return {"contributors": contributors, "prs": prs}
+
+
+def _section_contributors(contributors: list[str]) -> str:
+    """Render human contributors as linked names (no @-ping)."""
+    if not contributors:
+        return ""
+    links = " · ".join(
+        f"[{u}](https://github.com/{u})" for u in contributors
+    )
+    return f"## Contributors\n\n{links}\n"
+
+
+def _section_pr_changelog(prs: list[dict]) -> str:
+    """Render non-bot PRs grouped by type in a collapsible details block."""
+    if not prs:
+        return ""
+
+    groups: dict[str, list[dict]] = {"feat": [], "fix": [], "other": []}
+    for pr in prs:
+        groups.setdefault(pr.get("type", "other"), []).append(pr)
+
+    group_titles = {"feat": "Features", "fix": "Fixes", "other": "Other Changes"}
+    blocks: list[str] = []
+    for key in ("feat", "fix", "other"):
+        if not groups[key]:
+            continue
+        lines = "\n".join(f"- {pr['title']} (#{pr['number']})" for pr in groups[key])
+        blocks.append(f"**{group_titles[key]}**\n\n{lines}")
+
+    body = "\n\n".join(blocks)
+    return (
+        "<details>\n"
+        "<summary>Merged since last release</summary>\n\n"
+        f"{body}\n\n"
+        "</details>\n"
+    )
+
+
 def _section_supply_chain(
     *,
     image: str,
@@ -229,7 +328,7 @@ def _section_supply_chain(
     """
     image_at_digest = f"{image}@{digest}"
 
-    return f"""\
+    body = f"""\
 ## Supply chain
 
 This image is signed, attested, and ships a full SPDX-JSON SBOM.
@@ -328,39 +427,43 @@ cosign verify-attestation \\
 
 Full changelog and verification guide → {docs_url}
 """
+    return f"<details>\n<summary>Supply chain verification</summary>\n\n{body}\n</details>\n"
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--versions",      required=True, help="versions.json from sbom_diff.py")
-    ap.add_argument("--sbom",          required=True, help="Current SPDX-JSON SBOM path")
-    ap.add_argument("--tag",           required=True)
-    ap.add_argument("--title",         required=True)
-    ap.add_argument("--image",         required=True,
-                    help="Full image ref without tag, e.g. ghcr.io/projectbluefin/bluefin")
-    ap.add_argument("--digest",        required=True, help="sha256:...")
-    ap.add_argument("--repo",          required=True, help="org/repo")
-    ap.add_argument("--project-name",  default="Bluefin")
-    ap.add_argument("--cert-regexp",   required=True,
+    ap = argparse.ArgumentParser(description="Generate release notes markdown.")
+    ap.add_argument("--versions",         required=True,
+                    help="Path to versions.json (from sbom_diff.py)")
+    ap.add_argument("--sbom",             required=True,
+                    help="Path to current SPDX-JSON SBOM")
+    ap.add_argument("--tag",              required=True)
+    ap.add_argument("--title",            required=True)
+    ap.add_argument("--image",            required=True,
+                    help="Full image ref without tag (e.g. ghcr.io/projectbluefin/bluefin)")
+    ap.add_argument("--digest",           required=True,
+                    help="Image digest (sha256:...)")
+    ap.add_argument("--repo",             required=True,
+                    help="GitHub repo slug (org/repo)")
+    ap.add_argument("--project-name",     default="Bluefin")
+    ap.add_argument("--cert-regexp",      required=True,
                     help="cosign --certificate-identity-regexp value")
-    ap.add_argument("--docs-url",      default="https://docs.projectbluefin.io/changelogs")
-    ap.add_argument("--sbom-filename", default="",
-                    help="Filename of SBOM asset attached to the release (e.g. bluefin.spdx.json)")
-    ap.add_argument("--output",        default="release-notes.md")
-    ap.add_argument(
-        "--max-chars",
-        type=int,
-        default=120_000,
-        help="Hard cap on the release body (default 120 000; GitHub limit is 125 000)",
-    )
-    ap.add_argument(
-        "--overflow-file",
-        default="release-notes-full.md",
-        help="Path to write the *full* notes when truncation occurs "
-             "(attach this file as a release asset)",
-    )
+    ap.add_argument("--docs-url",
+                    default="https://docs.projectbluefin.io/changelogs")
+    ap.add_argument("--sbom-filename",    default="",
+                    help="Filename of the SBOM release asset")
+    ap.add_argument("--variants",         default=None,
+                    help="Path to variants JSON file (optional)")
+    ap.add_argument("--extra-components", default=None,
+                    help="Path to extra key-component rows JSON (optional)")
+    ap.add_argument("--github-notes",     default=None,
+                    help="Path to GitHub generate-notes API JSON response (optional)")
+    ap.add_argument("--output",           default="release-notes.md")
+    ap.add_argument("--max-chars",        type=int, default=120_000,
+                    help="Hard cap on release body (GitHub limit is 125 000)")
+    ap.add_argument("--overflow-file",    default="release-notes-full.md",
+                    help="Path to write full notes when truncation occurs")
     args = ap.parse_args()
 
     for path, label in [(args.versions, "--versions"), (args.sbom, "--sbom")]:
@@ -373,21 +476,34 @@ def main() -> None:
 
     sbom_filename = args.sbom_filename or os.path.basename(args.sbom)
 
-    inventory = _load_full_inventory(args.sbom)
-    total     = versions.get("total_packages", len(inventory))
+    # Load optional inputs
+    variants       = _load_variants(args.variants)
+    extra_comps    = _load_extra_components(args.extra_components)
+    github_parsed  = _parse_github_notes(
+        json.load(open(args.github_notes, encoding="utf-8")).get("body", "")
+        if args.github_notes and os.path.isfile(args.github_notes)
+        else ""
+    )
+
+    notable_all = versions["notable"] + extra_comps
+    total       = versions.get("total_packages", 0)
 
     sections = [
         _section_card(args.tag, args.repo),
         "",
-        _section_screenshot(args.image, args.tag),
+        _section_variants(variants),
+        "",
+        _section_notable(notable_all),
         "",
         _section_diff_summary(versions["diff"], versions["has_prev"], total),
         "",
-        _section_notable(versions["notable"]),
-        "",
-        _section_full_inventory(inventory, total),
-        "",
         _section_diff_details(versions["diff"], versions["has_prev"]),
+        "",
+        _section_contributors(github_parsed["contributors"]),
+        "",
+        _section_pr_changelog(github_parsed["prs"]),
+        "",
+        _section_screenshot(args.image, args.tag, args.project_name),
         "",
         _section_supply_chain(
             image=args.image,
@@ -398,13 +514,13 @@ def main() -> None:
             sbom_filename=sbom_filename,
             docs_url=args.docs_url,
         ),
+        "",
+        f"Full changelog \u2192 {args.docs_url}\n",
     ]
 
-    notes = "\n".join(sections)
+    notes = "\n".join(s for s in sections if s is not None)
 
-    # ── Guard: GitHub enforces a 125 000-char limit on release bodies ────────
     if len(notes) > args.max_chars:
-        # Persist the full notes as a separate asset so nothing is lost.
         with open(args.overflow_file, "w", encoding="utf-8") as f:
             f.write(notes)
         print(
@@ -414,24 +530,27 @@ def main() -> None:
             file=sys.stderr,
         )
 
-        # Build a compact body: drop the full inventory + diff details blocks;
-        # replace them with a pointer to the overflow asset.
         asset_ref = os.path.basename(args.overflow_file)
         overflow_note = (
-            f"_The full package inventory and diff details exceed GitHub's "
-            f"release-body limit.  "
+            f"_The full package diff details exceed GitHub's release-body limit. "
             f"They are attached as [`{asset_ref}`]({asset_ref})._\n"
         )
         compact_sections = [
             _section_card(args.tag, args.repo),
             "",
-            _section_screenshot(args.image, args.tag),
+            _section_variants(variants),
+            "",
+            _section_notable(notable_all),
             "",
             _section_diff_summary(versions["diff"], versions["has_prev"], total),
             "",
-            _section_notable(versions["notable"]),
-            "",
             overflow_note,
+            "",
+            _section_contributors(github_parsed["contributors"]),
+            "",
+            _section_pr_changelog(github_parsed["prs"]),
+            "",
+            _section_screenshot(args.image, args.tag, args.project_name),
             "",
             _section_supply_chain(
                 image=args.image,
@@ -442,14 +561,15 @@ def main() -> None:
                 sbom_filename=sbom_filename,
                 docs_url=args.docs_url,
             ),
+            "",
+            f"Full changelog \u2192 {args.docs_url}\n",
         ]
-        notes = "\n".join(compact_sections)
+        notes = "\n".join(s for s in compact_sections if s is not None)
 
-        # Absolute last resort: hard-truncate if even the compact body is over.
         if len(notes) > args.max_chars:
-            notes = notes[: args.max_chars - 12] + "\n\n…*(truncated)*"
+            notes = notes[: args.max_chars - 12] + "\n\n\u2026*(truncated)*"
             print(
-                "::warning::Compact release notes still exceeded the limit — "
+                "::warning::Compact release notes still exceeded the limit \u2014 "
                 "hard-truncated.",
                 file=sys.stderr,
             )
