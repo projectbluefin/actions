@@ -109,6 +109,7 @@ jobs:
 
       - name: Resolve source branch HEAD SHA for e2e gate
         id: source-sha
+        if: inputs.run_e2e
         env:
           GH_TOKEN: ${{ github.token }}
           # E2E workflows run on builds to source_branch:
