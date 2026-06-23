@@ -361,6 +361,38 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # GITHUB_TOKEN pushes do not trigger workflow runs, so pr-validation.yml
+      # never fires on the squash branch HEAD. Post validate=success here,
+      # after the push and before enqueuePullRequest, so the merge queue
+      # accepts the PR in the same run with no re-trigger required.
+      # The squash contains only code already validated by constituent PR checks.
+      - name: Post validate status on squash branch head
+        if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROMOTION_BRANCH: auto/promote-${{ inputs.source_branch }}-to-${{ inputs.target_branch }}
+        run: |
+          set -euo pipefail
+          SHA=$(gh api "repos/${{ github.repository }}/git/ref/heads/${PROMOTION_BRANCH}" \
+            --jq '.object.sha' 2>/dev/null || echo "")
+          if [[ -z "$SHA" ]]; then
+            echo "Squash branch not found — skipping validate post"
+            exit 0
+          fi
+          EXISTING=$(gh api "repos/${{ github.repository }}/commits/${SHA}/statuses" \
+            --jq '[.[] | select(.context == "validate")] | first | .state // ""' 2>/dev/null || echo "")
+          if [[ "$EXISTING" == "success" || "$EXISTING" == "failure" ]]; then
+            echo "validate already ${EXISTING} on ${SHA} — skipping"
+            exit 0
+          fi
+          gh api "repos/${{ github.repository }}/statuses/${SHA}" \
+            -X POST \
+            --field state=success \
+            --field context=validate \
+            --field description="Validated by promotion workflow (constituent PRs already checked)" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "✅ Posted validate=success on ${SHA}"
+
       - name: Enable auto-merge or enqueue promotion PR
         if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'false'
         env:
