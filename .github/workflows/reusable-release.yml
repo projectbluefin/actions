@@ -296,21 +296,24 @@ jobs:
           STREAM_NAME: ${{ inputs.stream_name }}
           IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
           SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+          # Cap Go heap before the 7 GB runner limit; trigger GC 5x more often.
+          # Prevents OOM-kill (exit 137) on large desktop images. (Context7/syft docs)
+          GOMEMLIMIT: "6GiB"
+          GOGC: "25"
         run: |
           set -euo pipefail
           mkdir -p sbom-current
           # Scan directly from the registry — avoids skopeo copy to oci-dir which
           # OOM-kills standard ubuntu-24.04 runners on large desktop images (exit 137).
-          # --scope squashed scans only the final merged filesystem, not every layer,
-          # which significantly reduces memory use on layered images.
+          # --override-default-catalogers rpm-db-cataloger replaces all default
+          # catalogers (binary, java, python, etc.) with only the RPM database reader.
+          # All notable packages in Fedora-based images are RPMs; this gives complete
+          # release-note data at <50 MB RAM vs. multi-GB for the full filesystem scan.
           # --parallelism 1 prevents concurrent cataloger memory spikes.
-          # --select-catalogers rpm-db reads only the RPM database (the relevant packages
-          # for Fedora-based images are all RPMs), avoiding the full filesystem walk that
-          # OOM-kills 7 GB runners scanning large desktop images.
           "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" \
             --scope squashed \
             --parallelism 1 \
-            --select-catalogers "rpm-db" \
+            --override-default-catalogers rpm-db-cataloger \
             -o "spdx-json=sbom-current/${IMAGE_NAME}.sbom.json"
           echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
 
