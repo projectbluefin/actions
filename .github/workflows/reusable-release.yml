@@ -290,15 +290,16 @@ jobs:
       - name: Generate SBOM inline from promoted image
         if: inputs.generate_sbom_inline == true
         continue-on-error: true  # Syft is memory-intensive on large images; SBOM must never block the release
+        timeout-minutes: 8  # Ensures graceful step failure (and fallback) instead of OOM-killing the runner VM
         id: generate-sbom
         env:
           IMAGE: ${{ inputs.image }}
           STREAM_NAME: ${{ inputs.stream_name }}
           IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
           SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
-          # Cap Go heap before the 7 GB runner limit; trigger GC 5x more often.
-          # Prevents OOM-kill (exit 137) on large desktop images. (Context7/syft docs)
-          GOMEMLIMIT: "6GiB"
+          # Cap Go heap well below the 7 GB runner limit to leave headroom for OS + docker layers.
+          # 3 GiB triggers GC much earlier than 6 GiB; prevents runner VM shutdown on OOM.
+          GOMEMLIMIT: "3GiB"
           GOGC: "25"
         run: |
           set -euo pipefail
