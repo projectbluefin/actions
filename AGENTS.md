@@ -136,7 +136,7 @@ Agents implement autonomously **except** at these gates. Stop and request human 
 | **Design Gate** | Architecture changes, new subsystem design, behavioral changes visible to consumers |
 | **Security Gate** | Auth, signing, supply chain, secrets handling, SHA pinning for security-critical actions |
 | **Breakage Gate** | Cross-repo breaking changes — removing/renaming inputs, changing defaults that affect consuming repos |
-| **Merge Gate** | Final PR approval and merge — always human |
+| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
 
 When in doubt, open a draft PR with your implementation and ask explicitly.
 
@@ -208,7 +208,7 @@ git ls-remote origin v1
 
 **SBOM alignment:** the factory standard is Syft → SPDX-JSON, attached via ORAS and stored as a GitHub Actions artifact. `sign-and-publish` handles this for Fedora-based images. BST/dakota uses `just sbom` (also SPDX-JSON). All release notes must be generated from these SBOMs — never from separate container inspection scripts. bluefin-lts is the exception until issue bluefin-lts#74 is resolved.
 
-**Production promotion in consumer repos is 2-human gated.** The `environment: production` gate on promotion/release workflows cannot be bypassed by changing actions here. Any change that could affect the promotion path requires explicit maintainer review. Admin bypasses are permanently logged in the Environment deployment history.
+**Production promotion in consumer repos is fully automated.** The `environment: production` gate on promotion/release workflows fires automatically once gate checks pass — no human approvals required. Admin bypasses are permanently logged in the Environment deployment history.
 
 ---
 
