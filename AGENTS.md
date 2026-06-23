@@ -9,6 +9,11 @@ Shared composite GitHub Actions for bootc image builders (bluefin, aurora, bazzi
 
 Load **[docs/SKILL.md](docs/SKILL.md)** before modifying any action.
 
+> **Before using any tool or library: look up its docs via Context7 first. Always.**
+> GitHub Actions, bootc, cosign, skopeo, syft, oras, Trivy, Renovate — every tool has live, authoritative docs.
+> Pattern: `resolve-library-id` → `get-library-docs` → implement → cite the section.
+> Guessing, flag-hunting, and trial-and-error are banned. The docs exist. Read them.
+
 ---
 
 ## The System You Are Part Of
