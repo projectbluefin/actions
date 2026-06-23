@@ -283,17 +283,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p sbom-current
-          # Pull to local OCI dir — skopeo handles chunked pull far better than
-          # syft's registry: mode. oci-dir stores each layer as a separate file,
-          # avoiding the 2 GB per-entry decompression limit that oci-archive hits
-          # on large images (e.g. bluefin-lts-hwe).
-          skopeo copy --insecure-policy \
-            "docker://${IMAGE}:${STREAM_NAME}" \
-            "oci:/tmp/sbom-image-dir"
-          "${SYFT_CMD}" "oci-dir:/tmp/sbom-image-dir" \
-            -o spdx-json="sbom-current/${IMAGE_NAME}.sbom.json"
+          # Scan directly from the registry — avoids skopeo copy to oci-dir which
+          # OOM-kills standard ubuntu-24.04 runners on large desktop images (exit 137).
+          # --scope squashed scans only the final merged filesystem, not every layer,
+          # which significantly reduces memory use on layered images.
+          # --parallelism 1 prevents concurrent cataloger memory spikes.
+          "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" \
+            --scope squashed \
+            --parallelism 1 \
+            -o "spdx-json=sbom-current/${IMAGE_NAME}.sbom.json"
           echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
-          rm -rf /tmp/sbom-image-dir
 
       - name: Download SBOM artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
