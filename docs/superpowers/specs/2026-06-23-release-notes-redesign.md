@@ -78,7 +78,43 @@ Full changelog → {docs_url}
 
 ### Desktop screenshot
 
-`_section_screenshot()` already generates the URL from the image reference. Already in the plan. Confirmed it must appear in every release — if the testsuite screenshot is missing (404), the `<img>` tag renders as a broken image rather than omitting the section. This is acceptable; a broken screenshot link is visible evidence of a test gap, not a release bloat problem.
+**Current implementation is broken for HWE variants.** `_screenshot_slug()` produces `bluefin-lts-hwe-testing-smoke-latest.png` → 404. Actual testsuite slugs are per image family:
+
+```
+bluefin-lts-testing-smoke-latest.png
+bluefin-testing-smoke-latest.png
+bluefin-testing-vanilla-gnome-latest.png
+dakota-testing-smoke-latest.png
+```
+
+**Fix `_screenshot_slug()`:** strip variant suffixes before building the URL.
+
+```python
+def _screenshot_slug(image: str) -> str:
+    slug = re.sub(r"^[^/]+/[^/]+/", "", image)        # strip registry prefix
+    slug = re.sub(r":[^-]+$", "", slug)                 # strip tag
+    slug = re.sub(r"-(hwe-nvidia|hwe|nvidia)$", "", slug)  # strip variant suffix
+    return slug
+```
+
+`bluefin-lts-hwe` → `bluefin-lts` → `bluefin-lts-testing-smoke-latest.png` ✓
+
+**Fix rendering:** use HTML `<img>` with width and descriptive alt text. GitHub release bodies render HTML.
+
+```python
+def _section_screenshot(image: str, tag: str, project_name: str) -> str:
+    slug = _screenshot_slug(image)
+    url = f"https://projectbluefin.github.io/testsuite/screenshots/{slug}-testing-smoke-latest.png"
+    base_image = re.sub(r"^[^/]+/[^/]+/", "", image)
+    return (
+        "## Desktop Screenshot\n\n"
+        f'<img src="{url}" alt="{project_name} desktop — {tag}" width="100%">\n\n'
+        f"*Captured from `{base_image}:testing` during automated e2e validation — "
+        f"[testsuite](https://github.com/projectbluefin/testsuite)*\n"
+    )
+```
+
+Screenshot is **always included** — if the URL returns 404, the broken image is visible evidence of a test gap, not release bloat.
 
 ---
 
