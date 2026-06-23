@@ -8,13 +8,17 @@
 
 ## Problem
 
-Current release notes for bluefin-lts, bluefin, and dakota have three defects:
+Current release notes for bluefin-lts, bluefin, and dakota have five defects:
 
 1. **Triple "Variants promoted" tables.** The `post-release-variants` job in `execute-release.yml` fetches the current release body and prepends a variants table. If the workflow runs more than once (dispatch + retries), each run prepends another copy with whatever digests were live at that moment. Three runs = three tables with divergent digests.
 
 2. **Supply chain section dominates.** Four multi-line code blocks (`cosign`, `oras`, `slsa-verifier`) account for roughly 90% of the visible release body. Important for compliance users; invisible wall of text for everyone else.
 
 3. **No story.** The notes are mechanically correct but contain no signal about what changed or why anyone should care. The full 2587-package SPDX inventory is embedded inline, replacing prose with bulk.
+
+4. **LTS shows only one kernel.** The `bluefin-lts` variant uses the CentOS Stream 10 stock kernel; `bluefin-lts-hwe` / `bluefin-lts-hwe-nvidia` use the HWE (Fedora CoreOS stable) kernel. Currently only the HWE kernel appears because the SBOM comes from `bluefin-lts-hwe`. Users on the base variant cannot see their kernel version.
+
+5. **Key components too sparse.** Only 4 packages (kernel, GNOME, flatpak, bootc). Missing components users care about: container runtime, audio stack, GPU stack, display protocol.
 
 ---
 
@@ -34,8 +38,17 @@ Move the variants table from a post-hoc `gh release edit` hack into `render_note
 ## Variants promoted                     ← NEW, only if --variants supplied
 | image | :tag | sha256:... |
 
-## Key components                        ← existing, notable packages with changes highlighted
-| Kernel | 7.0.9 | 6.x → 7.0.9 |
+## Key components                        ← richer package set (see below)
+| Kernel (HWE) | 7.0.9 | 6.x → 7.0.9 |
+| Kernel (Base)| 6.12.x |              |  ← LTS only, from extra-components-json
+| GNOME Shell  | 50.0   |              |
+| Podman       | 5.x    |              |
+| Distrobox    | 1.x    |              |
+| systemd      | 257.x  |              |
+| Mesa         | 25.x   |              |
+| PipeWire     | 1.x    |              |
+| Flatpak      | 1.18.x |              |
+| bootc        | 1.15.x |              |
 
 > N updated, M total.                    ← diff summary
 
@@ -46,12 +59,12 @@ Move the variants table from a post-hoc `gh release edit` hack into `render_note
 ## Contributors                          ← NEW, human contributors linked (no @ping)
 [castrojo](https://github.com/castrojo) · [aaroneaton](https://github.com/aaroneaton)
 
-<details>                                ← NEW, non-bot PRs grouped by type
+<details>                                ← NEW, non-bot PRs, respects .github/release.yml labels
 <summary>Merged since last release</summary>
 **Features** / **Fixes** / **Other**
 </details>
 
-[Desktop screenshot]                     ← near bottom
+[Desktop screenshot]                     ← always included, URL from testsuite gh-pages
 
 <details>                                ← supply chain: collapsed by default
 <summary>Supply chain verification</summary>
@@ -62,6 +75,112 @@ Full changelog → {docs_url}
 ```
 
 **Removed from body:** full 2587-package SPDX inventory. The `.spdx.json` file is still attached as a release asset.
+
+### Desktop screenshot
+
+`_section_screenshot()` already generates the URL from the image reference. Already in the plan. Confirmed it must appear in every release — if the testsuite screenshot is missing (404), the `<img>` tag renders as a broken image rather than omitting the section. This is acceptable; a broken screenshot link is visible evidence of a test gap, not a release bloat problem.
+
+---
+
+## LTS: Both Kernel Versions
+
+**Problem:** Create-release is invoked with a single SBOM (from `bluefin-lts-hwe`). The base CentOS kernel lives in `bluefin-lts`, which has a different package set and no SBOM currently passed to create-release.
+
+**Solution: `extra-components-json` input**
+
+New optional input to `create-release/action.yml`:
+```
+extra-components-json: '[{"label":"Kernel (Base)","version":"6.12.0-22.el10"}]'
+```
+
+These rows inject directly into the Key Components table alongside the SBOM-derived notable packages. No second SBOM needed.
+
+**How the LTS workflow extracts the base kernel version:**
+
+In `execute-release.yml`, before the `release-notes` job:
+```bash
+BASE_KERNEL=$(skopeo inspect --no-tags \
+  docker://ghcr.io/projectbluefin/bluefin-lts:stable \
+  | jq -r '.Labels["ostree.linux"] // empty' \
+  | grep -oP '[\d\.\-]+el\d+' | head -1)
+```
+
+If the label isn't present, fall back to running `rpm -q kernel` inside the container or omit the row gracefully.
+
+The resolved version is passed as an output from a pre-release-notes job step into the `release-notes` job's `extra_components_json` input.
+
+---
+
+## Richer Notable Packages
+
+### bluefin-lts `notable_packages`
+
+```json
+[
+  {"sbom_name": "kernel", "label": "Kernel (HWE)"},
+  {"sbom_name": "gnome-shell", "label": "GNOME Shell"},
+  {"sbom_name": "podman", "label": "Podman"},
+  {"sbom_name": "distrobox", "label": "Distrobox"},
+  {"sbom_name": "systemd", "label": "systemd"},
+  {"sbom_name": "mesa-vulkan-drivers", "label": "Mesa"},
+  {"sbom_name": "pipewire", "label": "PipeWire"},
+  {"sbom_name": "flatpak", "label": "Flatpak"},
+  {"sbom_name": "bootc", "label": "bootc"}
+]
+```
+
+### bluefin `notable_packages` (Fedora base)
+
+```json
+[
+  {"sbom_name": "kernel", "label": "Kernel"},
+  {"sbom_name": "gnome-shell", "label": "GNOME Shell"},
+  {"sbom_name": "podman", "label": "Podman"},
+  {"sbom_name": "distrobox", "label": "Distrobox"},
+  {"sbom_name": "systemd", "label": "systemd"},
+  {"sbom_name": "mesa-vulkan-drivers", "label": "Mesa"},
+  {"sbom_name": "pipewire", "label": "PipeWire"},
+  {"sbom_name": "flatpak", "label": "Flatpak"},
+  {"sbom_name": "bootc", "label": "bootc"}
+]
+```
+
+Notable packages that are absent from the SBOM are silently skipped by `sbom_diff.py` — no error. Safe to include speculatively.
+
+---
+
+## .github/release.yml (GitHub PR categorization)
+
+Add to `projectbluefin/bluefin`, `projectbluefin/bluefin-lts`, and `projectbluefin/dakota`:
+
+```yaml
+# .github/release.yml
+changelog:
+  exclude:
+    authors:
+      - github-actions
+      - renovate
+      - dependabot
+    labels:
+      - dependencies
+      - skip-changelog
+  categories:
+    - title: Features
+      labels:
+        - enhancement
+        - feature
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: Other Changes
+      labels:
+        - "*"
+```
+
+This configures GitHub's `generate-notes` API (which `create-release` already calls) to exclude bot PRs and group by label. Our Python parser falls back to conventional-commit prefix parsing when labels are absent.
+
+The `render_notes.py` PR changelog section uses the output from `generate-notes` — which respects this config automatically.
 
 ---
 
@@ -99,6 +218,7 @@ Full changelog → {docs_url}
 |---|---|---|
 | `--variants` | optional str | Path to JSON file: `[{"name":..., "tag":..., "digest":..., "note":...}]` |
 | `--github-notes` | optional str | Path to JSON file from GitHub generate-notes API: `{"body": "..."}` |
+| `--extra-components` | optional str | Path to JSON file: `[{"label":"Kernel (Base)","version":"6.12.x"}]` — injected into Key Components table |
 
 **New main() section order:**
 ```python
@@ -127,6 +247,7 @@ Where `contributors` and `prs` are parsed from the GitHub generate-notes JSON (s
 | Input | Required | Description |
 |---|---|---|
 | `variants-json` | no | JSON array of variant objects: `[{"name":"bluefin-lts","tag":":stable","digest":"sha256:...","note":"..."}]` |
+| `extra-components-json` | no | JSON array of extra key component rows not in SBOM: `[{"label":"Kernel (Base)","version":"6.12.x"}]` |
 
 **New step: Fetch GitHub generate-notes** (runs before "Render release notes"):
 ```yaml
@@ -166,11 +287,12 @@ Where `contributors` and `prs` are parsed from the GitHub generate-notes JSON (s
 
 **Modified step: "Render release notes"** — passes new args:
 ```
---variants     _variants.json    (only if file exists)
---github-notes _github_notes.json
+--variants         _variants.json         (only if file exists)
+--extra-components _extra_components.json (only if file exists)
+--github-notes     _github_notes.json
 ```
 
-**Cleanup step** — add `_variants.json _github_notes.json` to `rm -f`.
+**Cleanup step** — add `_variants.json _extra_components.json _github_notes.json` to `rm -f`.
 
 ---
 
@@ -181,10 +303,12 @@ Where `contributors` and `prs` are parsed from the GitHub generate-notes JSON (s
 | Input | Type | Required | Description |
 |---|---|---|---|
 | `variants_json` | string | no | Forwarded to create-release `variants-json` input |
+| `extra_components_json` | string | no | Forwarded to create-release `extra-components-json` input |
 
 **Modified "Create release" step** — add:
 ```yaml
-variants-json: ${{ inputs.variants_json }}
+variants-json:         ${{ inputs.variants_json }}
+extra-components-json: ${{ inputs.extra_components_json }}
 ```
 
 ---
@@ -240,15 +364,17 @@ The API returns:
 | Repo | Files | Breaking? |
 |---|---|---|
 | `projectbluefin/actions` | `create-release/scripts/render_notes.py`, `create-release/action.yml`, `.github/workflows/reusable-release.yml` | No — new inputs are optional |
-| `projectbluefin/bluefin-lts` | `.github/workflows/execute-release.yml` | No — deletes a job, adds inputs |
-| `projectbluefin/bluefin` | None (uses single-image path, no variants) | No |
-| `projectbluefin/dakota` | None | No |
+| `projectbluefin/bluefin-lts` | `.github/workflows/execute-release.yml`, `.github/release.yml` (new) | No — deletes a job, adds inputs |
+| `projectbluefin/bluefin` | `.github/release.yml` (new), update `notable_packages` in caller workflow | No |
+| `projectbluefin/dakota` | `.github/release.yml` (new) | No |
 
-Consumer validation required: open draft PR in `projectbluefin/bluefin-lts` targeting `main` (not bluefin's `testing` branch).
+Consumer validation: open draft PR in `projectbluefin/bluefin-lts` targeting `main`.
 
 ---
 
 ## Open Questions / Deferred
 
-- `reusable-execute-release.yml` variant digest outputs: need to check if these are already exposed or need to be added. If not exposed, fallback is to call `skopeo inspect` inside the `release-notes` job instead of passing from `execute`.
-- Dakota uses a different release path — verify variants table is not needed there (single-image). No action needed unless confirmed.
+- `reusable-execute-release.yml` variant digest outputs: need to check if exposed. Fallback: `skopeo inspect` inside `release-notes` job to resolve digests.
+- The base kernel version extraction via `ostree.linux` label may not always be present in the container image metadata. Fallback: run `rpm -q kernel` inside a temporary container, or omit the row if unavailable.
+- Dakota single-image path: variants table not needed. `.github/release.yml` still applies.
+- `notable_packages` in bluefin and bluefin-lts caller workflows: the exact SBOM package names (`mesa-vulkan-drivers`, `distrobox`, etc.) need to be verified against actual SBOMs before wiring up. `sbom_diff.py` silently skips missing names so incorrect names won't break releases, but the rows won't appear.
