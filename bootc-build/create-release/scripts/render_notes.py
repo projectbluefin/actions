@@ -222,6 +222,93 @@ def _section_diff_details(diff: dict, has_prev: bool) -> str:
     return "## Package changes\n\n" + "\n\n".join(blocks) + "\n"
 
 
+# ── GitHub generate-notes parsing ─────────────────────────────────────────────
+
+_BOT_PATTERN = re.compile(r"\[bot\]$|^github-actions$|^renovate$|^dependabot$")
+
+
+def _parse_github_notes(body: str) -> dict:
+    """Parse GitHub generate-notes API response body.
+
+    Returns {"contributors": list[str], "prs": list[dict]}
+    where prs are non-bot entries with keys: title, number, author, type.
+    type is one of: "feat", "fix", "other".
+    """
+    contributors: list[str] = []
+    prs: list[dict] = []
+
+    # ── Extract contributors from ## New Contributors section ─────────────
+    contrib_section = re.search(
+        r"## New Contributors\n(.*?)(?:\n## |\n\*\*Full Changelog|$)",
+        body, re.DOTALL
+    )
+    if contrib_section:
+        for m in re.finditer(r"@([A-Za-z0-9_-]+(?:\[bot\])?)", contrib_section.group(1)):
+            username = m.group(1)
+            if not _BOT_PATTERN.search(username):
+                contributors.append(username)
+
+    # ── Extract PRs from ## What's Changed section ────────────────────────
+    changed_section = re.search(
+        r"## What's Changed\n(.*?)(?:\n## |\n\*\*Full Changelog|$)",
+        body, re.DOTALL
+    )
+    if changed_section:
+        # Each line: "* {title} by @{author} in https://.../{number}"
+        pr_pattern = re.compile(
+            r"^\* (.+?) by @([A-Za-z0-9_-]+(?:\[bot\])?) in https://[^\s]+/(\d+)\s*$",
+            re.MULTILINE,
+        )
+        for m in pr_pattern.finditer(changed_section.group(1)):
+            title, author, number = m.group(1), m.group(2), m.group(3)
+            if _BOT_PATTERN.search(author):
+                continue
+            pr_type = "other"
+            if title.startswith("feat"):
+                pr_type = "feat"
+            elif title.startswith("fix"):
+                pr_type = "fix"
+            prs.append({"title": title, "number": number, "author": author, "type": pr_type})
+
+    return {"contributors": contributors, "prs": prs}
+
+
+def _section_contributors(contributors: list[str]) -> str:
+    """Render human contributors as linked names (no @-ping)."""
+    if not contributors:
+        return ""
+    links = " · ".join(
+        f"[{u}](https://github.com/{u})" for u in contributors
+    )
+    return f"## Contributors\n\n{links}\n"
+
+
+def _section_pr_changelog(prs: list[dict]) -> str:
+    """Render non-bot PRs grouped by type in a collapsible details block."""
+    if not prs:
+        return ""
+
+    groups: dict[str, list[dict]] = {"feat": [], "fix": [], "other": []}
+    for pr in prs:
+        groups.setdefault(pr.get("type", "other"), []).append(pr)
+
+    group_titles = {"feat": "Features", "fix": "Fixes", "other": "Other Changes"}
+    blocks: list[str] = []
+    for key in ("feat", "fix", "other"):
+        if not groups[key]:
+            continue
+        lines = "\n".join(f"- {pr['title']} (#{pr['number']})" for pr in groups[key])
+        blocks.append(f"**{group_titles[key]}**\n\n{lines}")
+
+    body = "\n\n".join(blocks)
+    return (
+        "<details>\n"
+        "<summary>Merged since last release</summary>\n\n"
+        f"{body}\n\n"
+        "</details>\n"
+    )
+
+
 def _section_supply_chain(
     *,
     image: str,

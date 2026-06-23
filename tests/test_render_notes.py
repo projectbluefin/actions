@@ -450,3 +450,131 @@ class TestSupplyChainCollapsed:
         assert "cosign verify" in md
         assert "oras discover" in md
         assert "slsa-verifier" in md
+
+
+GITHUB_NOTES_BODY = """\
+## What's Changed
+* feat: add X feature by @castrojo in https://github.com/projectbluefin/bluefin-lts/pull/101
+* fix: fix Y bug by @aaroneaton in https://github.com/projectbluefin/bluefin-lts/pull/102
+* chore(deps): bump foo by @renovate[bot] in https://github.com/projectbluefin/bluefin-lts/pull/103
+* chore: update image by @github-actions[bot] in https://github.com/projectbluefin/bluefin-lts/pull/104
+
+## New Contributors
+* @castrojo made their first contribution in https://github.com/projectbluefin/bluefin-lts/pull/101
+* @aaroneaton made their first contribution in https://github.com/projectbluefin/bluefin-lts/pull/102
+
+**Full Changelog**: https://github.com/projectbluefin/bluefin-lts/compare/prev...new
+"""
+
+BOT_ONLY_BODY = """\
+## What's Changed
+* chore(deps): bump foo by @renovate[bot] in https://github.com/org/repo/pull/1
+* chore: build image by @github-actions[bot] in https://github.com/org/repo/pull/2
+"""
+
+
+class TestParseGithubNotes:
+    def test_extracts_human_contributors(self):
+        result = render_notes._parse_github_notes(GITHUB_NOTES_BODY)
+        assert "castrojo" in result["contributors"]
+        assert "aaroneaton" in result["contributors"]
+
+    def test_filters_bot_contributors(self):
+        result = render_notes._parse_github_notes(GITHUB_NOTES_BODY)
+        for c in result["contributors"]:
+            assert "[bot]" not in c
+            assert c != "github-actions"
+
+    def test_extracts_human_prs(self):
+        result = render_notes._parse_github_notes(GITHUB_NOTES_BODY)
+        titles = [pr["title"] for pr in result["prs"]]
+        assert any("feat: add X feature" in t for t in titles)
+        assert any("fix: fix Y bug" in t for t in titles)
+
+    def test_filters_bot_prs(self):
+        result = render_notes._parse_github_notes(GITHUB_NOTES_BODY)
+        for pr in result["prs"]:
+            assert "renovate" not in pr.get("author", "")
+            assert "github-actions" not in pr.get("author", "")
+
+    def test_captures_pr_number(self):
+        result = render_notes._parse_github_notes(GITHUB_NOTES_BODY)
+        numbers = [pr["number"] for pr in result["prs"]]
+        assert "101" in numbers
+        assert "102" in numbers
+
+    def test_captures_pr_type(self):
+        result = render_notes._parse_github_notes(GITHUB_NOTES_BODY)
+        types = {pr["number"]: pr["type"] for pr in result["prs"]}
+        assert types["101"] == "feat"
+        assert types["102"] == "fix"
+
+    def test_empty_body_returns_empty_lists(self):
+        result = render_notes._parse_github_notes("")
+        assert result["contributors"] == []
+        assert result["prs"] == []
+
+    def test_bot_only_body_returns_empty_prs(self):
+        result = render_notes._parse_github_notes(BOT_ONLY_BODY)
+        assert result["prs"] == []
+
+
+class TestSectionContributors:
+    def test_empty_list_returns_empty_string(self):
+        assert render_notes._section_contributors([]) == ""
+
+    def test_single_contributor_linked(self):
+        md = render_notes._section_contributors(["castrojo"])
+        assert "[castrojo](https://github.com/castrojo)" in md
+
+    def test_multiple_contributors_separated(self):
+        md = render_notes._section_contributors(["castrojo", "aaroneaton"])
+        assert "castrojo" in md
+        assert "aaroneaton" in md
+
+    def test_no_at_sign_in_output(self):
+        md = render_notes._section_contributors(["castrojo"])
+        assert "@castrojo" not in md
+
+    def test_has_contributors_heading(self):
+        md = render_notes._section_contributors(["castrojo"])
+        assert "## Contributors" in md
+
+
+class TestSectionPrChangelog:
+    FEAT_PRS = [
+        {"title": "feat: add something", "number": "1", "type": "feat", "author": "castrojo"},
+    ]
+    FIX_PRS = [
+        {"title": "fix: fix something", "number": "2", "type": "fix", "author": "aaroneaton"},
+    ]
+    MIXED_PRS = FEAT_PRS + FIX_PRS + [
+        {"title": "docs: update readme", "number": "3", "type": "other", "author": "user3"},
+    ]
+
+    def test_empty_list_returns_empty_string(self):
+        assert render_notes._section_pr_changelog([]) == ""
+
+    def test_wrapped_in_details(self):
+        md = render_notes._section_pr_changelog(self.FEAT_PRS)
+        assert "<details>" in md
+        assert "</details>" in md
+
+    def test_feat_prs_in_features_group(self):
+        md = render_notes._section_pr_changelog(self.MIXED_PRS)
+        assert "Features" in md
+        assert "add something" in md
+
+    def test_fix_prs_in_fixes_group(self):
+        md = render_notes._section_pr_changelog(self.MIXED_PRS)
+        assert "Fixes" in md
+        assert "fix something" in md
+
+    def test_other_prs_in_other_group(self):
+        md = render_notes._section_pr_changelog(self.MIXED_PRS)
+        assert "Other" in md
+        assert "update readme" in md
+
+    def test_pr_number_appears(self):
+        md = render_notes._section_pr_changelog(self.FEAT_PRS)
+        assert "#1" in md
