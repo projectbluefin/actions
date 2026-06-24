@@ -37,13 +37,14 @@ runs:
         release_url="https://github.com/${REPO}/releases/tag/${TAG_NAME}"
 
         # Build embed fields — one per promoted variant with short digest
-        fields=$(jq -c '[.variants[] | {
-          "name": "\(.image):\(.target_tag)",
-          "value": ("`" + (.digest | .[0:19]) + "...`"),
-          "inline": true
-        }]' --argjson variants "$VARIANTS_JSON" \
+        fields=$(jq -cn \
+          --argjson variants "$VARIANTS_JSON" \
           --argjson digests "$DIGESTS_JSON" \
-          -n '$variants | map(. + {"digest": ($digests[.image] // "unknown")})')
+          '$variants | map({
+            "name": "\(.image):\(.target_tag)",
+            "value": ("`" + ($digests[.image] // "unknown")[0:19] + "...`"),
+            "inline": true
+          })')
 
         # Thread opener — creates the forum thread, green embed, clickable title
         # thread_name sets the Forum post title

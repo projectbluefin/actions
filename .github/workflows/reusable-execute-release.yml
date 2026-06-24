@@ -26,6 +26,11 @@ on:
         required: false
         type: string
         default: ""
+      tag_name:
+        description: Release tag for Discord notification (e.g. bluefin-stable-20250624.0). Leave empty to skip notification.
+        required: false
+        type: string
+        default: ''
     outputs:
       promoted_digests:
         description: JSON map of promoted digests keyed by image name
@@ -319,11 +324,11 @@ jobs:
           echo 'Release promotion completed. Caller should run the release notes workflow as a separate job.'
 
       - name: Notify Discord releases channel
-        if: success()
-        uses: ./.github/actions/discord-release-notify
+        if: success() && inputs.tag_name != ''
+        uses: projectbluefin/actions/.github/actions/discord-release-notify@v1
         with:
           webhook_url: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag_name }}
           repo: ${{ github.repository }}
           variants_json: ${{ inputs.variants }}
           digests_json: ${{ steps.resolve.outputs.digests }}
