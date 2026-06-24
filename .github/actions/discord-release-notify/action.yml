@@ -1,0 +1,106 @@
+name: Discord Release Notify
+description: Posts a release card to a Discord forum webhook channel. No-ops if webhook_url is empty.
+
+inputs:
+  webhook_url:
+    description: Discord releases channel webhook URL (from secret). No-op if empty.
+    required: false
+    default: ''
+  tag_name:
+    description: Release tag (e.g. v20250624.0)
+    required: true
+  repo:
+    description: Repository name (e.g. projectbluefin/bluefin)
+    required: true
+  variants_json:
+    description: JSON array of {image, source_tag, target_tag} objects
+    required: true
+  digests_json:
+    description: JSON map of {image -> digest} from resolve step
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Post release card to Discord
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        TAG_NAME: ${{ inputs.tag_name }}
+        REPO: ${{ inputs.repo }}
+        VARIANTS_JSON: ${{ inputs.variants_json }}
+        DIGESTS_JSON: ${{ inputs.digests_json }}
+      run: |
+        [ -n "$WEBHOOK_URL" ] || { echo "No Discord webhook URL configured, skipping."; exit 0; }
+
+        repo_short="${REPO##*/}"
+        release_url="https://github.com/${REPO}/releases/tag/${TAG_NAME}"
+
+        # Build embed fields — one per promoted variant with short digest
+        fields=$(jq -c '[.variants[] | {
+          "name": "\(.image):\(.target_tag)",
+          "value": ("`" + (.digest | .[0:19]) + "...`"),
+          "inline": true
+        }]' --argjson variants "$VARIANTS_JSON" \
+          --argjson digests "$DIGESTS_JSON" \
+          -n '$variants | map(. + {"digest": ($digests[.image] // "unknown")})')
+
+        # Thread opener — creates the forum thread, green embed, clickable title
+        # thread_name sets the Forum post title
+        # allowed_mentions: parse=[] prevents @everyone injection
+        # ?wait=true required to get channel_id for the follow-up post
+        opener=$(jq -n \
+          --arg thread_name "${repo_short} ${TAG_NAME}" \
+          --arg title "${repo_short} ${TAG_NAME} released" \
+          --arg url "$release_url" \
+          --argjson fields "$fields" \
+          '{
+            "thread_name": $thread_name,
+            "allowed_mentions": {"parse": []},
+            "embeds": [{
+              "title": $title,
+              "url": $url,
+              "color": 3066993,
+              "fields": $fields,
+              "timestamp": (now | todate)
+            }]
+          }')
+
+        response=$(curl -sf -w "\n%{http_code}" \
+          -H "Content-Type: application/json" \
+          -d "$opener" \
+          "${WEBHOOK_URL}?wait=true")
+
+        http_status=$(tail -1 <<< "$response")
+        body=$(head -1 <<< "$response")
+
+        [[ "$http_status" == "200" ]] || {
+          echo "Discord thread creation failed: HTTP $http_status" >&2
+          exit 1
+        }
+
+        thread_id=$(jq -r '.channel_id // empty' <<< "$body")
+        [[ "$thread_id" =~ ^[0-9]+$ ]] || {
+          echo "No valid thread_id in response: $body" >&2
+          exit 1
+        }
+
+        # Follow-up post inside thread — full variant table, suppress double-ping
+        detail=$(jq -n \
+          --argjson fields "$fields" \
+          '{
+            "flags": 4096,
+            "allowed_mentions": {"parse": []},
+            "embeds": [{
+              "color": 3066993,
+              "fields": $fields
+            }]
+          }')
+
+        curl -sf -o /dev/null \
+          -H "Content-Type: application/json" \
+          -d "$detail" \
+          "${WEBHOOK_URL}?thread_id=${thread_id}" || {
+          echo "Discord thread follow-up failed" >&2
+          exit 1
+        }

@@ -317,3 +317,13 @@ jobs:
         run: |
           set -euo pipefail
           echo 'Release promotion completed. Caller should run the release notes workflow as a separate job.'
+
+      - name: Notify Discord releases channel
+        if: success()
+        uses: ./.github/actions/discord-release-notify
+        with:
+          webhook_url: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
+          tag_name: ${{ github.ref_name }}
+          repo: ${{ github.repository }}
+          variants_json: ${{ inputs.variants }}
+          digests_json: ${{ steps.resolve.outputs.digests }}
