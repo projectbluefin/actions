@@ -10,6 +10,7 @@
 #   BLUEFINBOT_PRIVATE_KEY — GitHub App for BLUEFINBOT
 #   CASD_CLIENT_KEY       — TLS client cert for BuildStream CAS (dakota only)
 #   SIGNING_SECRET        — Legacy cosign private key (common only, pending keyless migration)
+#   DISCORD_RELEASES_WEBHOOK — Discord webhook URL for #releases Forum channel release notifications
 #   R2_ACCESS_KEY_ID_2025     — Cloudflare R2 (iso only — out of scope)
 #   R2_SECRET_ACCESS_KEY_2025 — Cloudflare R2 (iso only — out of scope)
 #   R2_ENDPOINT_2025          — Cloudflare R2 (iso only — out of scope)
@@ -55,6 +56,7 @@ jobs:
             BLUEFINBOT_PRIVATE_KEY
             CASD_CLIENT_KEY
             SIGNING_SECRET
+            DISCORD_RELEASES_WEBHOOK
           )
 
           # Build grep pattern from approved list
