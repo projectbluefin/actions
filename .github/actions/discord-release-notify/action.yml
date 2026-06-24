@@ -28,8 +28,22 @@ runs:
         [ -n "$WEBHOOK_URL" ] || { echo "No Discord webhook URL configured, skipping."; exit 0; }
 
         repo_short="${REPO##*/}"
-        release_url="https://github.com/${REPO}/releases/tag/${TAG_NAME}"
+
         card_file="/tmp/release-card-dark.png"
+
+        # Derive mascot avatar + display name from repo name
+        # Mapping mirrors generate-card-images.mjs in projectbluefin/documentation
+        DOCS_RAW="https://raw.githubusercontent.com/projectbluefin/documentation/main/static/img"
+        case "${REPO}" in
+          */bluefin-lts) bot_name="Bluefin LTS";  avatar_url="${DOCS_RAW}/bluefin-lts-release-bot.svg" ;;
+          */dakota)      bot_name="Dakota";        avatar_url="${DOCS_RAW}/characters/dakotaraptor.png" ;;
+          *)             bot_name="Bluefin";       avatar_url="${DOCS_RAW}/bluefin-release-bot.png" ;;
+        esac
+
+        # Pretty date from tag — stable-20260623 → "June 23, 2026"
+        date_raw="${TAG_NAME##*-}"
+        pretty_date=$(date -d "${date_raw:0:4}-${date_raw:4:2}-${date_raw:6:2}" "+%B %-d, %Y" 2>/dev/null || echo "$TAG_NAME")
+        post_title="${bot_name} — ${pretty_date}"
 
         # Download release card asset — hosted by Discord, no GitHub CDN dependency
         gh release download "${TAG_NAME}" \
@@ -38,25 +52,20 @@ runs:
           --dir /tmp \
           --clobber
 
-        # payload_json: forum thread opener, image references the uploaded attachment
-        # thread_name creates the forum post title
-        # allowed_mentions: parse=[] prevents @everyone injection
+        # Post PNG as plain file attachment — Discord renders it full-width, no embed shrinkage
         payload=$(jq -n \
-          --arg thread_name "${repo_short} ${TAG_NAME}" \
-          --arg title "${repo_short} ${TAG_NAME}" \
-          --arg url "$release_url" \
+          --arg thread_name "$post_title" \
+          --arg bot_name "$bot_name" \
+          --arg avatar_url "$avatar_url" \
           '{
+            "username": $bot_name,
+            "avatar_url": $avatar_url,
             "thread_name": $thread_name,
-            "allowed_mentions": {"parse": []},
-            "embeds": [{
-              "title": $title,
-              "url": $url,
-              "color": 3066993,
-              "image": {"url": "attachment://release-card-dark.png"}
-            }]
+            "allowed_mentions": {"parse": []}
           }')
 
         response=$(curl -sf -w "\n%{http_code}" \
+          -H "User-Agent: DiscordBot (https://github.com/projectbluefin/common, 1.0)" \
           -F "payload_json=${payload}" \
           -F "files[0]=@${card_file};type=image/png" \
           "${WEBHOOK_URL}")
