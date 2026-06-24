@@ -21,6 +21,11 @@ on:
         description: Regular expression for cosign certificate identity verification
         required: true
         type: string
+      fast_forward_sha:
+        description: "The SHA verified and promoted. Used to fast-forward the bookmark branch. Strongly recommended; will become required in v2. If omitted, falls back to github.sha (unsafe under workflow_run triggers)."
+        required: false
+        type: string
+        default: ""
     outputs:
       promoted_digests:
         description: JSON map of promoted digests keyed by image name
@@ -42,24 +47,22 @@ jobs:
       pull-requests: write
     outputs:
       promoted_digests: ${{ steps.resolve.outputs.digests }}
-      promoted_sha: ${{ steps.promotion-sha.outputs.sha }}
+      promoted_sha: ${{ steps.resolve-sha.outputs.sha }}
     steps:
-      - name: Record promotion SHAs
-        id: promotion-sha
+      - name: Resolve fast-forward SHA
+        id: resolve-sha
         shell: bash
+        env:
+          INPUT_SHA: ${{ inputs.fast_forward_sha }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # head.sha: tip of the promotion branch — identifies the testing content being promoted.
-          # merge_commit_sha: the squash commit GitHub created on main — used for branch fast-forward.
-          # All repos use squash-only merge, so these are always different SHAs.
-          #
-          # Fallback to github.sha for push events (no pull_request context available).
-          PR_HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          PR_MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
-          {
-            echo "sha=${PR_HEAD_SHA:-${{ github.sha }}}"
-            echo "merge_sha=${PR_MERGE_SHA:-${{ github.sha }}}"
-          } >> "$GITHUB_OUTPUT"
+          if [ -z "${INPUT_SHA}" ]; then
+            echo "::warning::fast_forward_sha not provided by caller; falling back to github.sha=${GITHUB_SHA}. This fallback will be removed in v2 — update your caller to pass needs.<job>.outputs.build_sha."
+            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${INPUT_SHA}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Authenticate to GHCR
         shell: bash
@@ -125,7 +128,22 @@ jobs:
           REGISTRY: ${{ inputs.registry }}
           VARIANTS_JSON: ${{ inputs.variants }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Transactional promotion: attempt all variants regardless of any single
+          # failure, then fail the step at the end if any variant failed. This
+          # guarantees:
+          #   (a) one stuck variant does not block reconciliation of its siblings
+          #   (b) the step still fails so the next workflow_run retries
+          #   (c) successful variants are kept — skopeo copy is by-digest and
+          #       idempotent, so a replay on a subsequent retry is safe.
+          #
+          # --preserve-digests is required: cosign signatures live at
+          # sha256-<DIGEST>.sig and follow the source digest. Any manifest rewrite
+          # by skopeo (format/compression renegotiation) would orphan the
+          # signature and leave the target tag pointing at an unsigned digest.
+          # --preserve-digests is compatible with --all for multi-arch manifest
+          # lists (containers/skopeo docs: skopeo-copy.1.md OPTIONS/--preserve-digests).
+          failed_variants=()
           while IFS= read -r variant; do
             [ -n "$variant" ] || continue
             image=$(jq -r '.image' <<<"$variant")
@@ -134,8 +152,16 @@ jobs:
             src="docker://${REGISTRY}/${image}@${digest}"
             dest="docker://${REGISTRY}/${image}:${target_tag}"
             echo "Promoting ${src} to ${dest}"
-            skopeo copy --all "$src" "$dest"
+            if ! skopeo copy --preserve-digests --all "$src" "$dest"; then
+              echo "::warning::Promotion failed for variant ${image} -> :${target_tag}"
+              failed_variants+=("${image}:${target_tag}")
+            fi
           done < <(jq -c '.[]' <<<"$VARIANTS_JSON")
+
+          if [ ${#failed_variants[@]} -gt 0 ]; then
+            echo "::error::Promotion failed for ${#failed_variants[@]} variant(s): ${failed_variants[*]}"
+            exit 1
+          fi
 
       - name: Fast-forward branch after promotion
         if: inputs.fast_forward_branch != ''
@@ -143,37 +169,40 @@ jobs:
         env:
           BRANCH: ${{ inputs.fast_forward_branch }}
           GH_TOKEN: ${{ github.token }}
-          MERGE_SHA: ${{ steps.promotion-sha.outputs.merge_sha }}
+          TARGET_SHA: ${{ steps.resolve-sha.outputs.sha }}
         run: |
           set -euo pipefail
-          # Use merge_commit_sha (the squash commit on main), not head.sha.
-          # All repos are squash-only: head.sha is the source branch tip and is
-          # NOT in main's history after the merge. merge_commit_sha is what
-          # actually landed on main and is safe to fast-forward to.
+          # TARGET_SHA comes from the resolve-sha step which prefers
+          # inputs.fast_forward_sha (the caller-supplied verified SHA under
+          # the workflow_run-triggered contract) and falls back to github.sha
+          # with a deprecation warning. Under the new contract this SHA is
+          # already on the default branch (the publishing workflow runs
+          # against main's head), so the bookmark branch can fast-forward
+          # to it directly.
           #
           # sync-main-to-lts.yml creates merge commits on the branch on every
-          # main push, so the branch may already be at or ahead of MERGE_SHA
+          # main push, so the branch may already be at or ahead of TARGET_SHA
           # by the time this step runs.
           compare=$(gh api \
-            "repos/${{ github.repository }}/compare/${MERGE_SHA}...${BRANCH}" \
+            "repos/${{ github.repository }}/compare/${TARGET_SHA}...${BRANCH}" \
             --jq '.status' 2>/dev/null || echo "diverged")
 
           if [ "$compare" = 'identical' ] || [ "$compare" = 'ahead' ]; then
-            echo "${BRANCH} is already at or ahead of ${MERGE_SHA} (status: ${compare}). Skipping fast-forward."
+            echo "${BRANCH} is already at or ahead of ${TARGET_SHA} (status: ${compare}). Skipping fast-forward."
             exit 0
           fi
 
           gh api "repos/${{ github.repository }}/git/refs/heads/${BRANCH}" \
             --method PATCH \
-            --field sha="$MERGE_SHA" \
+            --field sha="$TARGET_SHA" \
             --field force=false >/dev/null
-          echo "Fast-forwarded ${BRANCH} to ${MERGE_SHA}"
+          echo "Fast-forwarded ${BRANCH} to ${TARGET_SHA}"
 
       - name: Update sticky comment with promotion result
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
-          PROMOTED_SHA: ${{ steps.promotion-sha.outputs.sha }}
+          PROMOTED_SHA: ${{ steps.resolve-sha.outputs.sha }}
           VARIANTS_JSON: ${{ inputs.variants }}
         with:
           script: |
