@@ -35,6 +35,7 @@ runs:
 
         repo_short="${REPO##*/}"
         release_url="https://github.com/${REPO}/releases/tag/${TAG_NAME}"
+        card_url="https://github.com/${REPO}/releases/download/${TAG_NAME}/release-card-dark.png"
 
         # Build embed fields — one per promoted variant with short digest
         fields=$(jq -cn \
@@ -46,14 +47,14 @@ runs:
             "inline": true
           })')
 
-        # Thread opener — creates the forum thread, green embed, clickable title
+        # Single post — forum thread opener with release card image embedded full-width
         # thread_name sets the Forum post title
         # allowed_mentions: parse=[] prevents @everyone injection
-        # ?wait=true required to get channel_id for the follow-up post
         opener=$(jq -n \
           --arg thread_name "${repo_short} ${TAG_NAME}" \
-          --arg title "${repo_short} ${TAG_NAME} released" \
+          --arg title "${repo_short} ${TAG_NAME}" \
           --arg url "$release_url" \
+          --arg card "$card_url" \
           --argjson fields "$fields" \
           '{
             "thread_name": $thread_name,
@@ -63,6 +64,7 @@ runs:
               "url": $url,
               "color": 3066993,
               "fields": $fields,
+              "image": {"url": $card},
               "timestamp": (now | todate)
             }]
           }')
@@ -73,35 +75,8 @@ runs:
           "${WEBHOOK_URL}?wait=true")
 
         http_status=$(tail -1 <<< "$response")
-        body=$(head -1 <<< "$response")
 
         [[ "$http_status" == "200" ]] || {
-          echo "Discord thread creation failed: HTTP $http_status" >&2
-          exit 1
-        }
-
-        thread_id=$(jq -r '.channel_id // empty' <<< "$body")
-        [[ "$thread_id" =~ ^[0-9]+$ ]] || {
-          echo "No valid thread_id in response: $body" >&2
-          exit 1
-        }
-
-        # Follow-up post inside thread — full variant table, suppress double-ping
-        detail=$(jq -n \
-          --argjson fields "$fields" \
-          '{
-            "flags": 4096,
-            "allowed_mentions": {"parse": []},
-            "embeds": [{
-              "color": 3066993,
-              "fields": $fields
-            }]
-          }')
-
-        curl -sf -o /dev/null \
-          -H "Content-Type: application/json" \
-          -d "$detail" \
-          "${WEBHOOK_URL}?thread_id=${thread_id}" || {
-          echo "Discord thread follow-up failed" >&2
+          echo "Discord post failed: HTTP $http_status" >&2
           exit 1
         }
