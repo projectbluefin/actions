@@ -237,11 +237,16 @@ jobs:
         if: github.event_name != 'pull_request'
         id: generate-sbom
         continue-on-error: true  # Syft is memory-intensive on large images and can be cancelled by the concurrency group; SBOM must never block image publishing
+        timeout-minutes: 8  # Ensures graceful step failure instead of OOM-killing the runner VM
         env:
           MATRIX_BASE_NAME: ${{ matrix.base_name }}
           MATRIX_STREAM_NAME: ${{ matrix.stream_name }}
           MATRIX_IMAGE_FLAVOR: ${{ matrix.image_flavor }}
           SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+          # Cap Go heap well below the 7 GB runner limit to leave headroom for OS + image layers.
+          # 3 GiB triggers GC much earlier; prevents runner VM shutdown on OOM.
+          GOMEMLIMIT: "3GiB"
+          GOGC: "25"
         run: |
           sudo -E "$(command -v just)" gen-sbom "${MATRIX_BASE_NAME}" \
                             "${MATRIX_STREAM_NAME}" \
