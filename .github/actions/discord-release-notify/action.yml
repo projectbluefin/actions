@@ -12,12 +12,6 @@ inputs:
   repo:
     description: Repository name (e.g. projectbluefin/bluefin)
     required: true
-  variants_json:
-    description: JSON array of {image, source_tag, target_tag} objects
-    required: true
-  digests_json:
-    description: JSON map of {image -> digest} from resolve step
-    required: true
 
 runs:
   using: composite
@@ -35,27 +29,22 @@ runs:
 
         repo_short="${REPO##*/}"
         release_url="https://github.com/${REPO}/releases/tag/${TAG_NAME}"
-        card_url="https://github.com/${REPO}/releases/download/${TAG_NAME}/release-card-dark.png"
+        card_file="/tmp/release-card-dark.png"
 
-        # Build embed fields — one per promoted variant with short digest
-        fields=$(jq -cn \
-          --argjson variants "$VARIANTS_JSON" \
-          --argjson digests "$DIGESTS_JSON" \
-          '$variants | map({
-            "name": "\(.image):\(.target_tag)",
-            "value": ("`" + ($digests[.image] // "unknown")[0:19] + "...`"),
-            "inline": true
-          })')
+        # Download release card asset — hosted by Discord, no GitHub CDN dependency
+        gh release download "${TAG_NAME}" \
+          --repo "${REPO}" \
+          --pattern "release-card-dark.png" \
+          --dir /tmp \
+          --clobber
 
-        # Single post — forum thread opener with release card image embedded full-width
-        # thread_name sets the Forum post title
+        # payload_json: forum thread opener, image references the uploaded attachment
+        # thread_name creates the forum post title
         # allowed_mentions: parse=[] prevents @everyone injection
-        opener=$(jq -n \
+        payload=$(jq -n \
           --arg thread_name "${repo_short} ${TAG_NAME}" \
           --arg title "${repo_short} ${TAG_NAME}" \
           --arg url "$release_url" \
-          --arg card "$card_url" \
-          --argjson fields "$fields" \
           '{
             "thread_name": $thread_name,
             "allowed_mentions": {"parse": []},
@@ -63,16 +52,14 @@ runs:
               "title": $title,
               "url": $url,
               "color": 3066993,
-              "fields": $fields,
-              "image": {"url": $card},
-              "timestamp": (now | todate)
+              "image": {"url": "attachment://release-card-dark.png"}
             }]
           }')
 
         response=$(curl -sf -w "\n%{http_code}" \
-          -H "Content-Type: application/json" \
-          -d "$opener" \
-          "${WEBHOOK_URL}?wait=true")
+          -F "payload_json=${payload}" \
+          -F "files[0]=@${card_file};type=image/png" \
+          "${WEBHOOK_URL}")
 
         http_status=$(tail -1 <<< "$response")
 
