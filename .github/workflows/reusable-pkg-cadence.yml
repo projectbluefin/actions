@@ -21,10 +21,10 @@ name: Reusable — Update package cadence intervals
 #       cadence:
 #         uses: projectbluefin/actions/.github/workflows/reusable-pkg-cadence.yml@v1
 #         with:
-#           app_id: ${{ secrets.YOUR_APP_ID }}
 #           image: ghcr.io/yourorg/yourimage:stable
 #           repo: yourorg/yourimage
 #         secrets:
+#           app_id: ${{ secrets.YOUR_APP_ID }}
 #           private_key: ${{ secrets.YOUR_APP_PRIVATE_KEY }}
 #
 # First run: if files/pkg-intervals.tsv doesn't exist yet, the workflow creates
@@ -43,10 +43,6 @@ name: Reusable — Update package cadence intervals
 on:
   workflow_call:
     inputs:
-      app_id:
-        description: "GitHub App ID used to commit cadence updates (pass as a secret ref if stored as a secret)"
-        required: true
-        type: string
       image:
         description: "Stable image ref to measure churn from (e.g. ghcr.io/yourorg/yourimage:stable)"
         required: true
@@ -66,6 +62,9 @@ on:
         required: false
         type: boolean
     secrets:
+      app_id:
+        description: "GitHub App ID"
+        required: true
       private_key:
         description: "GitHub App private key"
         required: true
@@ -83,7 +82,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ inputs.app_id }}
+          app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.private_key }}
           owner: ${{ github.repository_owner }}
 
