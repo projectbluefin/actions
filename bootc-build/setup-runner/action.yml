@@ -73,6 +73,10 @@ runs:
       shell: bash
       run: |
         set -eux
+        # libgpg-error0 upgrading noble→resolute crashes rsyslog (core dump),
+        # which eventually kills the runner VM ~20 minutes into the build.
+        # Hold it at the noble version before apt update discovers the resolute version.
+        sudo apt-mark hold libgpg-error0 libgpg-error-dev 2>/dev/null || true
         /bin/time -f '%E %C' sudo apt update
         /bin/time -f '%E %C' sudo apt install -y --allow-downgrades crun/resolute buildah/resolute podman/resolute skopeo/resolute
 
