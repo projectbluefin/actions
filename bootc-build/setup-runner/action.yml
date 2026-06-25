@@ -73,12 +73,14 @@ runs:
       shell: bash
       run: |
         set -eux
-        # libgpg-error0 upgrading noble→resolute crashes rsyslog (core dump),
-        # which eventually kills the runner VM ~20 minutes into the build.
-        # Hold it at the noble version before apt update discovers the resolute version.
-        sudo apt-mark hold libgpg-error0 libgpg-error-dev 2>/dev/null || true
         /bin/time -f '%E %C' sudo apt update
         /bin/time -f '%E %C' sudo apt install -y --allow-downgrades crun/resolute buildah/resolute podman/resolute skopeo/resolute
+        # libgpg-error0 upgrading noble→resolute causes rsyslog to crash (the running
+        # process loads the replaced library and receives SIGBUS/SIGABRT). Rsyslog dies
+        # with a core dump; GitHub runner health checks fail ~20 min later and the VM
+        # is shut down mid-build. Restarting rsyslog forces it to reload the new library,
+        # restoring log connectivity before the health check window expires.
+        sudo systemctl restart rsyslog 2>/dev/null || true
 
     - name: Save apt package cache
       if: inputs.update-podman == 'true' && steps.apt-cache-restore.outputs.cache-hit != 'true'
