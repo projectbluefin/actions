@@ -73,14 +73,17 @@ runs:
       shell: bash
       run: |
         set -eux
+        # Suppress needrestart's automatic service restarts during apt install.
+        # When libgpg-error0 upgrades noble→resolute, needrestart tries to restart
+        # rsyslog. The restart fails with a core dump; the runner then loses log
+        # connectivity ~20 minutes later and gets killed mid-build.
+        # Leaving the running rsyslog in place (with the old library in memory via
+        # mmap) is safe — it keeps functioning until the job ends.
+        sudo mkdir -p /etc/needrestart/conf.d
+        echo '$nrconf{restart} = "l";' | sudo tee /etc/needrestart/conf.d/99-no-restarts.conf
         /bin/time -f '%E %C' sudo apt update
         /bin/time -f '%E %C' sudo apt install -y --allow-downgrades crun/resolute buildah/resolute podman/resolute skopeo/resolute
-        # libgpg-error0 upgrading noble→resolute causes rsyslog to crash (the running
-        # process loads the replaced library and receives SIGBUS/SIGABRT). Rsyslog dies
-        # with a core dump; GitHub runner health checks fail ~20 min later and the VM
-        # is shut down mid-build. Restarting rsyslog forces it to reload the new library,
-        # restoring log connectivity before the health check window expires.
-        sudo systemctl restart rsyslog 2>/dev/null || true
+        sudo rm -f /etc/needrestart/conf.d/99-no-restarts.conf
 
     - name: Save apt package cache
       if: inputs.update-podman == 'true' && steps.apt-cache-restore.outputs.cache-hit != 'true'
