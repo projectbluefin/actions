@@ -112,7 +112,7 @@ jobs:
           submodules: recursive
 
       - name: Setup runner
-        uses: projectbluefin/actions/bootc-build/setup-runner@aaa5f6486ae4d62b373ccd36ea06c349847dc4df # v1
+        uses: projectbluefin/actions/bootc-build/setup-runner@63d6fc3ded6cc8c3f1d2fed6e1a628843e60e172 # v1
         with:
           storage-backend: btrfs
           update-podman: "true"
