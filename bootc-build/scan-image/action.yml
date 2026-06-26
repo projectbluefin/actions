@@ -41,7 +41,7 @@ runs:
 
     - name: Restore Trivy vulnerability DB cache
       id: trivy-db-cache-restore
-      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/trivy
         key: trivy-db-${{ runner.os }}-${{ runner.arch }}-${{ steps.trivy-date.outputs.date }}
@@ -89,7 +89,7 @@ runs:
     - name: Save Trivy vulnerability DB cache
       # Only save on cache miss — DB is shared between the SARIF and JSON scan steps above.
       if: steps.trivy-db-cache-restore.outputs.cache-hit != 'true'
-      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/trivy
         key: ${{ steps.trivy-db-cache-restore.outputs.cache-primary-key }}
