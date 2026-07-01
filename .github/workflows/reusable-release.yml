@@ -334,13 +334,29 @@ jobs:
           echo "WARNING: Using placeholder SBOM — inline generation failed (OOM or runner eviction)"
 
       - name: Download SBOM artifact
+        id: download-sbom-artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         if: inputs.generate_sbom_inline == false
+        continue-on-error: true
         with:
           name: ${{ inputs.sbom_artifact }}
           run-id: ${{ steps.build_run.outputs.run_id }}
           github-token: ${{ github.token }}
           path: sbom-current
+
+      - name: Create minimal SBOM fallback if artifact is missing
+        if: inputs.generate_sbom_inline == false && steps.download-sbom-artifact.outcome == 'failure'
+        env:
+          IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
+          IMAGE: ${{ inputs.image }}
+          STREAM_NAME: ${{ inputs.stream_name }}
+        run: |
+          mkdir -p sbom-current
+          # ponytail: keep release publishable even when build-run/artifact selection drifts
+          cat > "sbom-current/${IMAGE_NAME}.sbom.json" << SPDXEOF
+          {"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"${IMAGE_NAME}","documentNamespace":"https://github.com/projectbluefin/${IMAGE_NAME}/sbom-fallback","packages":[],"relationships":[{"spdxElementId":"SPDXRef-DOCUMENT","relationshipType":"DESCRIBES","relatedSpdxElement":"SPDXRef-DOCUMENT"}],"documentDescribes":["SPDXRef-DOCUMENT"]}
+          SPDXEOF
+          echo "WARNING: Using placeholder SBOM — artifact '${{ inputs.sbom_artifact }}' missing from run ${{ steps.build_run.outputs.run_id }}"
 
       - name: Create release
         uses: projectbluefin/actions/bootc-build/create-release@v1
