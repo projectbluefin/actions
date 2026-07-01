@@ -378,6 +378,7 @@ calling workflow
             2. fetch previous SBOM from last GitHub Release (*.spdx.json asset)
             3. sbom_diff.py  → versions.json  (added / changed / removed)
             4. render_card.py → release-card.png + release-card-dark.png
+               (falls back to placeholder PNGs if Playwright/browser rendering is unavailable)
             5. render_notes.py → release-notes.md
                  • key components table (notable packages)
                  • collapsible full SPDX package inventory
@@ -407,6 +408,11 @@ calling workflow
 | `prerelease` | | `false` | Mark as pre-release |
 
 Outputs: `release-url` (URL of the created release).
+
+**Reliability behavior:** `create-release` no longer installs Playwright/Chromium at runtime.
+`render_card.py` attempts browser rendering if Playwright is already present; otherwise it writes
+placeholder `release-card*.png` assets and continues so release publication is never blocked by
+browser provisioning.
 
 ### Supply chain verification section (user-facing)
 

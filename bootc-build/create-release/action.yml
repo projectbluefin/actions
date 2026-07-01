@@ -216,14 +216,6 @@ runs:
           > _github_notes.json 2>/dev/null \
           || echo '{"name":"","body":""}' > _github_notes.json
 
-    # ── Install Playwright + Chromium ─────────────────────────────────────────
-    - name: Install Playwright and Chromium
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 -m pip install playwright --break-system-packages --quiet
-        python3 -m playwright install chromium --with-deps
-
     # ── Render release card ───────────────────────────────────────────────────
     - name: Render release card
       shell: bash
