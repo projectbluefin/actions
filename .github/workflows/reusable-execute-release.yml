@@ -325,7 +325,7 @@ jobs:
 
       - name: Notify Discord releases channel
         if: success() && inputs.tag_name != ''
-        uses: projectbluefin/actions/.github/actions/discord-release-notify@v1
+        uses: projectbluefin/actions/.github/actions/discord-release-notify@d8f871c0ca7a868339d3c175200a7319492473c7 # v1
         with:
           webhook_url: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
           tag_name: ${{ inputs.tag_name }}
