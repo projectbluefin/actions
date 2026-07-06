@@ -1,0 +1,113 @@
+name: "Install cosign"
+description: "Install cosign from a GitHub release asset with cache and source-build fallback"
+author: "projectbluefin"
+
+inputs:
+  cosign-release:
+    description: "Cosign release to install (for example v3.0.6)"
+    required: false
+    default: "v3.0.6"
+  install-dir:
+    description: "Directory to install the cosign binary into"
+    required: false
+    default: ""
+  use-sudo:
+    description: "Use sudo when installing the binary"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare cosign install
+      id: prepare
+      shell: bash
+      run: |
+        set -euo pipefail
+        release="${{ inputs.cosign-release }}"
+        install_dir="${{ inputs.install-dir }}"
+        if [ -z "${install_dir}" ]; then
+          install_dir="${HOME}/.cosign"
+        fi
+        mkdir -p "${install_dir}"
+        echo "release=${release}" >> "$GITHUB_OUTPUT"
+        echo "install-dir=${install_dir}" >> "$GITHUB_OUTPUT"
+        echo "${install_dir}" >> "$GITHUB_PATH"
+
+    - name: Restore cosign from cache
+      id: cache
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
+      with:
+        path: ${{ steps.prepare.outputs.install-dir }}
+        key: cosign-${{ runner.os }}-${{ runner.arch }}-${{ steps.prepare.outputs.release }}
+        restore-keys: |
+          cosign-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Install cosign
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        COSIGN_RELEASE: ${{ steps.prepare.outputs.release }}
+        INSTALL_DIR: ${{ steps.prepare.outputs.install-dir }}
+        USE_SUDO: ${{ inputs.use-sudo }}
+      run: |
+        set -euo pipefail
+        binary="${INSTALL_DIR}/cosign"
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        arch="$(uname -m)"
+
+        case "${arch}" in
+          x86_64) arch="amd64" ;;
+          aarch64|arm64) arch="arm64" ;;
+          armv7l) arch="arm" ;;
+        esac
+
+        case "${os}" in
+          linux) ;;
+          darwin) ;;
+          *)
+            echo "Unsupported OS: ${os}" >&2
+            exit 1
+            ;;
+        esac
+
+        asset_url="https://github.com/sigstore/cosign/releases/download/${COSIGN_RELEASE}/cosign-${os}-${arch}"
+        tmp_dir="$(mktemp -d)"
+        tmp_file="${tmp_dir}/cosign"
+
+        for attempt in 1 2 3 4 5; do
+          if curl --fail --location --silent --show-error --retry 2 --retry-all-errors --retry-delay 2 "${asset_url}" -o "${tmp_file}"; then
+            break
+          fi
+          echo "Cosign download attempt ${attempt}/5 failed; retrying..." >&2
+          rm -f "${tmp_file}"
+          sleep $((attempt * 5))
+        done
+
+        if [ -s "${tmp_file}" ]; then
+          install_cmd=(install)
+          if [ "${USE_SUDO}" = "true" ]; then
+            install_cmd=(sudo install)
+          fi
+          "${install_cmd[@]}" -m 0755 "${tmp_file}" "${binary}"
+        else
+          echo "Cosign release asset download failed; falling back to a source build..." >&2
+          if ! command -v go >/dev/null 2>&1; then
+            echo "go is required for the cosign fallback build" >&2
+            exit 1
+          fi
+          GOBIN="${INSTALL_DIR}" GO111MODULE=on go install "github.com/sigstore/cosign/v3/cmd/cosign@${COSIGN_RELEASE}"
+          if [ ! -x "${binary}" ]; then
+            echo "Cosign fallback install did not produce ${binary}" >&2
+            exit 1
+          fi
+        fi
+
+        rm -rf "${tmp_dir}"
+        "${binary}" version
+
+    - name: Verify cosign installation
+      shell: bash
+      run: |
+        set -euo pipefail
+        cosign version
