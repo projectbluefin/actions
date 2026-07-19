@@ -203,6 +203,59 @@ Unmatched entries are silently skipped — no error. Verify against a real SBOM 
 
 `reusable-release.yml` generates release notes for a single primary image. For repos that promote multiple variants (e.g. `bluefin` + `bluefin-nvidia`), add a `post-release-variants` job that prepends a digest table after `release-notes` completes. See `projectbluefin/bluefin:.github/workflows/execute-release.yml` for the reference implementation.
 
+## `reusable-execute-release.yml` — stable promotion gate
+
+Promotes one or more OCI variants (e.g. `:testing` → `:stable`) for bootc image repos. The workflow resolves the source digest once, optionally runs testsuite e2e against that exact digest, then re-verifies cosign and promotes the same digest to the target tag. The digest is never re-resolved after the gate, eliminating TOCTOU drift between test and promotion.
+
+### Inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `registry` | no | `ghcr.io/projectbluefin` | Registry prefix for image refs |
+| `variants` | **yes** | — | JSON array of `{image, source_tag, target_tag}` objects |
+| `cosign_identity_regexp` | **yes** | — | Cosign certificate identity regexp for re-verification |
+| `fast_forward_branch` | no | `''` | Branch to fast-forward after promotion (e.g. `main`) |
+| `fast_forward_sha` | no | `github.sha` | SHA to fast-forward the branch to |
+| `tag_name` | no | `''` | Release tag for Discord notification |
+| `run_release_gate` | no | `true` | Run testsuite e2e against the candidate digest before promotion |
+| `gate_suites` | no | `smoke,common` | Comma-separated suites for the release gate |
+
+### Caller example
+
+```yaml
+jobs:
+  execute:
+    uses: projectbluefin/actions/.github/workflows/reusable-execute-release.yml@v1
+    secrets: inherit
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      packages: write
+      pull-requests: write
+    with:
+      registry: ghcr.io/projectbluefin
+      variants: >-
+        [
+          {"image":"bluefin","source_tag":"testing","target_tag":"stable"}
+        ]
+      cosign_identity_regexp: ^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/
+      gate_suites: smoke,common
+```
+
+### Gate behavior
+
+- The gate runs one matrix job per variant, so multi-variant promotions test each image independently.
+- The e2e job calls `projectbluefin/testsuite/.github/workflows/e2e.yml` pinned to the current `v1` SHA.
+- The image ref passed to testsuite uses the digest resolved in the `resolve` job (`ghcr.io/projectbluefin/<image>@sha256:…`), not the source tag.
+- Set `run_release_gate: false` only as an emergency escape hatch; changing the default affects every consumer of this reusable workflow.
+
+### Permissions
+
+The caller must grant `packages: write` so the nested testsuite workflow can push desktop-screenshot OCI artifacts. The promotion job itself needs `contents: write`, `issues: write`, `packages: write`, and `pull-requests: write` for the release mechanics.
+
+---
+
 ### Legacy semver mode
 
 ```yaml
