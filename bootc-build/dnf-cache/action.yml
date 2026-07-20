@@ -36,7 +36,7 @@ runs:
     - name: Restore DNF package cache
       id: restore
       if: inputs.action == 'restore'
-      uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ${{ inputs.cache-path }}
         key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || '' }}${{ inputs.cache-name }}${{ inputs.cache-bust != '' && format('-{0}', inputs.cache-bust) || '' }}
@@ -58,7 +58,7 @@ runs:
 
     - name: Save DNF package cache
       if: always() && !cancelled() && inputs.action == 'save' && inputs.allow-write == 'true'
-      uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       with:
         path: ${{ inputs.cache-path }}
         key: ${{ runner.os }}-${{ inputs.architecture }}-buildah-${{ inputs.image-flavor != '' && format('{0}-', inputs.image-flavor) || '' }}${{ inputs.cache-name }}${{ inputs.cache-bust != '' && format('-{0}', inputs.cache-bust) || '' }}
