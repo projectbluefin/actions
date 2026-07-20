@@ -7,12 +7,13 @@ metadata:
 
 # Reusable Workflows
 
-The repo provides two reusable workflows:
+The repo provides three reusable workflows:
 
 | Workflow | Purpose |
 |---|---|
 | `.github/workflows/reusable-build.yml` | Full Fedora bootc image build pipeline (Path 1) |
 | `.github/workflows/reusable-release.yml` | Image stable-release orchestration and Conventional Commits GitHub Release creation |
+| `.github/workflows/reusable-execute-release.yml` | Stable promotion gate: resolve digest → testsuite e2e → re-verify cosign → promote tag |
 
 **Permissions hardening:** default reusable workflows to `permissions: {}` at the workflow level, then grant the minimum required scopes per job. Do not rely on workflow-level `packages: write`/`contents: write` unless every job in the file truly needs that access.
 
@@ -24,6 +25,7 @@ The repo provides two reusable workflows:
 - [JSON array inputs](#json-array-inputs)
 - [SBOM artifact shape](#sbom-artifact-shape)
 - [reusable-release.yml](#reusable-releaseyml--calling-from-a-consuming-repo)
+- [reusable-execute-release.yml — stable promotion gate](#reusable-execute-releaseyml--stable-promotion-gate)
 
 ---
 
@@ -203,6 +205,59 @@ Unmatched entries are silently skipped — no error. Verify against a real SBOM 
 
 `reusable-release.yml` generates release notes for a single primary image. For repos that promote multiple variants (e.g. `bluefin` + `bluefin-nvidia`), add a `post-release-variants` job that prepends a digest table after `release-notes` completes. See `projectbluefin/bluefin:.github/workflows/execute-release.yml` for the reference implementation.
 
+## `reusable-execute-release.yml` — stable promotion gate
+
+Promotes one or more OCI variants (e.g. `:testing` → `:stable`) for bootc image repos. The workflow resolves the source digest once, optionally runs testsuite e2e against that exact digest, then re-verifies cosign and promotes the same digest to the target tag. The digest is never re-resolved after the gate, eliminating TOCTOU drift between test and promotion.
+
+### Inputs
+
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `registry` | no | `ghcr.io/projectbluefin` | Registry prefix for image refs |
+| `variants` | **yes** | — | JSON array of `{image, source_tag, target_tag}` objects |
+| `cosign_identity_regexp` | **yes** | — | Cosign certificate identity regexp for re-verification |
+| `fast_forward_branch` | no | `''` | Branch to fast-forward after promotion (e.g. `main`) |
+| `fast_forward_sha` | no | `github.sha` | SHA to fast-forward the branch to |
+| `tag_name` | no | `''` | Release tag for Discord notification |
+| `run_release_gate` | no | `true` | Run testsuite e2e against the candidate digest before promotion |
+| `gate_suites` | no | `smoke,common` | Comma-separated suites for the release gate |
+
+### Caller example
+
+```yaml
+jobs:
+  execute:
+    uses: projectbluefin/actions/.github/workflows/reusable-execute-release.yml@v1
+    secrets: inherit
+    permissions:
+      actions: read
+      contents: write
+      issues: write
+      packages: write
+      pull-requests: write
+    with:
+      registry: ghcr.io/projectbluefin
+      variants: >-
+        [
+          {"image":"bluefin","source_tag":"testing","target_tag":"stable"}
+        ]
+      cosign_identity_regexp: ^https://github\.com/projectbluefin/(bluefin|actions)/\.github/workflows/
+      gate_suites: smoke,common
+```
+
+### Gate behavior
+
+- The gate runs one matrix job per variant, so multi-variant promotions test each image independently.
+- The e2e job calls `projectbluefin/testsuite/.github/workflows/e2e.yml` pinned to the current `v1` SHA.
+- The image ref passed to testsuite uses the digest resolved in the `resolve` job (`ghcr.io/projectbluefin/<image>@sha256:…`), not the source tag.
+- Set `run_release_gate: false` only as an emergency escape hatch; changing the default affects every consumer of this reusable workflow.
+
+### Permissions
+
+The caller must grant `packages: write` so the nested testsuite workflow can push desktop-screenshot OCI artifacts. The promotion job itself needs `contents: write`, `issues: write`, `packages: write`, and `pull-requests: write` for the release mechanics.
+
+---
+
 ### Legacy semver mode
 
 ```yaml
@@ -221,3 +276,36 @@ jobs:
 The legacy semver mode checks out with `fetch-depth: 0` (required by git-cliff), runs `generate-release-notes`, and creates a GitHub Release with the generated body.
 
 **`cliff.toml` requirement:** a `cliff.toml` must exist in the caller's repo root (or override via `cliff-config` input). A factory-wide config is available at the root of this repo and can be copied verbatim.
+
+---
+
+## `reusable-execute-release.yml` — stable promotion gate
+
+Promotes one or more OCI variants (e.g. `:testing` → `:stable`) for bootc image repos. The workflow resolves the source digest once, optionally runs testsuite e2e against that exact digest, then re-verifies cosign and promotes the same digest to the target tag. The digest is never re-resolved after the gate, eliminating TOCTOU drift between test and promotion.
+
+### Testsuite e2e pin — keep aligned with bluefin's `run-testsuite.yml`
+
+The `release-gate` job calls `projectbluefin/testsuite/.github/workflows/e2e.yml@<SHA> # v1`. This pin **must match the SHA in `projectbluefin/bluefin/.github/workflows/run-testsuite.yml` exactly.** The two workflows execute the same testsuite e2e code — bluefin at PR time, the release gate at promotion time. A drift between them means the gate and bluefin CI can disagree on the same image.
+
+To verify alignment before merging a change to this workflow:
+
+```bash
+# The pin in this workflow:
+grep 'testsuite.*e2e.yml@' .github/workflows/reusable-execute-release.yml
+
+# The pin bluefin uses (the source of truth for the managed @v1 tag):
+gh api repos/projectbluefin/bluefin/contents/.github/workflows/run-testsuite.yml --jq .content \
+  | base64 -d | grep 'testsuite.*e2e.yml@'
+```
+
+If they differ, bump this workflow's pin to bluefin's SHA in the same PR. Do not trust the `# v1 (matches ...)` comment — verify the SHAs themselves. The testsuite `v1` tag auto-tracks `main` on every testsuite merge, so the managed tag advances independently of this pin; the pin is the SHA the gate actually executes and must be a deliberate, verified match.
+
+### Gate behavior
+
+- The gate runs one matrix job per variant, so multi-variant promotions test each image independently.
+- The image ref passed to testsuite uses the digest resolved in the `resolve` job (`ghcr.io/projectbluefin/<image>@sha256:…`), not the source tag.
+- Set `run_release_gate: false` only as an emergency escape hatch; changing the default affects every consumer of this reusable workflow.
+
+### Permissions
+
+The caller must grant `packages: write` so the nested testsuite workflow can push desktop-screenshot OCI artifacts. The promotion job itself needs `contents: write`, `issues: write`, `packages: write`, and `pull-requests: write` for the release mechanics.
