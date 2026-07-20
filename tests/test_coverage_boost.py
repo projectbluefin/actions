@@ -3,11 +3,13 @@ Additional tests to boost coverage for render_notes and sbom_diff scripts.
 
 Targets currently uncovered paths:
 - render_notes._md_table (lines 41-44)
-- render_notes._load_full_inventory (lines 52-63)
 - render_notes._section_card (lines 69-70)
-- render_notes._section_full_inventory (lines 114-117)
 - sbom_diff.load_pkg_map with name-deduplication paths (line 93)
 - sbom_diff.extract_notable with spdxid_filter (lines 125, 132)
+
+Note: _load_full_inventory and _section_full_inventory were removed from
+render_notes in b1ac15b (the full SPDX package table was dropped from release
+notes). The duplicate tests for those functions live here and are deleted.
 """
 
 from __future__ import annotations
@@ -54,59 +56,6 @@ class TestMdTable:
         assert "| --- | --- |" in result
 
 
-class TestLoadFullInventory:
-    """Tests for render_notes._load_full_inventory (lines 52-63)."""
-
-    def test_returns_sorted_packages(self, tmp_path):
-        sbom = {
-            "packages": [
-                {"name": "zsh", "versionInfo": "5.9"},
-                {"name": "bash", "versionInfo": "5.2"},
-                {"name": "curl", "versionInfo": "8.0"},
-            ]
-        }
-        sbom_path = tmp_path / "test.spdx.json"
-        sbom_path.write_text(json.dumps(sbom))
-        result = render_notes._load_full_inventory(str(sbom_path))
-        names = [p["name"] for p in result]
-        assert names == sorted(names)
-        assert "bash" in names
-
-    def test_skips_packages_without_name(self, tmp_path):
-        sbom = {
-            "packages": [
-                {"name": "", "versionInfo": "1.0"},
-                {"name": "   ", "versionInfo": "1.0"},
-                {"name": "curl", "versionInfo": "8.0"},
-            ]
-        }
-        sbom_path = tmp_path / "test.spdx.json"
-        sbom_path.write_text(json.dumps(sbom))
-        result = render_notes._load_full_inventory(str(sbom_path))
-        assert len(result) == 1
-        assert result[0]["name"] == "curl"
-
-    def test_prefers_non_empty_version_on_duplicate_name(self, tmp_path):
-        sbom = {
-            "packages": [
-                {"name": "bash", "versionInfo": ""},
-                {"name": "bash", "versionInfo": "5.2"},
-            ]
-        }
-        sbom_path = tmp_path / "test.spdx.json"
-        sbom_path.write_text(json.dumps(sbom))
-        result = render_notes._load_full_inventory(str(sbom_path))
-        assert len(result) == 1
-        assert result[0]["version"] == "5.2"
-
-    def test_empty_packages_list(self, tmp_path):
-        sbom = {"packages": []}
-        sbom_path = tmp_path / "test.spdx.json"
-        sbom_path.write_text(json.dumps(sbom))
-        result = render_notes._load_full_inventory(str(sbom_path))
-        assert result == []
-
-
 class TestSectionCard:
     """Tests for render_notes._section_card (lines 69-70)."""
 
@@ -116,31 +65,6 @@ class TestSectionCard:
         assert "projectbluefin/bluefin" in result
         assert "v42.20250531" in result
         assert "release-card.png" in result
-
-
-class TestSectionFullInventory:
-    """Tests for render_notes._section_full_inventory (lines 114-117)."""
-
-    def test_renders_package_table(self):
-        inventory = [
-            {"name": "bash", "version": "5.2"},
-            {"name": "curl", "version": "8.0"},
-        ]
-        result = render_notes._section_full_inventory(inventory, 2)
-        assert "<details>" in result
-        assert "bash" in result
-        assert "5.2" in result
-        assert "curl" in result
-        assert "2 packages" in result
-
-    def test_renders_zero_packages(self):
-        result = render_notes._section_full_inventory([], 0)
-        assert "0 packages" in result
-
-    def test_uses_total_not_len_for_count(self):
-        # total can differ from len(inventory) when there's a summary-only count
-        result = render_notes._section_full_inventory([], 42)
-        assert "42 packages" in result
 
 
 # ── sbom_diff additional coverage ────────────────────────────────────────────
