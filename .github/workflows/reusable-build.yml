@@ -112,7 +112,7 @@ jobs:
           submodules: recursive
 
       - name: Setup runner
-        uses: projectbluefin/actions/bootc-build/setup-runner@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/setup-runner@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           storage-backend: btrfs
           update-podman: "true"
@@ -160,7 +160,7 @@ jobs:
 
       - name: Restore DNF package cache
         id: dnf-cache-restore
-        uses: projectbluefin/actions/bootc-build/dnf-cache@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/dnf-cache@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           action: restore
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -215,7 +215,7 @@ jobs:
 
       - name: Save DNF package cache
         if: always() && !cancelled()
-        uses: projectbluefin/actions/bootc-build/dnf-cache@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/dnf-cache@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           action: save
           cache-name: ${{ steps.setup-cache.outputs.cache_name }}
@@ -275,7 +275,7 @@ jobs:
         # files/pkg-intervals.tsv is maintained by the pkg-cadence workflow.
         # Skip on PRs and testing stream — rechunk is also skipped there.
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
-        uses: projectbluefin/actions/bootc-build/apply-pkg-intervals@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/apply-pkg-intervals@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           source-image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           intervals-file: files/pkg-intervals.tsv
@@ -289,7 +289,7 @@ jobs:
       - name: Rechunk Image
         if: github.event_name != 'pull_request' && inputs.stream_name != 'testing'
         id: rechunk-image
-        uses: projectbluefin/actions/bootc-build/chunka@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/chunka@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           source-image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           max-layers: ${{ inputs.max_layers }}
@@ -407,7 +407,7 @@ jobs:
 
       - name: Scan image for vulnerabilities
         continue-on-error: true  # Trivy DB issues (e.g. new OS families) must never block builds
-        uses: projectbluefin/actions/bootc-build/scan-image@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/scan-image@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           image: localhost/${{ env.IMAGE_NAME }}:${{ env.DEFAULT_TAG }}
           input: /tmp/scan-image.tar
@@ -419,7 +419,7 @@ jobs:
       - name: Push to GHCR
         id: push
         if: github.event_name != 'pull_request'
-        uses: projectbluefin/actions/bootc-build/push-image@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/push-image@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           image-name: ${{ env.IMAGE_NAME }}
           tags: ${{ steps.compute-push-tags.outputs.push_tags }}
@@ -532,7 +532,7 @@ jobs:
       - name: Sign, publish SBOM, and attest
         if: github.event_name != 'pull_request'
         continue-on-error: true  # Never block image publishing — signing/SBOM failures are non-fatal
-        uses: projectbluefin/actions/bootc-build/sign-and-publish@72f37beb08b131f8a7f8c9615a0af54b3b942091 # v1
+        uses: projectbluefin/actions/bootc-build/sign-and-publish@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
           digest: ${{ steps.push.outputs.digest }}
