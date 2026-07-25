@@ -136,13 +136,15 @@ Agents implement autonomously **except** at these gates. Stop and request human 
 | **Design Gate** | Architecture changes, new subsystem design, behavioral changes visible to consumers |
 | **Security Gate** | Auth, signing, supply chain, secrets handling, SHA pinning for security-critical actions |
 | **Breakage Gate** | Cross-repo breaking changes — removing/renaming inputs, changing defaults that affect consuming repos |
-| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
+| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge unless they carry the `clanker-queue` label. An agent may merge a `clanker-queue` PR once all required checks pass and the PR is mergeable. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
 
 When in doubt, open a draft PR with your implementation and ask explicitly.
 
 ---
 
-## Verification — Agents Implement and Verify; Humans Approve and Merge
+## Verification — Agents Implement and Verify; Humans Approve Unless Authorized
+
+`clanker-queue` is explicit authorization for an agent to merge a queued PR. Before merging, confirm the label is still present, the PR is not a draft or blocked, it is mergeable, and every required CI check is green. Do not merge a PR with failing, pending, or missing required checks. PRs without `clanker-queue` still require maintainer approval and merging.
 
 Do not request review without evidence. Before opening a PR for review:
 

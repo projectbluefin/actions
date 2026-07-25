@@ -170,7 +170,7 @@ issues are opened.
 
 ### What it does
 
-Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes - no human review needed.
+Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes. If auto-merge is not enabled, an agent may merge a qualifying PR when it carries the `clanker-queue` label and all required checks pass.
 
 ### Config
 
@@ -194,9 +194,9 @@ The effective automerge rule in `renovate.json`:
 }
 ```
 
-**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps - when all CI checks pass. These are safe to auto-merge because they carry no behavior change.
+**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps - when all CI checks pass. These are safe to auto-merge because they carry no behavior change. When handling the queue manually, the `clanker-queue` label authorizes an agent to merge only after confirming the PR is mergeable and every required check is green.
 
-**What never auto-merges:** Major version bumps and any PR that fails CI.
+**What never auto-merges:** Major version bumps and any PR that fails, has pending, or is missing required CI checks. A major bump may still be merged manually by an agent when it has `clanker-queue` and all required checks pass.
 
 **Consumer-validation exemption:** Renovate PRs (author login ending in `[bot]` or starting with `app/`) are automatically exempt from the consumer PR + CI run evidence requirement, even when they touch action files. See `docs/skills/consumer-validation.md`.
 
