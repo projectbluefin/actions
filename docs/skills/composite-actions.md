@@ -445,12 +445,16 @@ This avoids pulling obsolete intermediate state into main and produces a clean s
 
 Use `.github/workflows/reusable-design-enforcement.yml` from consumer repositories on
 `issues: [opened, edited, labeled, unlabeled, reopened]` and
-`pull_request_target: [opened, reopened, synchronize, edited]`. The caller must grant
+`pull_request_target: [opened, reopened, synchronize, edited, labeled, unlabeled]`. The caller must grant
 `issues: write`, `pull-requests: read`, and `contents: read`; the reusable workflow
-preserves human review and merge gates and only updates linked issue labels/comments.
+preserves human review and merge gates and updates the PR plus linked issue
+labels/comments.
 
 The action owns exactly one primary label (`1-triage`, `2-discussing`,
 `3-human-queue`, `3-clanker-queue`, or `4-review`) plus optional `blocked`/`hold`.
 Clanker opt-in requires a checked checkbox mentioning Clanker/community army and all
 configured required heading groups. Announcement and repair comments use hidden
-markers so reruns remain idempotent.
+markers so reruns remain idempotent. Label replacement is strict: every
+non-canonical metadata label is removed. Normal PR transitions become
+`4-review`; an explicit `3-clanker-queue` added during a `labeled` event is
+preserved as a request for Clanker review.

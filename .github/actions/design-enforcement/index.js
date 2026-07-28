@@ -49,6 +49,48 @@ function chooseState(labels) {
   return primary.length === 1 ? primary[0] : '2-discussing';
 }
 
+function canonicalLabels(labels, state) {
+  const desired = state || chooseState(labels);
+  return [desired, ...labels.filter((label) => label === 'blocked' || label === 'hold')].filter(
+    (label, index, all) => all.indexOf(label) === index,
+  );
+}
+
+function targetNumbers(eventName, event) {
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') {
+    return event.issue?.number ? [{ number: event.issue.number, pullRequest: false }] : [];
+  }
+  const pullRequest = event.pull_request || {};
+  return [
+    { number: pullRequest.number, pullRequest: true },
+    ...parseIssueNumbers(pullRequest.body || '').map((number) => ({ number, pullRequest: false })),
+  ].filter((target, index, all) => target.number && all.findIndex((item) => item.number === target.number) === index);
+}
+
+function desiredState({
+  pullRequest,
+  reviewLinkedIssue = false,
+  action,
+  labels,
+  issueBody = '',
+  isNewIssue = false,
+  requiredGroups = [],
+}) {
+  if (pullRequest) {
+    if (action === 'labeled' && labels.includes('3-clanker-queue')) return '3-clanker-queue';
+    return '4-review';
+  }
+  if (reviewLinkedIssue) return '4-review';
+  const primary = labels.filter((label) => PRIMARY_LABELS.includes(label));
+  if (primary.length !== 1) {
+    return isNewIssue && primary.length === 0 && hasValidOptIn(issueBody, requiredGroups)
+      ? '3-clanker-queue'
+      : '2-discussing';
+  }
+  if (isNewIssue) return hasValidOptIn(issueBody, requiredGroups) ? '3-clanker-queue' : '1-triage';
+  return chooseState(labels);
+}
+
 function buildAnnouncement(url, issueNumber) {
   return `This issue is now in the \`clanker-queue\` and will be doled out to the community army. Check ${url} to find out more. Good Hunting.\n\nNext action: follow the issue acceptance criteria and open a pull request with \`Closes #${issueNumber}\`.\n\n${ANNOUNCEMENT_MARKER}`;
 }
@@ -81,43 +123,34 @@ async function main() {
   const eventName = process.env.GITHUB_EVENT_NAME;
   const requiredGroups = JSON.parse(process.env.INPUT_REQUIRED_FIELD_GROUPS || '[]');
   const contributeUrl = process.env.INPUT_HIVE_CONTRIBUTE_URL || 'https://kubestellar.io/live/hive/bluefin/';
-  const issueNumbers = eventName === 'pull_request' || eventName === 'pull_request_target'
-    ? parseIssueNumbers(event.pull_request?.body || '')
-    : event.issue?.number ? [event.issue.number] : [];
   const isNewIssue = eventName === 'issues' && event.action === 'opened';
-  const isPullRequest = eventName === 'pull_request' || eventName === 'pull_request_target';
+  const targets = targetNumbers(eventName, event);
 
-  for (const issueNumber of issueNumbers) {
-    const issue = await api('GET', `/repos/${owner}/${repo}/issues/${issueNumber}`);
+  for (const target of targets) {
+    const issue = await api('GET', `/repos/${owner}/${repo}/issues/${target.number}`);
     const current = issue.labels.map((label) => typeof label === 'string' ? label : label.name);
-    const primary = current.filter((label) => PRIMARY_LABELS.includes(label));
-    const invalid = primary.length !== 1;
-    let desired;
-
-    if (isPullRequest) {
-      desired = '4-review';
-    } else if (invalid) {
-      desired = isNewIssue && primary.length === 0 && hasValidOptIn(issue.body || '', requiredGroups) ? '3-clanker-queue' : '2-discussing';
-    } else if (isNewIssue || hasValidOptIn(issue.body || '', requiredGroups)) {
-      desired = hasValidOptIn(issue.body || '', requiredGroups) ? '3-clanker-queue' : '1-triage';
-    } else {
-      desired = chooseState(current);
-    }
-
-    const overlays = current.filter((label) => label === 'blocked' || label === 'hold');
-    const metadata = current.filter((label) => !WORKFLOW_LABELS.includes(label));
-    const labels = [...new Set([...metadata, desired, ...overlays])];
+    const desired = desiredState({
+      pullRequest: target.pullRequest,
+      reviewLinkedIssue: !target.pullRequest && targets[0]?.pullRequest === true,
+      action: event.action,
+      labels: current,
+      issueBody: issue.body || '',
+      isNewIssue,
+      requiredGroups,
+    });
+    const labels = canonicalLabels(current, desired);
     if (labels.sort().join('\n') !== current.sort().join('\n')) {
-      await api('PUT', `/repos/${owner}/${repo}/issues/${issueNumber}/labels`, { labels });
+      await api('PUT', `/repos/${owner}/${repo}/issues/${target.number}/labels`, { labels });
     }
 
-    const comments = await api('GET', `/repos/${owner}/${repo}/issues/${issueNumber}/comments?per_page=100`);
+    const comments = await api('GET', `/repos/${owner}/${repo}/issues/${target.number}/comments?per_page=100`);
     const bodies = comments.map((comment) => comment.body || '');
-    if (invalid && desired === '2-discussing' && !bodies.some((body) => body.includes(CORRECTIVE_MARKER))) {
-      await api('POST', `/repos/${owner}/${repo}/issues/${issueNumber}/comments`, { body: buildCorrectionComment(desired) });
+    const invalid = current.filter((label) => PRIMARY_LABELS.includes(label)).length !== 1;
+    if (!target.pullRequest && invalid && desired === '2-discussing' && !bodies.some((body) => body.includes(CORRECTIVE_MARKER))) {
+      await api('POST', `/repos/${owner}/${repo}/issues/${target.number}/comments`, { body: buildCorrectionComment(desired) });
     }
-    if (desired === '3-clanker-queue' && !bodies.some((body) => body.includes(ANNOUNCEMENT_MARKER))) {
-      await api('POST', `/repos/${owner}/${repo}/issues/${issueNumber}/comments`, { body: buildAnnouncement(contributeUrl, issueNumber) });
+    if (!target.pullRequest && desired === '3-clanker-queue' && !bodies.some((body) => body.includes(ANNOUNCEMENT_MARKER))) {
+      await api('POST', `/repos/${owner}/${repo}/issues/${target.number}/comments`, { body: buildAnnouncement(contributeUrl, target.number) });
     }
   }
 }
@@ -130,6 +163,9 @@ module.exports = {
   parseIssueNumbers,
   hasValidOptIn,
   chooseState,
+  canonicalLabels,
+  targetNumbers,
+  desiredState,
   buildAnnouncement,
   buildCorrectionComment,
   main,
