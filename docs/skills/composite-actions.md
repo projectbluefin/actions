@@ -3,6 +3,8 @@ name: composite-actions
 description: Authors, modifies, and debugs composite GitHub Actions in projectbluefin/actions. Covers action structure, SHA pinning, shell best practices, rollout strategy, CI-fix-first workflow, and known workarounds. For full action-by-action details see composite-actions/action-reference.md; for reusable workflow details see composite-actions/reusable-workflow.md.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
 ---
 
 # Composite Actions - Authoring Skill
@@ -438,3 +440,17 @@ do not attempt a full rebase of the branch. Instead:
 4. Force-push to the PR branch
 
 This avoids pulling obsolete intermediate state into main and produces a clean single commit.
+
+### Design enforcement
+
+Use `.github/workflows/reusable-design-enforcement.yml` from consumer repositories on
+`issues: [opened, edited, labeled, unlabeled, reopened]` and
+`pull_request_target: [opened, reopened, synchronize, edited]`. The caller must grant
+`issues: write`, `pull-requests: read`, and `contents: read`; the reusable workflow
+preserves human review and merge gates and only updates linked issue labels/comments.
+
+The action owns exactly one primary label (`1-triage`, `2-discussing`,
+`3-human-queue`, `3-clanker-queue`, or `4-review`) plus optional `blocked`/`hold`.
+Clanker opt-in requires a checked checkbox mentioning Clanker/community army and all
+configured required heading groups. Announcement and repair comments use hidden
+markers so reruns remain idempotent.

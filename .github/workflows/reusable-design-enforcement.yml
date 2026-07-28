@@ -1,0 +1,38 @@
+name: Reusable design enforcement
+
+on:
+  workflow_call:
+    inputs:
+      hive-contribute-url:
+        description: URL shown in the Clanker queue announcement.
+        required: false
+        default: https://kubestellar.io/live/hive/bluefin/
+        type: string
+      required-field-groups:
+        description: JSON array of alternative issue-template headings required for opt-in.
+        required: false
+        default: '[["What happened?","What would you like to see?"],["Steps to reproduce","What does done look like?"],["Affected area"]]'
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: design-enforcement-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  enforce:
+    name: Enforce workflow labels
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Enforce design workflow
+        uses: projectbluefin/actions/.github/actions/design-enforcement@v1
+        with:
+          hive_contribute_url: ${{ inputs.hive-contribute-url }}
+          required_field_groups: ${{ inputs.required-field-groups }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

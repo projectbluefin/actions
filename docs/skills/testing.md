@@ -35,6 +35,12 @@ Coverage gate: `--cov-fail-under=75`
 | `push-image` push/retry/alias shell logic | `tests/bats/test_push_image.bats` (16 tests) |
 | `sign-and-publish` keyless/key validation | `tests/bats/test_sign_and_publish.bats` (12 tests) |
 
+The Node suite runs in the `node` job in `unit-tests.yml`:
+
+```bash
+node --test tests/node/*.test.mjs
+```
+
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
 ```bash
