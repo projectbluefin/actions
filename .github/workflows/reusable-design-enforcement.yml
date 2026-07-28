@@ -30,7 +30,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Enforce design workflow
-        uses: projectbluefin/actions/.github/actions/design-enforcement@a2007cd
+        uses: projectbluefin/actions/.github/actions/design-enforcement@2295d66
         with:
           hive_contribute_url: ${{ inputs.hive-contribute-url }}
           required_field_groups: ${{ inputs.required-field-groups }}
