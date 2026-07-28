@@ -43,7 +43,7 @@ test('corrective marker is distinct from announcement marker', () => {
 
 
 test('canonical labels remove all metadata and retain only state overlays', () => {
-  assert.deepEqual(canonicalLabels(['kind/bug', '1-triage', 'blocked', 'hold']), ['1-triage', 'blocked', 'hold']);
+  assert.deepEqual(canonicalLabels(['kind/bug', '1-triage', 'blocked', 'hold']), ['1-triage', 'blocked']);
 });
 
 test('PR processing targets the PR itself and linked issues', () => {

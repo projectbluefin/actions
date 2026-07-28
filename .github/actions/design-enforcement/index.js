@@ -51,9 +51,8 @@ function chooseState(labels) {
 
 function canonicalLabels(labels, state) {
   const desired = state || chooseState(labels);
-  return [desired, ...labels.filter((label) => label === 'blocked' || label === 'hold')].filter(
-    (label, index, all) => all.indexOf(label) === index,
-  );
+  const overlay = labels.includes('blocked') ? 'blocked' : labels.includes('hold') ? 'hold' : null;
+  return [desired, overlay].filter(Boolean);
 }
 
 function targetNumbers(eventName, event) {
