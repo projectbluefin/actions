@@ -20,8 +20,15 @@
 #       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@v1
 #       with:
 #         head_sha: ${{ github.event.workflow_run.head_sha }}
-#       # Optional — only needed when base_branch has review requirements
-#       # with a bypass list that does not include github-actions[bot]:
+#       # Optional — REQUIRED when base_branch uses a merge queue: merge-queue
+#       # groups created by github-actions[bot] never dispatch required checks
+#       # (GITHUB_TOKEN events do not trigger workflows), so the queue entry
+#       # wedges at AWAITING_CHECKS until it times out. Pass GitHub App
+#       # credentials so the merge is performed by the app instead:
+#       # secrets:
+#       #   app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
+#       #   private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
+#       # Or pass a stored token directly:
 #       # secrets:
 #       #   token: ${{ secrets.MERGE_TOKEN }}
 
@@ -47,6 +54,18 @@ on:
           (e.g. a mergeraptor app token). Falls back to github.token when
           not provided.
         required: false
+      app_id:
+        description: >
+          Optional GitHub App ID. When set together with private_key, a
+          short-lived app token is minted and used for the merge. Required
+          for merge-queue base branches: queue groups created by
+          github-actions[bot] never dispatch required checks. Takes
+          precedence over token.
+        required: false
+      private_key:
+        description: >
+          Private key for app_id.
+        required: false
 
 permissions:
   contents: write
@@ -57,10 +76,20 @@ jobs:
     name: Auto-merge Renovate PRs
     runs-on: ubuntu-latest
     steps:
+      - name: Mint app token
+        id: app-token
+        if: ${{ secrets.app_id != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.private_key }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Find Renovate PR for this commit
         id: find-pr
         env:
-          GH_TOKEN: ${{ secrets.token || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           BASE_BRANCH: ${{ inputs.base_branch }}
         run: |
@@ -83,13 +112,17 @@ jobs:
       - name: Merge PR
         if: steps.find-pr.outputs.pr_number != ''
         env:
-          GH_TOKEN: ${{ secrets.token || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
         run: |
           # Direct squash-merge. --auto is intentionally absent:
-          #   1. testing has no branch protection rules; --auto requires them
+          #   1. without branch protection rules, --auto fails
           #      (enablePullRequestAutoMerge → "Protected branch rules not configured")
           #   2. --auto uses GitHub's auto-merge queue which does NOT honour
           #      bypass_pull_request_allowances; only direct merges do.
+          # On a merge-queue branch this call enqueues instead of merging
+          # directly; the queue entry's actor is this step's token identity,
+          # and github-actions[bot] entries never dispatch required checks —
+          # pass app_id/private_key in that case.
           # CI success is already guaranteed by the workflow_run trigger condition.
           gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
             --squash \
