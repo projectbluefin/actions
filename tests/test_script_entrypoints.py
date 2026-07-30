@@ -92,6 +92,136 @@ def test_render_gate_section_wrapper_writes_updated_body(tmp_path):
     assert "✅ All checks passed" in body
 
 
+def test_render_gate_section_entrypoint_uses_http_details(tmp_path):
+    body_in = tmp_path / "body.md"
+    body_out = tmp_path / "body-out.md"
+    body_in.write_text(
+        "<!-- gate-section-start -->\nold\n<!-- gate-section-end -->\n",
+        encoding="utf-8",
+    )
+
+    original_argv = sys.argv[:]
+    original_cwd = Path.cwd()
+    try:
+        sys.argv = [
+            str(REPO_ROOT / "scripts" / "render_gate_section.py"),
+            "--body-file",
+            str(body_in),
+            "--output",
+            str(body_out),
+            "--resolve-ok",
+            "true",
+            "--resolve-summary",
+            "ok",
+            "--verify-ok",
+            "true",
+            "--verify-summary",
+            "ok",
+            "--e2e-state",
+            "passed",
+            "--e2e-summary",
+            "done",
+            "--e2e-details",
+            "https://example.com/runs/1",
+            "--ready",
+            "true",
+        ]
+        os.chdir(REPO_ROOT)
+        runpy.run_path(str(REPO_ROOT / "scripts" / "render_gate_section.py"), run_name="__main__")
+    finally:
+        sys.argv = original_argv
+        os.chdir(original_cwd)
+
+    body = body_out.read_text(encoding="utf-8")
+    assert "[done](https://example.com/runs/1)" in body
+
+
+def test_render_gate_section_entrypoint_uses_plain_details(tmp_path):
+    body_in = tmp_path / "body.md"
+    body_out = tmp_path / "body-out.md"
+    body_in.write_text(
+        "<!-- gate-section-start -->\nold\n<!-- gate-section-end -->\n",
+        encoding="utf-8",
+    )
+
+    original_argv = sys.argv[:]
+    original_cwd = Path.cwd()
+    try:
+        sys.argv = [
+            str(REPO_ROOT / "scripts" / "render_gate_section.py"),
+            "--body-file",
+            str(body_in),
+            "--output",
+            str(body_out),
+            "--resolve-ok",
+            "true",
+            "--resolve-summary",
+            "ok",
+            "--verify-ok",
+            "true",
+            "--verify-summary",
+            "ok",
+            "--e2e-state",
+            "passed",
+            "--e2e-summary",
+            "done",
+            "--e2e-details",
+            "local log",
+            "--ready",
+            "true",
+        ]
+        os.chdir(REPO_ROOT)
+        runpy.run_path(str(REPO_ROOT / "scripts" / "render_gate_section.py"), run_name="__main__")
+    finally:
+        sys.argv = original_argv
+        os.chdir(original_cwd)
+
+    body = body_out.read_text(encoding="utf-8")
+    assert "done local log" in body
+
+
+def test_render_gate_section_entrypoint_warns_for_missing_markers(tmp_path, capsys):
+    body_in = tmp_path / "body.md"
+    body_out = tmp_path / "body-out.md"
+    body_in.write_text("plain body", encoding="utf-8")
+
+    original_argv = sys.argv[:]
+    original_cwd = Path.cwd()
+    try:
+        sys.argv = [
+            str(REPO_ROOT / "scripts" / "render_gate_section.py"),
+            "--body-file",
+            str(body_in),
+            "--output",
+            str(body_out),
+            "--resolve-ok",
+            "true",
+            "--resolve-summary",
+            "ok",
+            "--verify-ok",
+            "true",
+            "--verify-summary",
+            "ok",
+            "--e2e-state",
+            "passed",
+            "--e2e-summary",
+            "done",
+            "--ready",
+            "true",
+        ]
+        os.chdir(REPO_ROOT)
+        with pytest.raises(SystemExit) as excinfo:
+            runpy.run_path(str(REPO_ROOT / "scripts" / "render_gate_section.py"), run_name="__main__")
+    finally:
+        sys.argv = original_argv
+        os.chdir(original_cwd)
+
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "::warning::" in captured.err
+    assert "gate-section markers" in captured.err
+
+
 def test_render_pr_body_wrapper_writes_pr_body(tmp_path):
     module_path = REPO_ROOT / "scripts" / "render_pr_body.py"
     spec = importlib.util.spec_from_file_location("render_pr_body_wrapper", module_path)
@@ -122,6 +252,39 @@ def test_render_pr_body_wrapper_writes_pr_body(tmp_path):
         module.main()
     finally:
         sys.argv = original_argv
+
+    body = output.read_text(encoding="utf-8")
+    assert "Bluefin testing → stable" in body
+    assert "### Variants being promoted" in body
+
+
+def test_render_pr_body_entrypoint_writes_pr_body(tmp_path):
+    output = tmp_path / "pr-body.md"
+    original_argv = sys.argv[:]
+    original_cwd = Path.cwd()
+    try:
+        sys.argv = [
+            str(REPO_ROOT / "scripts" / "render_pr_body.py"),
+            "--project-name",
+            "Bluefin",
+            "--primary-image",
+            "bluefin",
+            "--variants-json",
+            '[{"image":"bluefin"}]',
+            "--repo",
+            "projectbluefin/bluefin",
+            "--run-url",
+            "https://github.com/example/runs/1",
+            "--date",
+            "2026-06-11",
+            "--output",
+            str(output),
+        ]
+        os.chdir(REPO_ROOT)
+        runpy.run_path(str(REPO_ROOT / "scripts" / "render_pr_body.py"), run_name="__main__")
+    finally:
+        sys.argv = original_argv
+        os.chdir(original_cwd)
 
     body = output.read_text(encoding="utf-8")
     assert "Bluefin testing → stable" in body
