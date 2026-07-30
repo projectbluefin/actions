@@ -158,3 +158,20 @@ class TestBuildHtml:
         html = self._build(project_name="<Test>")
         assert "<Test>" not in html
         assert "&lt;Test&gt;" in html
+
+
+# ── _write_placeholder_cards ──────────────────────────────────────────────────
+
+class TestWritePlaceholderCards:
+    def test_writes_light_and_dark_png_with_png_header(self, tmp_path):
+        out = tmp_path / "release-card.png"
+        render_card._write_placeholder_cards(str(out))
+
+        dark = tmp_path / "release-card-dark.png"
+        assert out.exists()
+        assert dark.exists()
+
+        # PNG signature bytes
+        png_signature = b"\x89PNG\r\n\x1a\n"
+        assert out.read_bytes().startswith(png_signature)
+        assert dark.read_bytes().startswith(png_signature)
