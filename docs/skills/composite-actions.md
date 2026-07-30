@@ -381,7 +381,7 @@ Never add a new inline `uses:` for a third-party action in a consumer workflow i
 | Workaround | Location | Issue |
 |---|---|---|
 | `chown /run/user/$UID/containers` before login | `push-image`, `create-manifest` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
-| `native-overlay: true` with runner Podman | `setup-runner` | A rootful `fuse-overlayfs` image mount beneath a kernel overlay can return `ESTALE` when scanned inside another container; reset storage and verify native overlay before building |
+| `native-overlay: true` with runner Podman | `setup-runner` | A rootful `fuse-overlayfs` image mount beneath a kernel overlay can return `ESTALE` when scanned inside another container; reset storage and verify kernel overlay with no `mount_program` before building |
 
 ## Trigger patterns
 

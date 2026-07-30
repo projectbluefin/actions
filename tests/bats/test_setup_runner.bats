@@ -19,7 +19,15 @@ EOF
 NATIVE_OVERLAY_LOGIC=$(cat <<'NATIVE_LOGIC_EOF'
 set -euo pipefail
 
-PODMAN_VERSION=$(sudo podman --version 2>/dev/null | awk '{print $3}')
+# GitHub runners' sudo preserves XDG_RUNTIME_DIR, so a plain
+# `sudo podman` drops root-owned state (crun, libpod) into the
+# runner user's runtime dir and breaks every later rootless podman
+# call with EACCES. Scrub the variable from all rootful calls.
+sudo_podman() {
+  sudo env -u XDG_RUNTIME_DIR podman "$@"
+}
+
+PODMAN_VERSION=$(sudo_podman --version 2>/dev/null | awk '{print $3}')
 if [[ ! "${PODMAN_VERSION}" =~ ^([0-9]+)\. ]] || (( BASH_REMATCH[1] < 5 )); then
   echo "::error::native-overlay requires the runner's Podman 5.x or newer; found '${PODMAN_VERSION:-unknown}'."
   exit 1
@@ -28,7 +36,7 @@ fi
 # Reset while the old configuration is still active. containers/storage
 # records mount-program use in overlay/.has-mount-program, so editing the
 # configuration alone can leave fuse-overlayfs selected.
-sudo podman system reset --force
+sudo_podman system reset --force
 
 sudo install -d -m 0755 /etc/containers
 sudo tee /etc/containers/storage.conf >/dev/null <<'EOF'
@@ -45,7 +53,13 @@ EOF
 # a fail-safe for runner-image implementations that preserve the path.
 sudo rm -f /var/lib/containers/storage/overlay/.has-mount-program
 
-INFO=$(sudo podman info --format json)
+INFO=$(sudo_podman info --format json)
+
+# Fail-safe: sweep root-owned leftovers out of the user runtime dir
+# in case a rootful call still created state there.
+if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+  sudo find "${XDG_RUNTIME_DIR}" -mindepth 1 -maxdepth 1 -user root -exec rm -rf {} +
+fi
 DRIVER=$(jq -r '.store.graphDriverName // empty' <<<"${INFO}")
 NATIVE_DIFF=$(jq -r '.store.graphStatus["Native Overlay Diff"] // empty' <<<"${INFO}")
 GRAPH_OPTIONS=$(jq -c '.store.graphOptions // {}' <<<"${INFO}")
@@ -54,16 +68,21 @@ if [[ "${DRIVER}" != "overlay" ]]; then
   echo "::error::Expected rootful Podman storage driver 'overlay', found '${DRIVER:-unknown}'."
   exit 1
 fi
-if [[ "${NATIVE_DIFF}" != "true" ]]; then
-  echo "::error::Rootful Podman did not enable native overlay diff (reported '${NATIVE_DIFF:-unknown}')."
-  exit 1
-fi
 if [[ "${GRAPH_OPTIONS}" == *mount_program* ]]; then
   echo "::error::Rootful Podman still reports a mount_program: ${GRAPH_OPTIONS}"
   exit 1
 fi
+# "Native Overlay Diff" is diagnostic only: containers/storage
+# refuses the native diff fast path whenever the kernel's overlay
+# module has redirect_dir enabled (the Ubuntu default) and computes
+# layer diffs naively instead. Layer mounts still use kernel
+# overlayfs (no FUSE), which is what this mode guarantees, so
+# report the status without failing.
+if [[ "${NATIVE_DIFF}" != "true" ]]; then
+  echo "::notice::Rootful Podman computes overlay diffs naively (native diff: '${NATIVE_DIFF:-unknown}'); expected on Ubuntu kernels with CONFIG_OVERLAY_FS_REDIRECT_DIR=y."
+fi
 
-echo "Podman ${PODMAN_VERSION}: driver=${DRIVER}, native-overlay=${NATIVE_DIFF}, graph-options=${GRAPH_OPTIONS}"
+echo "Podman ${PODMAN_VERSION}: driver=${DRIVER}, native-diff=${NATIVE_DIFF}, graph-options=${GRAPH_OPTIONS}"
 NATIVE_LOGIC_EOF
 )
 
@@ -82,11 +101,16 @@ setup() {
 set -euo pipefail
 printf '%s\n' "$*" >> "${CALL_LOG}"
 case "${1:-}" in
+  env)
+    shift
+    while [[ "${1:-}" == "-u" ]]; do shift 2; done
+    exec "$@"
+    ;;
   podman)
     shift
     exec podman "$@"
     ;;
-  install|rm)
+  install|rm|find)
     exit 0
     ;;
   tee)
@@ -120,7 +144,10 @@ EOF
   chmod +x "${MOCK_DIR}/podman"
 
   export MOCK_PODMAN_VERSION="5.8.4"
-  export MOCK_PODMAN_INFO_JSON='{"store":{"graphDriverName":"overlay","graphStatus":{"Native Overlay Diff":"true"},"graphOptions":{}}}'
+  # Observed GitHub-hosted Ubuntu runners report a non-native diff (their
+  # kernels enable the overlay module's redirect_dir); make the default
+  # mock match that observation.
+  export MOCK_PODMAN_INFO_JSON='{"store":{"graphDriverName":"overlay","graphStatus":{"Native Overlay Diff":"false"},"graphOptions":{}}}'
 }
 
 teardown() {
@@ -156,12 +183,25 @@ teardown() {
   run bash -c "${NATIVE_OVERLAY_LOGIC}"
 
   [ "${status}" -eq 0 ]
-  [[ "${output}" == *"native-overlay=true"* ]]
+  [[ "${output}" == *"native-diff=false"* ]]
   grep -q '^driver = "overlay"$' "${MOCK_STORAGE_CONF}"
   grep -q '^mountopt = "nodev"$' "${MOCK_STORAGE_CONF}"
   ! grep -q 'mount_program\|fsync=0' "${MOCK_STORAGE_CONF}"
-  grep -q '^podman system reset --force$' "${CALL_LOG}"
+  grep -q '^env -u XDG_RUNTIME_DIR podman system reset --force$' "${CALL_LOG}"
   grep -q '^rm -f /var/lib/containers/storage/overlay/.has-mount-program$' "${CALL_LOG}"
+}
+
+@test "native overlay scrubs XDG_RUNTIME_DIR and sweeps root-owned state" {
+  export XDG_RUNTIME_DIR="${TEST_TMP}/runtime"
+  mkdir -p "${XDG_RUNTIME_DIR}"
+
+  run bash -c "${NATIVE_OVERLAY_LOGIC}"
+
+  [ "${status}" -eq 0 ]
+  # Every rootful podman call must go through the env scrub.
+  ! grep -qE '^podman ' "${CALL_LOG}"
+  grep -q '^env -u XDG_RUNTIME_DIR podman info --format json$' "${CALL_LOG}"
+  grep -q "^find ${XDG_RUNTIME_DIR} -mindepth 1 -maxdepth 1 -user root -exec rm -rf {} +$" "${CALL_LOG}"
 }
 
 @test "native overlay rejects Podman older than version 5" {
@@ -174,17 +214,25 @@ teardown() {
   ! grep -q 'system reset' "${CALL_LOG}"
 }
 
-@test "native overlay fails when Podman reports a non-native diff" {
-  export MOCK_PODMAN_INFO_JSON='{"store":{"graphDriverName":"overlay","graphStatus":{"Native Overlay Diff":"false"},"graphOptions":{}}}'
+@test "native overlay tolerates a non-native diff with a notice" {
+  run bash -c "${NATIVE_OVERLAY_LOGIC}"
+
+  [ "${status}" -eq 0 ]
+  [[ "${output}" == *"computes overlay diffs naively"* ]]
+}
+
+@test "native overlay stays quiet when the diff is native" {
+  export MOCK_PODMAN_INFO_JSON='{"store":{"graphDriverName":"overlay","graphStatus":{"Native Overlay Diff":"true"},"graphOptions":{}}}'
 
   run bash -c "${NATIVE_OVERLAY_LOGIC}"
 
-  [ "${status}" -ne 0 ]
-  [[ "${output}" == *"did not enable native overlay diff"* ]]
+  [ "${status}" -eq 0 ]
+  [[ "${output}" != *"computes overlay diffs naively"* ]]
+  [[ "${output}" == *"native-diff=true"* ]]
 }
 
 @test "native overlay fails when a mount program remains configured" {
-  export MOCK_PODMAN_INFO_JSON='{"store":{"graphDriverName":"overlay","graphStatus":{"Native Overlay Diff":"true"},"graphOptions":{"overlay.mount_program":"/usr/local/bin/fuse-overlayfs"}}}'
+  export MOCK_PODMAN_INFO_JSON='{"store":{"graphDriverName":"overlay","graphStatus":{"Native Overlay Diff":"false"},"graphOptions":{"overlay.mount_program":"/usr/local/bin/fuse-overlayfs"}}}'
 
   run bash -c "${NATIVE_OVERLAY_LOGIC}"
 

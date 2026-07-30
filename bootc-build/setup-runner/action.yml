@@ -115,7 +115,15 @@ runs:
       run: |
         set -euo pipefail
 
-        PODMAN_VERSION=$(sudo podman --version 2>/dev/null | awk '{print $3}')
+        # GitHub runners' sudo preserves XDG_RUNTIME_DIR, so a plain
+        # `sudo podman` drops root-owned state (crun, libpod) into the
+        # runner user's runtime dir and breaks every later rootless podman
+        # call with EACCES. Scrub the variable from all rootful calls.
+        sudo_podman() {
+          sudo env -u XDG_RUNTIME_DIR podman "$@"
+        }
+
+        PODMAN_VERSION=$(sudo_podman --version 2>/dev/null | awk '{print $3}')
         if [[ ! "${PODMAN_VERSION}" =~ ^([0-9]+)\. ]] || (( BASH_REMATCH[1] < 5 )); then
           echo "::error::native-overlay requires the runner's Podman 5.x or newer; found '${PODMAN_VERSION:-unknown}'."
           exit 1
@@ -124,7 +132,7 @@ runs:
         # Reset while the old configuration is still active. containers/storage
         # records mount-program use in overlay/.has-mount-program, so editing the
         # configuration alone can leave fuse-overlayfs selected.
-        sudo podman system reset --force
+        sudo_podman system reset --force
 
         sudo install -d -m 0755 /etc/containers
         sudo tee /etc/containers/storage.conf >/dev/null <<'EOF'
@@ -141,7 +149,13 @@ runs:
         # a fail-safe for runner-image implementations that preserve the path.
         sudo rm -f /var/lib/containers/storage/overlay/.has-mount-program
 
-        INFO=$(sudo podman info --format json)
+        INFO=$(sudo_podman info --format json)
+
+        # Fail-safe: sweep root-owned leftovers out of the user runtime dir
+        # in case a rootful call still created state there.
+        if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then
+          sudo find "${XDG_RUNTIME_DIR}" -mindepth 1 -maxdepth 1 -user root -exec rm -rf {} +
+        fi
         DRIVER=$(jq -r '.store.graphDriverName // empty' <<<"${INFO}")
         NATIVE_DIFF=$(jq -r '.store.graphStatus["Native Overlay Diff"] // empty' <<<"${INFO}")
         GRAPH_OPTIONS=$(jq -c '.store.graphOptions // {}' <<<"${INFO}")
@@ -150,16 +164,21 @@ runs:
           echo "::error::Expected rootful Podman storage driver 'overlay', found '${DRIVER:-unknown}'."
           exit 1
         fi
-        if [[ "${NATIVE_DIFF}" != "true" ]]; then
-          echo "::error::Rootful Podman did not enable native overlay diff (reported '${NATIVE_DIFF:-unknown}')."
-          exit 1
-        fi
         if [[ "${GRAPH_OPTIONS}" == *mount_program* ]]; then
           echo "::error::Rootful Podman still reports a mount_program: ${GRAPH_OPTIONS}"
           exit 1
         fi
+        # "Native Overlay Diff" is diagnostic only: containers/storage
+        # refuses the native diff fast path whenever the kernel's overlay
+        # module has redirect_dir enabled (the Ubuntu default) and computes
+        # layer diffs naively instead. Layer mounts still use kernel
+        # overlayfs (no FUSE), which is what this mode guarantees, so
+        # report the status without failing.
+        if [[ "${NATIVE_DIFF}" != "true" ]]; then
+          echo "::notice::Rootful Podman computes overlay diffs naively (native diff: '${NATIVE_DIFF:-unknown}'); expected on Ubuntu kernels with CONFIG_OVERLAY_FS_REDIRECT_DIR=y."
+        fi
 
-        echo "Podman ${PODMAN_VERSION}: driver=${DRIVER}, native-overlay=${NATIVE_DIFF}, graph-options=${GRAPH_OPTIONS}"
+        echo "Podman ${PODMAN_VERSION}: driver=${DRIVER}, native-diff=${NATIVE_DIFF}, graph-options=${GRAPH_OPTIONS}"
 
     - name: Install just
       if: contains(fromJSON(inputs.install-tools), 'just')
