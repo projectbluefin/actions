@@ -1,8 +1,26 @@
 """Unit tests for render_pr_body.py — promotion PR body generation."""
+import importlib.util
 import json
 import sys
+from pathlib import Path
+
 import pytest
 import render_pr_body
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SCRIPT_RENDER_PR_BODY_PATH = REPO_ROOT / "scripts" / "render_pr_body.py"
+
+
+def _load_script_module():
+    spec = importlib.util.spec_from_file_location("render_pr_body_script", SCRIPT_RENDER_PR_BODY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+SCRIPT_RENDER_PR_BODY = _load_script_module()
+TEST_MODULES = [render_pr_body, SCRIPT_RENDER_PR_BODY]
 
 
 VARIANTS_NO_DIGEST = [
@@ -72,6 +90,15 @@ class TestSectionHeader:
         )
         assert "stable-20260604-def5678" in md
         assert "https://example.com/releases/tag/stable-20260604" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_single_day_release_line_uses_singular_noun(self, module):
+        md = module._section_header(
+            "Bluefin", "2026-06-11", "https://example.com/run",
+            days_ago=1, last_tag="stable-20260610-abc1234",
+            last_release_url="https://example.com/releases/tag/stable-20260610",
+        )
+        assert "1 day since the last stable release" in md
 
     def test_no_previous_release_omits_days_line(self):
         md = render_pr_body._section_header(
@@ -151,6 +178,25 @@ class TestSectionVariants:
         assert full not in md
         assert "a1b2c3d4e5f6a1b2" in md
 
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_plain_digest_uses_first_16_chars(self, module):
+        md = module._section_variants([{"image": "bluefin", "digest": "plain-digest-value"}], "testing")
+        assert "plain-digest-value" not in md
+        assert "plain-digest-va" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_sha256_digest_uses_shortened_prefix(self, module):
+        md = module._section_variants(
+            [{"image": "bluefin", "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}],
+            "testing",
+        )
+        assert "sha256:0123456789abcdef" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_blank_digest_uses_placeholder(self, module):
+        md = module._section_variants([{"image": "bluefin", "digest": ""}], "testing")
+        assert "—" in md
+
 
 class TestSectionCommits:
     def test_returns_empty_when_no_commits(self):
@@ -190,6 +236,20 @@ class TestSectionCommits:
         md = render_pr_body._section_commits(1, commits_with_pipe, None)
         # The pipe in the subject must be escaped so the table renders correctly
         assert "foo \\| bar" in md or "foo | bar" not in md.split("feat:")[1].split("\n")[0]
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_empty_commit_list_uses_intro_only(self, module):
+        md = module._section_commits(2, [], None)
+        assert "### Changes since last stable" in md
+        assert "**2 commits** ahead of stable" in md
+        assert "<details>" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_commit_list_uses_details_block(self, module):
+        md = module._section_commits(3, COMMITS, None)
+        assert "### Changes since last stable" in md
+        assert "<details>" in md
+        assert "abc1234" in md
 
 
 class TestBuildTitle:
