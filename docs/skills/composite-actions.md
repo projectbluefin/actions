@@ -182,7 +182,7 @@ Quick reference - for full details see [`composite-actions/action-reference.md`]
 
 | Action | Purpose |
 |---|---|
-| `setup-runner` | Update podman, mount BTRFS storage, install tools |
+| `setup-runner` | Update Podman, configure BTRFS or opt-in native overlay storage, install tools |
 | `dnf-cache` | Restore/save buildah layer cache |
 | `preflight` | Validate registry auth, normalize image refs |
 | `push-image` | Push with retry, digest capture, skopeo alias tags |
@@ -381,6 +381,7 @@ Never add a new inline `uses:` for a third-party action in a consumer workflow i
 | Workaround | Location | Issue |
 |---|---|---|
 | `chown /run/user/$UID/containers` before login | `push-image`, `create-manifest` | Earlier `sudo podman login` can leave root-owned auth files that break later user-space login |
+| `native-overlay: true` with runner Podman | `setup-runner` | A rootful `fuse-overlayfs` image mount beneath a kernel overlay can return `ESTALE` when scanned inside another container; reset storage and verify native overlay before building |
 
 ## Trigger patterns
 

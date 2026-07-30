@@ -9,6 +9,9 @@ inputs:
   update-podman:
     description: "Install podman/buildah/crun/skopeo from Ubuntu resolute (25.04)"
     default: "true"
+  native-overlay:
+    description: "Use native rootful overlay storage instead of fuse-overlayfs; requires update-podman=false and resets rootful Podman storage"
+    default: "false"
   install-tools:
     description: "JSON array of tools to install: e.g. '[\"just\", \"cosign\", \"oras\", \"syft\"]'"
     default: "[]"
@@ -21,6 +24,25 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Validate native overlay inputs
+      shell: bash
+      env:
+        NATIVE_OVERLAY: ${{ inputs.native-overlay }}
+        UPDATE_PODMAN: ${{ inputs.update-podman }}
+      run: |
+        set -euo pipefail
+        case "${NATIVE_OVERLAY}" in
+          true|false) ;;
+          *)
+            echo "::error::native-overlay must be 'true' or 'false'."
+            exit 1
+            ;;
+        esac
+        if [[ "${NATIVE_OVERLAY}" == "true" && "${UPDATE_PODMAN}" != "false" ]]; then
+          echo "::error::native-overlay=true requires update-podman=false to avoid mixing the runner's static Podman stack with Ubuntu resolute packages."
+          exit 1
+        fi
+
     - name: Maximize build space (remove-software)
       if: inputs.storage-backend == 'btrfs' || inputs.storage-backend == 'remove-software'
       uses: ublue-os/remove-unwanted-software@695eb75bc387dbcd9685a8e72d23439d8686cba6 # v10
@@ -91,6 +113,58 @@ runs:
       with:
         path: /var/cache/apt/archives
         key: ${{ steps.apt-cache-restore.outputs.cache-primary-key }}
+
+    - name: Configure native rootful overlay storage
+      if: inputs.native-overlay == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        PODMAN_VERSION=$(sudo podman --version 2>/dev/null | awk '{print $3}')
+        if [[ ! "${PODMAN_VERSION}" =~ ^([0-9]+)\. ]] || (( BASH_REMATCH[1] < 5 )); then
+          echo "::error::native-overlay requires the runner's Podman 5.x or newer; found '${PODMAN_VERSION:-unknown}'."
+          exit 1
+        fi
+
+        # Reset while the old configuration is still active. containers/storage
+        # records mount-program use in overlay/.has-mount-program, so editing the
+        # configuration alone can leave fuse-overlayfs selected.
+        sudo podman system reset --force
+
+        sudo install -d -m 0755 /etc/containers
+        sudo tee /etc/containers/storage.conf >/dev/null <<'EOF'
+        [storage]
+        driver = "overlay"
+        runroot = "/run/containers/storage"
+        graphroot = "/var/lib/containers/storage"
+
+        [storage.options.overlay]
+        mountopt = "nodev"
+        EOF
+
+        # podman system reset removes graphroot; remove the marker explicitly as
+        # a fail-safe for runner-image implementations that preserve the path.
+        sudo rm -f /var/lib/containers/storage/overlay/.has-mount-program
+
+        INFO=$(sudo podman info --format json)
+        DRIVER=$(jq -r '.store.graphDriverName // empty' <<<"${INFO}")
+        NATIVE_DIFF=$(jq -r '.store.graphStatus["Native Overlay Diff"] // empty' <<<"${INFO}")
+        GRAPH_OPTIONS=$(jq -c '.store.graphOptions // {}' <<<"${INFO}")
+
+        if [[ "${DRIVER}" != "overlay" ]]; then
+          echo "::error::Expected rootful Podman storage driver 'overlay', found '${DRIVER:-unknown}'."
+          exit 1
+        fi
+        if [[ "${NATIVE_DIFF}" != "true" ]]; then
+          echo "::error::Rootful Podman did not enable native overlay diff (reported '${NATIVE_DIFF:-unknown}')."
+          exit 1
+        fi
+        if [[ "${GRAPH_OPTIONS}" == *mount_program* ]]; then
+          echo "::error::Rootful Podman still reports a mount_program: ${GRAPH_OPTIONS}"
+          exit 1
+        fi
+
+        echo "Podman ${PODMAN_VERSION}: driver=${DRIVER}, native-overlay=${NATIVE_DIFF}, graph-options=${GRAPH_OPTIONS}"
 
     - name: Install just
       if: contains(fromJSON(inputs.install-tools), 'just')

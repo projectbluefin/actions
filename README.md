@@ -19,7 +19,7 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 
 | Action | Purpose |
 |--------|---------|
-| [`bootc-build/setup-runner`](bootc-build/setup-runner/) | Prepare runner: update podman, configure storage, install tools |
+| [`bootc-build/setup-runner`](bootc-build/setup-runner/) | Prepare runner: update Podman, configure BTRFS or native overlay storage, install tools |
 | [`bootc-build/dnf-cache`](bootc-build/dnf-cache/) | Restore/save DNF cache with permissions workaround |
 | [`bootc-build/ghcr-cleanup`](bootc-build/ghcr-cleanup/) | Prune old GHCR images |
 | [`bootc-build/preflight`](bootc-build/preflight/) | Validate runner environment before build |

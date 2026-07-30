@@ -36,9 +36,44 @@ Sets up a GitHub Actions runner for bootc image building. Two storage backends:
 - `btrfs` (default): mounts a BTRFS volume at `/var/lib/containers` via `ublue-os/container-storage-action`
 - `remove-software`: frees disk by nuking Android/Haskell/dotnet toolchains
 
-Upgrades podman from Ubuntu **resolute** (25.04) because Ubuntu 24.04 runners ship a version too old to support layer annotations (`ostree.components`) and `zstd:chunked` push.
+Upgrades podman from Ubuntu **resolute** (25.04) because older Ubuntu 24.04 runner images ship a version too old to support layer annotations (`ostree.components`) and `zstd:chunked` push.
 
 Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` JSON array input.
+
+### Native rootful overlay mode
+
+Set `native-overlay: "true"` together with `update-podman: "false"` when a build mounts a
+rootful Podman image, places a kernel overlay on that mount, and then bind-mounts the result into
+another container. GitHub runner images can configure their static Podman bundle with
+`fuse-overlayfs`; that nested FUSE → kernel overlay → container path can fail directory walks with
+`ESTALE` (`Stale file handle`).
+
+Native-overlay mode is opt-in and destructive to existing **rootful** Podman state. It:
+
+1. requires the runner's Podman 5.x or newer;
+2. runs `sudo podman system reset --force` while the old storage configuration is active;
+3. replaces `/etc/containers/storage.conf` with a rootful native-overlay configuration;
+4. removes the stale `overlay/.has-mount-program` marker;
+5. fails unless `sudo podman info` reports the `overlay` driver, native overlay diff, and no
+   `mount_program` graph option.
+
+Do not enable it with `update-podman: "true"`: `/usr/local/bin/podman` from the runner image can
+shadow the Resolute `/usr/bin/podman`, producing a mixed tool stack. Also do not merely delete
+`mount_program` from the runner configuration: the FUSE-only `fsync=0` mount option and
+containers/storage's persistent mount-program marker must be removed too.
+
+```yaml
+- uses: projectbluefin/actions/bootc-build/setup-runner@v1
+  with:
+    storage-backend: btrfs
+    update-podman: "false"
+    native-overlay: "true"
+    install-tools: '["just"]'
+```
+
+References: [containers-storage.conf `mount_program`](https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md#storage-options-for-overlay-table),
+[`podman system reset`](https://github.com/containers/podman/blob/main/docs/source/markdown/podman-system-reset.1.md),
+and [containers/storage native-overlay detection](https://github.com/containers/storage/blob/main/drivers/overlay/overlay.go).
 
 ---
 

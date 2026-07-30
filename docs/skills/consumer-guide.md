@@ -120,7 +120,7 @@ Use individual actions when you need more control: different base distro (CentOS
 
 | Action | `uses:` path | Purpose |
 |---|---|---|
-| `setup-runner` | `bootc-build/setup-runner@v1` | Update podman, set up BTRFS storage, install tools |
+| `setup-runner` | `bootc-build/setup-runner@v1` | Update Podman, configure BTRFS or opt-in native overlay storage, install tools |
 | `dnf-cache` | `bootc-build/dnf-cache@v1` | Restore/save buildah layer cache |
 | `preflight` | `bootc-build/preflight@v1` | Validate registry auth, normalize image refs |
 | `detect-changes` | `bootc-build/detect-changes@v1` | Detect changed paths, compute image-flavor build matrix |
