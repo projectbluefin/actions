@@ -159,7 +159,7 @@ dakota is structurally different from all other consumers — its image is produ
 
 | Action | Status | Notes |
 |---|---|---|
-| `setup-runner` | **Adopted** | `update-podman: true`, `storage-backend: btrfs`, `install-tools: '["just"]'` |
+| `setup-runner` | **Adopted** | `update-podman: false`, `native-overlay: true`, `storage-backend: btrfs`, `install-tools: '["just"]'`; native rootful overlay is required by Dakota's nested chunkify mount path |
 | `sign-and-publish` | **Adopted** | `generate-sbom: false` — dakota uses BST-native SBOM via `just sbom` |
 | `ghcr-cleanup` | **Adopted** | Weekly cron, packages: `dakota,dakota-nvidia` |
 | `push-image` | **Ready to adopt** | Replaces inline retry loop in `publish.yml`. Use `compression-format: zstd` (not the default `zstd:chunked`) |
