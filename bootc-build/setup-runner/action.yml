@@ -10,7 +10,7 @@ inputs:
     description: "Install podman/buildah/crun/skopeo from Ubuntu resolute (25.04)"
     default: "true"
   native-overlay:
-    description: "Use native rootful overlay storage instead of fuse-overlayfs; requires update-podman=false and resets rootful Podman storage"
+    description: "Use native rootful overlay storage instead of fuse-overlayfs; resets rootful Podman storage"
     default: "false"
   install-tools:
     description: "JSON array of tools to install: e.g. '[\"just\", \"cosign\", \"oras\", \"syft\"]'"
@@ -28,7 +28,6 @@ runs:
       shell: bash
       env:
         NATIVE_OVERLAY: ${{ inputs.native-overlay }}
-        UPDATE_PODMAN: ${{ inputs.update-podman }}
       run: |
         set -euo pipefail
         case "${NATIVE_OVERLAY}" in
@@ -38,10 +37,6 @@ runs:
             exit 1
             ;;
         esac
-        if [[ "${NATIVE_OVERLAY}" == "true" && "${UPDATE_PODMAN}" != "false" ]]; then
-          echo "::error::native-overlay=true requires update-podman=false to avoid mixing the runner's static Podman stack with Ubuntu resolute packages."
-          exit 1
-        fi
 
     - name: Maximize build space (remove-software)
       if: inputs.storage-backend == 'btrfs' || inputs.storage-backend == 'remove-software'

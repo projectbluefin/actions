@@ -13,10 +13,6 @@ case "${NATIVE_OVERLAY}" in
     exit 1
     ;;
 esac
-if [[ "${NATIVE_OVERLAY}" == "true" && "${UPDATE_PODMAN}" != "false" ]]; then
-  echo "::error::native-overlay=true requires update-podman=false to avoid mixing the runner's static Podman stack with Ubuntu resolute packages."
-  exit 1
-fi
 EOF
 )
 
@@ -133,7 +129,6 @@ teardown() {
 
 @test "native overlay validation accepts the disabled default" {
   export NATIVE_OVERLAY="false"
-  export UPDATE_PODMAN="true"
 
   run bash -c "${VALIDATION_LOGIC}"
 
@@ -142,7 +137,6 @@ teardown() {
 
 @test "native overlay validation rejects an invalid boolean" {
   export NATIVE_OVERLAY="yes"
-  export UPDATE_PODMAN="false"
 
   run bash -c "${VALIDATION_LOGIC}"
 
@@ -150,14 +144,12 @@ teardown() {
   [[ "${output}" == *"must be 'true' or 'false'"* ]]
 }
 
-@test "native overlay validation rejects the resolute Podman stack" {
+@test "native overlay validation accepts the updated Podman stack" {
   export NATIVE_OVERLAY="true"
-  export UPDATE_PODMAN="true"
 
   run bash -c "${VALIDATION_LOGIC}"
 
-  [ "${status}" -ne 0 ]
-  [[ "${output}" == *"requires update-podman=false"* ]]
+  [ "${status}" -eq 0 ]
 }
 
 @test "native overlay resets storage and writes a native configuration" {
