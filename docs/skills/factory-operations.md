@@ -159,6 +159,14 @@ Use the workflow `github.token` for read-only `gh run list` calls against the pu
 Generate a GitHub App token scoped to `projectbluefin/common` before creating issues there. This keeps
 cross-repo issue writes explicit while avoiding broader write scopes for routine monitoring.
 
+**`MERGERAPTOR_APP_ID` is a `secrets.*` value, not a `vars.*` value** — see the approved-secrets
+table in `docs/skills/supply-chain.md`. Passing `vars.MERGERAPTOR_APP_ID` to
+`actions/create-github-app-token` silently resolves to an empty string (repo/org variables and
+secrets are separate namespaces) and the step fails with
+`The 'client-id' (or deprecated 'app-id') input must be set to a non-empty string.` Always wire it
+as `client-id: ${{ secrets.MERGERAPTOR_APP_ID }}` — use `client-id`, not the deprecated `app-id`
+input, for consistency across workflows.
+
 ### Output
 
 The workflow always prints a markdown summary table to stdout and `$GITHUB_STEP_SUMMARY`, even when no
