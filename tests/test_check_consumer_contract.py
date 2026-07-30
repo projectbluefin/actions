@@ -9,6 +9,7 @@ We do both: fast pure-unit tests for get_live_inputs / check_contract,
 plus a smoke test against the real consumer-contract.yml.
 """
 import importlib.util
+import builtins
 import sys
 from pathlib import Path
 
@@ -187,3 +188,82 @@ class TestRealContract:
             contract = yaml.safe_load(f) or {}
         failures = check_contract(contract, verbose=False)
         assert failures == [], f"Consumer contract violations:\n" + "\n".join(failures)
+
+
+# ── CLI / main() regression coverage ───────────────────────────────────────────
+
+class TestMainCli:
+    def test_main_prints_violation_details_and_returns_nonzero(self, tmp_path, monkeypatch, capsys):
+        contract_file = tmp_path / "consumer-contract.yml"
+        contract_file.write_text("{}\n")
+
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", contract_file)
+        monkeypatch.setattr(_mod, "load_yaml", lambda _path: {})
+        monkeypatch.setattr(_mod, "check_contract", lambda _contract, _verbose: ["missing input: stream_name"])
+        monkeypatch.setattr(sys, "argv", ["check-consumer-contract.py"])
+
+        result = _mod.main()
+        captured = capsys.readouterr()
+
+        assert result == 1
+        assert "Consumer contract violations detected" in captured.err
+        assert "missing input: stream_name" in captured.err
+        assert "intentional breaking change" in captured.err
+
+    def test_main_verbose_prints_contract_path(self, tmp_path, monkeypatch, capsys):
+        contract_file = tmp_path / "consumer-contract.yml"
+        contract_file.write_text("{}\n")
+
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", contract_file)
+        monkeypatch.setattr(_mod, "load_yaml", lambda _path: {})
+        monkeypatch.setattr(_mod, "check_contract", lambda _contract, _verbose: [])
+        monkeypatch.setattr(sys, "argv", ["check-consumer-contract.py", "--verbose"])
+
+        result = _mod.main()
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert f"Checking consumer contract: {contract_file}" in captured.out
+        assert "Consumer contract OK" in captured.out
+
+    def test_verbose_warn_when_file_exists_but_inputs_not_parseable(self, tmp_path, monkeypatch, capsys):
+        action_dir = tmp_path / "bootc-build" / "my-action"
+        action_dir.mkdir(parents=True)
+        (action_dir / "action.yml").write_text("name: my-action\nruns:\n  using: composite\n  steps: []\n")
+
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "composite_actions": {
+                "my-action": {
+                    "path": "bootc-build/my-action/action.yml",
+                    "required_inputs": ["required-input"],
+                }
+            }
+        }
+
+        failures = check_contract(contract, verbose=True)
+        captured = capsys.readouterr()
+
+        assert failures == []
+        assert "WARN: composite_actions/my-action: could not parse inputs" in captured.out
+
+
+class TestImportTimeFailure:
+    def test_missing_pyyaml_exits_with_helpful_error(self, monkeypatch, capsys):
+        spec = importlib.util.spec_from_file_location("check_consumer_contract_no_yaml", _SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("No module named yaml")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+
+        with pytest.raises(SystemExit) as exc:
+            spec.loader.exec_module(module)
+
+        captured = capsys.readouterr()
+        assert exc.value.code == 1
+        assert "PyYAML not installed" in captured.err
