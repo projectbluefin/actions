@@ -53,14 +53,23 @@ Native-overlay mode is opt-in and destructive to existing **rootful** Podman sta
 2. runs `sudo podman system reset --force` while the old storage configuration is active;
 3. replaces `/etc/containers/storage.conf` with a rootful native-overlay configuration;
 4. removes the stale `overlay/.has-mount-program` marker;
-5. fails unless `sudo podman info` reports the `overlay` driver, native overlay diff, and no
-   `mount_program` graph option.
+5. scrubs `XDG_RUNTIME_DIR` from every rootful Podman call and sweeps root-owned leftovers out
+   of the user runtime dir (GitHub runners' sudo preserves the variable, so rootful Podman
+   would otherwise drop root-owned crun state into `/run/user/<uid>` and break every later
+   rootless Podman invocation with `EACCES`);
+6. fails unless `sudo podman info` reports the `overlay` driver and no `mount_program` graph
+   option. The `Native Overlay Diff` status is diagnostic only and a `false` value produces a
+   notice, not a failure: when the kernel's overlay module has `redirect_dir` enabled (the
+   Ubuntu default), containers/storage falls back to naive diff computation while still
+   mounting layers with kernel overlayfs.
 
 Combine it with `update-podman: "true"` when the consumer requires Podman 5 on every hosted
-runner. Older runner images receive Podman from Ubuntu Resolute, while newer images continue to
-select the runner's `/usr/local/bin/podman`; native storage configuration and capability checks run
-after the optional package update in both cases. Use `update-podman: "false"` only when the caller
-can rely on the runner-provided Podman already being version 5 or newer.
+runner. Runner images that predate the static Podman bundle ship apt Podman 4.9.3, which fails
+the version gate unless Resolute packages are installed. Images that include the bundle keep
+`/usr/local/bin/podman` ahead of the Resolute packages on `PATH` (including sudo's
+`secure_path`); normalizing that mixed stack is a separate concern from this mode. Use
+`update-podman: "false"` only when the caller can rely on the runner-provided Podman already
+being version 5 or newer.
 
 Do not merely delete `mount_program` from the runner configuration: the FUSE-only `fsync=0` mount
 option and containers/storage's persistent mount-program marker must be removed too.
