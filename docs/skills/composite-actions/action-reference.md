@@ -42,11 +42,10 @@ Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` J
 
 ### Native rootful overlay mode
 
-Set `native-overlay: "true"` together with `update-podman: "false"` when a build mounts a
-rootful Podman image, places a kernel overlay on that mount, and then bind-mounts the result into
-another container. GitHub runner images can configure their static Podman bundle with
-`fuse-overlayfs`; that nested FUSE → kernel overlay → container path can fail directory walks with
-`ESTALE` (`Stale file handle`).
+Set `native-overlay: "true"` when a build mounts a rootful Podman image, places a kernel overlay
+on that mount, and then bind-mounts the result into another container. GitHub runner images can
+configure their static Podman bundle with `fuse-overlayfs`; that nested FUSE → kernel overlay →
+container path can fail directory walks with `ESTALE` (`Stale file handle`).
 
 Native-overlay mode is opt-in and destructive to existing **rootful** Podman state. It:
 
@@ -57,16 +56,20 @@ Native-overlay mode is opt-in and destructive to existing **rootful** Podman sta
 5. fails unless `sudo podman info` reports the `overlay` driver, native overlay diff, and no
    `mount_program` graph option.
 
-Do not enable it with `update-podman: "true"`: `/usr/local/bin/podman` from the runner image can
-shadow the Resolute `/usr/bin/podman`, producing a mixed tool stack. Also do not merely delete
-`mount_program` from the runner configuration: the FUSE-only `fsync=0` mount option and
-containers/storage's persistent mount-program marker must be removed too.
+Combine it with `update-podman: "true"` when the consumer requires Podman 5 on every hosted
+runner. Older runner images receive Podman from Ubuntu Resolute, while newer images continue to
+select the runner's `/usr/local/bin/podman`; native storage configuration and capability checks run
+after the optional package update in both cases. Use `update-podman: "false"` only when the caller
+can rely on the runner-provided Podman already being version 5 or newer.
+
+Do not merely delete `mount_program` from the runner configuration: the FUSE-only `fsync=0` mount
+option and containers/storage's persistent mount-program marker must be removed too.
 
 ```yaml
 - uses: projectbluefin/actions/bootc-build/setup-runner@v1
   with:
     storage-backend: btrfs
-    update-podman: "false"
+    update-podman: "true"
     native-overlay: "true"
     install-tools: '["just"]'
 ```
