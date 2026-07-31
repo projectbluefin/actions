@@ -193,6 +193,15 @@ class TestSectionVariants:
         assert "sha256:0123456789abcdef" in md
 
     @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_sha512_digest_uses_shortened_prefix(self, module):
+        md = module._section_variants(
+            [{"image": "dakota", "digest": "sha512:0123456789abcdef0123"}],
+            "testing",
+        )
+        assert "sha512:012345678" in md
+        assert "sha256:" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
     def test_blank_digest_uses_placeholder(self, module):
         md = module._section_variants([{"image": "bluefin", "digest": ""}], "testing")
         assert "—" in md
