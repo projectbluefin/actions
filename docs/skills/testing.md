@@ -19,6 +19,16 @@ The `unit-tests.yml` workflow covers two test suites:
 All directories are registered in `tests/conftest.py` via `sys.path.insert` so test files can
 import scripts directly without per-file path manipulation.
 
+### Path precedence rule for duplicate script names
+
+Some `scripts/*.py` modules are duplicated under `.github/actions/*` so composite actions can run
+them via `GITHUB_ACTION_PATH`. If both directories are added to `sys.path`, insertion order decides
+which copy gets imported.
+
+- Add `scripts/` before `.github/actions/*` when coverage should be attributed to shipped wrappers.
+- For regression tests that must target a specific file, prefer `importlib.util.spec_from_file_location`
+  with an explicit path to avoid accidental shadowing from `sys.path` order.
+
 Coverage gate: `--cov-fail-under=75`
 
 ### Shell scripts (bats)
