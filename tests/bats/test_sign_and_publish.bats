@@ -56,6 +56,17 @@ fi
 echo "sbom-digest=${SBOM_DIGEST}" >> "$GITHUB_OUTPUT"
 '
 
+GENERATE_SBOM='
+set -euo pipefail
+NAME="${IMAGE_NAME:-$(basename "${IMAGE}")}"
+SBOM_DIR="sbom_out/${NAME}"
+mkdir -p "${SBOM_DIR}"
+"${SYFT_CMD}" "${IMAGE}@${DIGEST}" -o spdx-json="${SBOM_DIR}/sbom.json"
+echo "sbom-path=${SBOM_DIR}/sbom.json" >> "$GITHUB_OUTPUT"
+echo "sbom-dir=${SBOM_DIR}" >> "$GITHUB_OUTPUT"
+echo "image-name=${NAME}" >> "$GITHUB_OUTPUT"
+'
+
 setup() {
   TEST_TMP=$(mktemp -d)
   export TEST_TMP
@@ -250,6 +261,48 @@ EOF
   run bash -c "$ATTACH_SBOM"
   [ "$status" -ne 0 ]
   [[ "$output" == *"Failed to discover attached SBOM digest"* ]]
+}
+
+# ── SBOM path generation ──────────────────────────────────────────────────────
+
+make_syft() {
+  SYFT_CMD="${TEST_TMP}/syft"
+  cat > "${SYFT_CMD}" <<'EOF'
+#!/usr/bin/env bash
+out="${*: -1}"
+outfile="${out#spdx-json=}"
+mkdir -p "$(dirname "$outfile")"
+echo "{}" > "$outfile"
+EOF
+  chmod +x "${SYFT_CMD}"
+}
+
+@test "sbom: explicit IMAGE_NAME sets output path under sbom_out/<name>" {
+  cd "${TEST_TMP}"
+  export IMAGE="ghcr.io/projectbluefin/bluefin"
+  export DIGEST="sha256:deadbeef"
+  export IMAGE_NAME="custom-image"
+  make_syft
+
+  run bash -c "$GENERATE_SBOM"
+  [ "$status" -eq 0 ]
+  [ "$(get_output sbom-path)" = "sbom_out/custom-image/sbom.json" ]
+  [ "$(get_output sbom-dir)" = "sbom_out/custom-image" ]
+  [ "$(get_output image-name)" = "custom-image" ]
+}
+
+@test "sbom: empty IMAGE_NAME falls back to basename(IMAGE)" {
+  cd "${TEST_TMP}"
+  export IMAGE="ghcr.io/projectbluefin/bluefin-lts"
+  export DIGEST="sha256:beadfeed"
+  export IMAGE_NAME=""
+  make_syft
+
+  run bash -c "$GENERATE_SBOM"
+  [ "$status" -eq 0 ]
+  [ "$(get_output sbom-path)" = "sbom_out/bluefin-lts/sbom.json" ]
+  [ "$(get_output sbom-dir)" = "sbom_out/bluefin-lts" ]
+  [ "$(get_output image-name)" = "bluefin-lts" ]
 }
 
 @test "attach sbom: propagates oras attach failure" {
