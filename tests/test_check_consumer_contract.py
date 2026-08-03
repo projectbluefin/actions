@@ -187,3 +187,136 @@ class TestRealContract:
             contract = yaml.safe_load(f) or {}
         failures = check_contract(contract, verbose=False)
         assert failures == [], f"Consumer contract violations:\n" + "\n".join(failures)
+
+
+# ── main() CLI entry path ─────────────────────────────────────────────────────
+
+class TestMain:
+    """Tests for main() CLI handling: exit codes, verbose flag, error output."""
+
+    def _write_contract(self, tmp_path: Path, contract: dict) -> Path:
+        p = tmp_path / "consumer-contract.yml"
+        p.write_text(yaml.dump(contract))
+        return p
+
+    def _make_action(self, tmp_path: Path, name: str, inputs: list[str]) -> None:
+        d = tmp_path / "bootc-build" / name
+        d.mkdir(parents=True)
+        inputs_block = "\n".join(
+            f"  {i}:\n    required: false" for i in inputs
+        )
+        (d / "action.yml").write_text(
+            f"name: {name}\ninputs:\n{inputs_block}\nruns:\n  using: composite\n  steps: []\n"
+        )
+
+    def test_missing_contract_file_exits_1(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", tmp_path / "nonexistent.yml")
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py"])
+        result = _mod.main()
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "not found" in captured.err
+
+    def test_valid_contract_exits_0(self, tmp_path, monkeypatch):
+        self._make_action(tmp_path, "sign-and-publish", ["image-name"])
+        contract = {
+            "composite_actions": {
+                "sign-and-publish": {
+                    "path": "bootc-build/sign-and-publish/action.yml",
+                    "required_inputs": ["image-name"],
+                }
+            }
+        }
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", self._write_contract(tmp_path, contract))
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py"])
+        result = _mod.main()
+        assert result == 0
+
+    def test_contract_violation_exits_1(self, tmp_path, monkeypatch, capsys):
+        self._make_action(tmp_path, "sign-and-publish", ["other-input"])
+        contract = {
+            "composite_actions": {
+                "sign-and-publish": {
+                    "path": "bootc-build/sign-and-publish/action.yml",
+                    "required_inputs": ["missing-required"],
+                }
+            }
+        }
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", self._write_contract(tmp_path, contract))
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py"])
+        result = _mod.main()
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "missing-required" in captured.err
+
+    def test_verbose_flag_prints_contract_path(self, tmp_path, monkeypatch, capsys):
+        self._make_action(tmp_path, "sign-and-publish", ["image-name"])
+        contract = {
+            "composite_actions": {
+                "sign-and-publish": {
+                    "path": "bootc-build/sign-and-publish/action.yml",
+                    "required_inputs": ["image-name"],
+                }
+            }
+        }
+        contract_file = self._write_contract(tmp_path, contract)
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", contract_file)
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py", "--verbose"])
+        result = _mod.main()
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "Checking consumer contract" in captured.out
+
+    def test_verbose_short_flag(self, tmp_path, monkeypatch, capsys):
+        self._make_action(tmp_path, "sign-and-publish", ["image-name"])
+        contract = {
+            "composite_actions": {
+                "sign-and-publish": {
+                    "path": "bootc-build/sign-and-publish/action.yml",
+                    "required_inputs": ["image-name"],
+                }
+            }
+        }
+        contract_file = self._write_contract(tmp_path, contract)
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", contract_file)
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py", "-v"])
+        result = _mod.main()
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "OK" in captured.out
+
+    def test_empty_contract_exits_0(self, tmp_path, monkeypatch):
+        contract_file = self._write_contract(tmp_path, {})
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", contract_file)
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py"])
+        result = _mod.main()
+        assert result == 0
+
+    def test_failure_output_mentions_external_consumers(self, tmp_path, monkeypatch, capsys):
+        self._make_action(tmp_path, "sign-and-publish", ["other"])
+        contract = {
+            "composite_actions": {
+                "sign-and-publish": {
+                    "path": "bootc-build/sign-and-publish/action.yml",
+                    "required_inputs": ["gone"],
+                }
+            }
+        }
+        monkeypatch.setattr(_mod, "CONTRACT_FILE", self._write_contract(tmp_path, contract))
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        import sys as _sys
+        monkeypatch.setattr(_sys, "argv", ["check-consumer-contract.py"])
+        _mod.main()
+        captured = capsys.readouterr()
+        assert "aurora" in captured.err or "bazzite" in captured.err
