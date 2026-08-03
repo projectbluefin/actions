@@ -222,6 +222,22 @@ def _call_main(module, *args):
         sys.argv = orig
 ```
 
+For entrypoint coverage, also exercise the module as a script with `runpy.run_path(..., run_name="__main__")` and assert `SystemExit` for CLI-style exits. This covers the `if __name__ == "__main__"` guard without needing a full end-to-end invocation:
+
+```python
+import runpy
+import sys
+
+orig = sys.argv
+try:
+    sys.argv = ["script-name", "--help"]
+    with pytest.raises(SystemExit) as excinfo:
+        runpy.run_path("/path/to/script.py", run_name="__main__")
+    assert excinfo.value.code == 0
+finally:
+    sys.argv = orig
+```
+
 Do not use `__wrapped__` introspection — it only applies to `functools.wraps`-decorated functions
 and silently has no effect on plain functions.
 
