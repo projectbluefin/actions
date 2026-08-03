@@ -21,6 +21,7 @@ Reference for writing and maintaining composite GitHub Actions in this repo.
 - [Common editing pitfalls](#common-editing-pitfalls)
 - [CI-fix-first workflow (for agents)](#ci-fix-first-workflow-for-agents)
 - [Known workarounds](#known-workarounds)
+- [Self-repository composition](#self-repository-composition)
 
 **Sub-files (load as needed):**
 - [`composite-actions/action-reference.md`](composite-actions/action-reference.md) - full action-by-action reference
@@ -439,3 +440,39 @@ do not attempt a full rebase of the branch. Instead:
 4. Force-push to the PR branch
 
 This avoids pulling obsolete intermediate state into main and produces a clean single commit.
+
+## Self-repository composition
+
+When implementation code in this repository invokes another action or reusable
+workflow owned by this repository, use the self-repository prefix `$/` rather
+than a qualified `projectbluefin/actions/...@ref` or workspace-relative `./`
+reference:
+
+```yaml
+steps:
+  - uses: $/bootc-build/push-image
+
+jobs:
+  gate:
+    uses: $/.github/workflows/reusable-release-gate.yml
+```
+
+`$/` resolves the action or workflow from the repository and commit currently
+executing. This is distinct from `./`, which resolves against the caller's
+checked-out workspace and therefore is unsafe for reusable workflows invoked by
+another repository. Keep `actions/checkout` when the caller's source tree,
+Justfile, artifacts, or git operations are needed; `$/` does not replace a
+checkout used for caller-owned files.
+
+Do not convert third-party or cross-repository references, including
+consumer-facing `projectbluefin/actions/...@v1` examples and references in
+comments that document how consumers call this repository.
+
+The syntax requires GitHub Actions runner **2.336.0 or newer**. Validate with
+`python3 scripts/check-self-repository-references.py`, `actionlint`, the
+repository validation checks, and the focused pytest test:
+
+```bash
+python3 scripts/check-self-repository-references.py
+python3 -m pytest tests/test_self_repository_references.py -q
+```

@@ -376,7 +376,7 @@ jobs:
 
       - name: Update PR body gate section
         if: inputs.pr_number != ''
-        uses: projectbluefin/actions/.github/actions/render-gate-section@d61bf3f050cf1e3b689c76b8498bb466f9b25bc8 # v1
+        uses: $/.github/actions/render-gate-section
         with:
           gh_token:        ${{ github.token }}
           repo:            ${{ inputs.repo }}
