@@ -266,7 +266,7 @@ EOF
 # ── SBOM path generation ──────────────────────────────────────────────────────
 
 make_syft() {
-  SYFT_CMD="${TEST_TMP}/syft"
+  export SYFT_CMD="${TEST_TMP}/syft"
   cat > "${SYFT_CMD}" <<'EOF'
 #!/usr/bin/env bash
 out="${*: -1}"
