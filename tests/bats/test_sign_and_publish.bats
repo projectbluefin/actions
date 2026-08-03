@@ -34,6 +34,46 @@ if [[ -z "${COSIGN_PRIVATE_KEY}" ]]; then
 fi
 '
 
+FIX_SIGSTORE_CACHE='
+sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore" 2>/dev/null || true
+'
+
+ATTACH_SBOM='
+set -euo pipefail
+cd "$(dirname "${SBOM_PATH}")"
+oras attach \
+  --artifact-type application/vnd.spdx+json \
+  --annotation "filename=$(basename "${SBOM_PATH}")" \
+  "${IMAGE}@${DIGEST}" \
+  "$(basename "${SBOM_PATH}")"
+SBOM_DIGEST=$(oras discover --format json "${IMAGE}@${DIGEST}" \
+  | jq -r '"'"'.referrers[] | select(.artifactType == "application/vnd.spdx+json") | .digest'"'"' \
+  | head -n1)
+if [[ -z "${SBOM_DIGEST}" ]]; then
+  echo "::error::Failed to discover attached SBOM digest"
+  exit 1
+fi
+echo "sbom-digest=${SBOM_DIGEST}" >> "$GITHUB_OUTPUT"
+'
+
+setup() {
+  TEST_TMP=$(mktemp -d)
+  export TEST_TMP
+  export GITHUB_OUTPUT="${TEST_TMP}/github_output"
+  touch "$GITHUB_OUTPUT"
+  export MOCK_DIR="${TEST_TMP}/bin"
+  mkdir -p "$MOCK_DIR"
+  export PATH="${MOCK_DIR}:${PATH}"
+}
+
+teardown() {
+  rm -rf "$TEST_TMP"
+}
+
+get_output() {
+  grep "^$1=" "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-
+}
+
 # ── Keyless validation ────────────────────────────────────────────────────────
 
 @test "keyless: ACTIONS_ID_TOKEN_REQUEST_URL set → passes" {
@@ -122,4 +162,113 @@ fi
   # key check doesn't care about OIDC URL
   [ "$status" -ne 0 ]
   [[ "$output" == *"signing-key"* ]]
+}
+
+# ── Sigstore cache fix ────────────────────────────────────────────────────────
+
+@test "sigstore cache fix: runs chown with uid:gid and does not fail" {
+  export HOME="${TEST_TMP}/home"
+  mkdir -p "${HOME}/.sigstore"
+  export SUDO_CALL_LOG="${TEST_TMP}/sudo_calls.log"
+  touch "${SUDO_CALL_LOG}"
+
+  cat > "${MOCK_DIR}/sudo" <<EOF
+#!/usr/bin/env bash
+echo "\$*" >> "${SUDO_CALL_LOG}"
+"\$@"
+EOF
+  chmod +x "${MOCK_DIR}/sudo"
+
+  run bash -c "$FIX_SIGSTORE_CACHE"
+  [ "$status" -eq 0 ]
+  grep -q "^chown -R [0-9][0-9]*:[0-9][0-9]* ${HOME}/.sigstore$" "${SUDO_CALL_LOG}"
+}
+
+@test "sigstore cache fix: tolerates chown failure (best-effort step)" {
+  export HOME="${TEST_TMP}/home"
+  mkdir -p "${HOME}/.sigstore"
+
+  cat > "${MOCK_DIR}/sudo" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+  chmod +x "${MOCK_DIR}/sudo"
+
+  run bash -c "$FIX_SIGSTORE_CACHE"
+  [ "$status" -eq 0 ]
+}
+
+# ── Attach SBOM via ORAS ───────────────────────────────────────────────────────
+
+@test "attach sbom: discovers SPDX referrer digest and writes output" {
+  export IMAGE="ghcr.io/projectbluefin/bluefin"
+  export DIGEST="sha256:feedface"
+  export SBOM_PATH="${TEST_TMP}/sbom_out/bluefin/sbom.json"
+  mkdir -p "$(dirname "${SBOM_PATH}")"
+  echo '{}' > "${SBOM_PATH}"
+
+  cat > "${MOCK_DIR}/oras" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "attach" ]]; then
+  exit 0
+fi
+if [[ "$1" == "discover" ]]; then
+  cat <<'JSON'
+{"referrers":[{"artifactType":"application/vnd.spdx+json","digest":"sha256:spdx123"},{"artifactType":"application/vnd.in-toto+json","digest":"sha256:other"}]}
+JSON
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "${MOCK_DIR}/oras"
+
+  run bash -c "$ATTACH_SBOM"
+  [ "$status" -eq 0 ]
+  [ "$(get_output sbom-digest)" = "sha256:spdx123" ]
+}
+
+@test "attach sbom: fails with explicit error when discover finds no SPDX digest" {
+  export IMAGE="ghcr.io/projectbluefin/bluefin"
+  export DIGEST="sha256:feedface"
+  export SBOM_PATH="${TEST_TMP}/sbom_out/bluefin/sbom.json"
+  mkdir -p "$(dirname "${SBOM_PATH}")"
+  echo '{}' > "${SBOM_PATH}"
+
+  cat > "${MOCK_DIR}/oras" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "attach" ]]; then
+  exit 0
+fi
+if [[ "$1" == "discover" ]]; then
+  echo '{"referrers":[{"artifactType":"application/vnd.in-toto+json","digest":"sha256:other"}]}'
+  exit 0
+fi
+exit 1
+EOF
+  chmod +x "${MOCK_DIR}/oras"
+
+  run bash -c "$ATTACH_SBOM"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Failed to discover attached SBOM digest"* ]]
+}
+
+@test "attach sbom: propagates oras attach failure" {
+  export IMAGE="ghcr.io/projectbluefin/bluefin"
+  export DIGEST="sha256:feedface"
+  export SBOM_PATH="${TEST_TMP}/sbom_out/bluefin/sbom.json"
+  mkdir -p "$(dirname "${SBOM_PATH}")"
+  echo '{}' > "${SBOM_PATH}"
+
+  cat > "${MOCK_DIR}/oras" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == "attach" ]]; then
+  echo "attach failed" >&2
+  exit 7
+fi
+exit 0
+EOF
+  chmod +x "${MOCK_DIR}/oras"
+
+  run bash -c "$ATTACH_SBOM"
+  [ "$status" -ne 0 ]
 }
