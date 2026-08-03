@@ -359,7 +359,7 @@ jobs:
           echo "WARNING: Using placeholder SBOM — artifact '${{ inputs.sbom_artifact }}' missing from run ${{ steps.build_run.outputs.run_id }}"
 
       - name: Create release
-        uses: projectbluefin/actions/bootc-build/create-release@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
+        uses: projectbluefin/actions/bootc-build/create-release@d61bf3f050cf1e3b689c76b8498bb466f9b25bc8 # v1
         with:
           sbom-path: sbom-current/${{ steps.image_name.outputs.image_name }}.sbom.json
           tag: ${{ steps.meta.outputs.tag }}
@@ -394,7 +394,7 @@ jobs:
 
       - name: Generate release notes
         id: release-notes
-        uses: projectbluefin/actions/bootc-build/generate-release-notes@ae3c45762b7eebb188dbd4850d23042e96e539d8 # v1
+        uses: projectbluefin/actions/bootc-build/generate-release-notes@d61bf3f050cf1e3b689c76b8498bb466f9b25bc8 # v1
         with:
           tag: ${{ inputs.tag }}
           output-file: CHANGELOG.md
