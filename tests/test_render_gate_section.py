@@ -1,7 +1,14 @@
 """Unit tests for render_gate_section.py — gate checklist section updater."""
+import importlib.util
 import sys
+from pathlib import Path
+
 import pytest
-import render_gate_section
+
+_SCRIPT = Path(__file__).parent.parent / "scripts" / "render_gate_section.py"
+_spec = importlib.util.spec_from_file_location("render_gate_section", _SCRIPT)
+render_gate_section = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(render_gate_section)
 
 GATE_START = "<!-- gate-section-start -->"
 GATE_END   = "<!-- gate-section-end -->"
@@ -84,6 +91,15 @@ class TestBuildGateSection:
     def test_e2e_details_url_linked(self):
         section = render_gate_section.build_gate_section(**ARGS_PASSED)
         assert "https://github.com/example/runs/99" in section
+
+    def test_e2e_details_plain_text_appended(self):
+        section = render_gate_section.build_gate_section(
+            **{
+                **ARGS_PASSED,
+                "e2e_details": "run 99 finished late",
+            }
+        )
+        assert "Smoke suite passed. run 99 finished late" in section
 
     def test_overall_passed_label(self):
         section = render_gate_section.build_gate_section(**ARGS_PASSED)
