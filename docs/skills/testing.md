@@ -43,7 +43,7 @@ Coverage gate: `--cov-fail-under=75`
 | `scripts/release_gate.sh` | `tests/bats/test_release_gate.bats` |
 | `detect-changes` image_flavors shell logic | `tests/bats/test_detect_changes.bats` (8 tests) |
 | `push-image` push/retry/alias shell logic | `tests/bats/test_push_image.bats` (16 tests) |
-| `sign-and-publish` keyless/key validation + SBOM attach/cache guards | `tests/bats/test_sign_and_publish.bats` (17 tests) |
+| `sign-and-publish` keyless/key validation + SBOM attach/cache/path guards | `tests/bats/test_sign_and_publish.bats` (19 tests) |
 | `setup-runner` native-overlay setup | `tests/bats/test_setup_runner.bats` (9 tests) |
 
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
