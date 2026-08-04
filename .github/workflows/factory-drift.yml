@@ -143,6 +143,21 @@ jobs:
             [[ -n "${sha}" ]] && testsuite_shas+=("${repo}:${sha}")
           done
 
+          # ── Check 6: Self-repo uses: must use $/ not qualified or workspace-relative refs ──
+          self_repo_shas=$( 
+            grep -rh 'uses:.*projectbluefin/actions/.*@[0-9a-f]\{40\}' "/tmp/workflows/actions/" 2>/dev/null \
+              | grep -v '^\s*#' \
+              || true
+          )
+          self_repo_ws=$( 
+            grep -rh 'uses: \./' "/tmp/workflows/actions/" 2>/dev/null \
+              | grep -v '^\s*#' \
+              || true
+          )
+          if [[ -n "${self_repo_shas}" ]] || [[ -n "${self_repo_ws}" ]]; then
+            drift_items+=("projectbluefin/actions|self-repo-ref|Found qualified or workspace-relative self-references that should use \$/ syntax")
+          fi
+
           if [[ "${#testsuite_shas[@]}" -gt 1 ]]; then
             unique_ts=$(
               printf '%s\n' "${testsuite_shas[@]}" \

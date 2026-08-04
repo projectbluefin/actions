@@ -76,6 +76,50 @@ uses: projectbluefin/actions/bootc-build/create-release@abc1234... # v1
 
 SHA pinning is a third-party supply-chain defence (prevents tag hijacking on external repos you don't control). It does not apply to code you own.
 
+## Self-Repository References (`$/`)
+
+GitHub runner **2.336.0+** supports the `$/` self-repository reference syntax, which binds every internal `uses:` to the exact commit of this repository that is executing the workflow. This eliminates pin drift between the workflow file and the action/workflow it references.
+
+### When to use `$/`
+
+- **All same-repository references** inside `.github/workflows/*.yml` that call other workflows or actions in this repo.
+- **All workspace-relative references** (`./path/to/action`) inside this repo's workflows.
+- **All `projectbluefin/actions/...` references** inside this repo's workflows.
+
+### Patterns
+
+| Before | After |
+|---|---|
+| `projectbluefin/actions/bootc-build/setup-runner@<sha>` | `$/bootc-build/setup-runner` |
+| `projectbluefin/actions/.github/actions/discord-release-notify@<sha>` | `$/discord-release-notify` |
+| `projectbluefin/actions/.github/workflows/reusable-release-gate.yml@<sha>` | `$/reusable-release-gate.yml` |
+| `./bootc-build/ghcr-cleanup` | `$/ghcr-cleanup` |
+| `./.github/workflows/reusable-pkg-cadence.yml` | `$/reusable-pkg-cadence.yml` |
+| `./actions/check-token-health` | `$/check-token-health` |
+
+### When NOT to use `$/`
+
+- **Consumer repos** calling this repo's reusable workflows — they must use `projectbluefin/actions/.github/workflows/reusable-build.yml@v1` (the `@v1` tag is managed separately).
+- **Consumer repos** calling this repo's composite actions — they must use `projectbluefin/actions/bootc-build/setup-runner@v1`.
+- **Third-party actions** — always pin to SHA with a version comment.
+- **Cross-repository actions** (e.g. `projectbluefin/testsuite/.github/workflows/e2e.yml@<sha>`) — always use the fully-qualified ref with SHA.
+
+### Key property
+
+`$/` always resolves to the **commit of this repository** that the workflow was triggered from, regardless of what code is checked out in the workspace. This means:
+
+- Inside `reusable-build.yml` called from `projectbluefin/bluefin`, `$/bootc-build/setup-runner` resolves to the `actions` repo's commit, NOT the `bluefin` repo's `bootc-build/` directory.
+- This is the critical difference from `./bootc-build/setup-runner` which would resolve to the **caller's** checked-out workspace.
+
+### Validation procedure
+
+After migrating a workflow to `$/`:
+
+1. Verify all `projectbluefin/actions/...` and `./` references in that workflow are converted.
+2. Confirm third-party and cross-repo references remain unchanged.
+3. Run a test build in a consumer repo that calls the migrated reusable workflow to verify the `$/` resolution works end-to-end.
+4. Add a drift check in `factory-drift.yml` (see below) to prevent future regressions.
+
 ---
 
 ## Shell steps

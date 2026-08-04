@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Prune old images — bluefin family
-        uses: ./bootc-build/ghcr-cleanup
+        uses: $/ghcr-cleanup
         with:
           packages: bluefin,bluefin-nvidia,bluefin-pr
           older-than: 90 days
@@ -27,7 +27,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prune old images — dakota family
-        uses: ./bootc-build/ghcr-cleanup
+        uses: $/ghcr-cleanup
         with:
           packages: dakota,dakota-nvidia
           older-than: 90 days
@@ -36,7 +36,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prune old images — common
-        uses: ./bootc-build/ghcr-cleanup
+        uses: $/ghcr-cleanup
         with:
           packages: common
           older-than: 90 days
