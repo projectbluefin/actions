@@ -17,4 +17,4 @@ jobs:
   validate:
     permissions:
       contents: read
-    uses: ./.github/workflows/reusable-validate-renovate.yml
+    uses: $/.github/workflows/reusable-validate-renovate.yml

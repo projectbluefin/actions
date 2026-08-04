@@ -273,7 +273,7 @@ jobs:
       - name: Render promotion PR body
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: render
-        uses: projectbluefin/actions/.github/actions/render-pr-body@39a69224d216338402fd83d8d0702d7ef3fefba3 # v1
+        uses: $/.github/actions/render-pr-body # v1
         with:
           variants:          ${{ inputs.variants }}
           repo:              ${{ github.repository }}
@@ -442,7 +442,7 @@ jobs:
       issues: write
       packages: read
       pull-requests: write
-    uses: projectbluefin/actions/.github/workflows/reusable-release-gate.yml@39a69224d216338402fd83d8d0702d7ef3fefba3 # v1
+    uses: $/.github/workflows/reusable-release-gate.yml # v1
     with:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}

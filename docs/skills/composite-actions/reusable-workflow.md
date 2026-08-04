@@ -52,19 +52,21 @@ When a consuming repo calls the workflow:
 - `actions/checkout` checks out the **caller's** code into `GITHUB_WORKSPACE`
 - `just` commands run against the **caller's** Justfile — this is intentional
 
-> **Critical: cross-repo action refs**
-> When the reusable workflow is called cross-repo (e.g. from `projectbluefin/bluefin`), `uses: ./bootc-build/<name>` resolves to the **caller's** checked-out workspace — not the actions repo. This causes `Can't find action.yml` errors.
-> Always use full SHA-pinned refs inside the reusable workflow:
->
-> ```yaml
-> uses: projectbluefin/actions/bootc-build/setup-runner@<SHA>
-> ```
->
-> Never use `./bootc-build/...` in `.github/workflows/reusable-build.yml`.
+### Self-repository syntax
 
-Inside the reusable workflow, cross-repo composite action calls must use fully qualified `projectbluefin/actions/bootc-build/<name>@<SHA>` refs, while the Justfile-driven build steps continue to run caller-specific logic from the checked-out consumer repo.
+For implementation-time calls owned by this repository, use the self-repository prefix:
 
-**Keep self-refs in lockstep:** when bumping reusable workflow self-references, update **all** `projectbluefin/actions/bootc-build/*@<SHA>` entries in that workflow family to the same tested commit. Mixing self-ref SHAs means one pipeline can execute different generations of this repo's actions in a single run.
+```yaml
+uses: $/bootc-build/setup-runner
+uses: $/.github/actions/install-cosign
+uses: $/.github/workflows/reusable-release-gate.yml
+```
+
+`$/` resolves the action or reusable workflow from the repository and commit that owns the running workflow. It prevents a reusable workflow called by a consumer from accidentally resolving `./` paths against the consumer's checked-out workspace, and avoids stale self-repository SHA pins. GitHub Actions runner 2.336.0 or newer is required.
+
+Use `$/` only for same-repository implementation references. Keep third-party actions and cross-repository calls fully qualified and pinned as required. Keep consumer-facing examples such as `projectbluefin/actions/.github/workflows/reusable-build.yml@v1` unchanged: those are the public interface. Checkouts remain required whenever caller source, Justfiles, artifacts, or git operations are used.
+
+A focused regression test (`tests/test_self_repository_refs.py`) scans active implementation YAML under `.github/`, `actions/`, and `bootc-build/`; run it after changing composition refs.
 
 **Retry GitHub API polling in reusable workflows:** wrap `gh api` polling for other workflow runs (for example, `post-testing-e2e` release-gate lookups) with `projectbluefin/actions/actions/retry@<SHA>` and write the API response to `${{ runner.temp }}`. The retry action executes `with.command` via `eval`, so keep the command free of unescaped double quotes — prefer single-quoted headers plus escaped `?` / `&` separators when redirecting API output to a file. If the retried helper lives in another reusable workflow such as `reusable-release-gate.yml`, bump every caller's pinned `projectbluefin/actions/.github/workflows/...@<SHA>` ref in the same PR so consumers execute the retried helper instead of the previous commit.
 
