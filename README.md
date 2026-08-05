@@ -4,7 +4,7 @@ Shared GitHub Actions for bootc image builders. Used by [bluefin](https://github
 
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/projectbluefin/actions/badge)](https://scorecard.dev/viewer/?uri=github.com/projectbluefin/actions)
 
-# DESIGNED FOR UPSTREAM ADOPTION
+# DESIGNED FOR YOUR ADOPTION
 
 These skills are the shared knowledge of 5 years of Universal Blue. The humans did such a good job that we were able to redo it with agents in a weekend. If you find an action here that should live in a CNCF or OpenSSF or any other upstream project and want to help, consider it your first quest!
 
