@@ -15,7 +15,9 @@ repos:
     hooks:
       - id: actionlint
         args:
-          # built-in list predates this. Suppress until actionlint is updated.
+          # actionlint 1.7.7 predates GitHub's $/ self-repository syntax.
+          # The repository-level .github/actionlint.yaml scopes these ignores
+          # to the two parser messages until the hook is updated.
           - -ignore
   - repo: local
     hooks:

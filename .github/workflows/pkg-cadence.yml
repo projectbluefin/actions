@@ -19,7 +19,7 @@ permissions: {}
 
 jobs:
   bluefin:
-    uses: ./.github/workflows/reusable-pkg-cadence.yml
+    uses: $/.github/workflows/reusable-pkg-cadence.yml
     with:
       image: ghcr.io/projectbluefin/bluefin:stable
       repo: projectbluefin/bluefin
@@ -27,7 +27,7 @@ jobs:
     secrets: inherit
 
   bluefin-lts:
-    uses: ./.github/workflows/reusable-pkg-cadence.yml
+    uses: $/.github/workflows/reusable-pkg-cadence.yml
     with:
       image: ghcr.io/projectbluefin/bluefin:lts
       repo: projectbluefin/bluefin-lts
