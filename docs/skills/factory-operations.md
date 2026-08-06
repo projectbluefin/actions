@@ -178,7 +178,7 @@ issues are opened.
 
 ### What it does
 
-Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes. If auto-merge is not enabled, an agent may merge a qualifying PR when it carries the `clanker-queue` label and all required checks pass.
+Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes — no human review needed, even though `main` requires one approval and CODEOWNERS review. See "CI-gated review bypass" below for how that is safe.
 
 ### Config
 
@@ -186,25 +186,80 @@ Two files co-exist:
 - `.github/renovate.json5` - base org config (inherited from `projectbluefin/renovate-config`)
 - `renovate.json` - repo-level overrides, including the `packageRules` automerge block
 
-The effective automerge rule in `renovate.json`:
+Renovate's `automerge: true` does not merge the PR itself here; it sets GitHub's
+`autoMergeRequest` on the PR, which the auto-merge workflow reads as the
+eligibility signal. `renovate.json` is therefore the single source of truth for
+*what* may merge unattended — change policy there, not in the workflow.
 
-```json
-{
-  "packageRules": [
-    {
-      "description": "Automerge chore dep updates (digest, pin, patch, minor) when CI passes",
-      "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash"
-    }
-  ]
-}
+**What auto-merges:** whatever `renovate.json` marks auto-mergeable (SHA digest bumps and pin updates), once every check on the PR has completed successfully. These carry no behavior change.
+
+**What never auto-merges:** major version bumps, anything Renovate did not mark auto-mergeable, drafts, conflicting PRs, and any PR with a failing, pending, cancelled, or empty check rollup. Those still require a human approval and merge, or the `clanker-queue` label authorizing an agent to merge after confirming every required check is green.
+
+### CI-gated review bypass
+
+`main` keeps `required_approving_review_count: 1` and `require_code_owner_reviews: true` for everyone. The MergeRaptor GitHub App is the **only** entry in the branch-protection review-bypass allowance — no users, no teams:
+
+```bash
+gh api repos/projectbluefin/actions/branches/main/protection \
+  --jq '.required_pull_request_reviews.bypass_pull_request_allowances'
 ```
 
-**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps - when all CI checks pass. These are safe to auto-merge because they carry no behavior change. When handling the queue manually, the `clanker-queue` label authorizes an agent to merge only after confirming the PR is mergeable and every required check is green.
+Expected: `apps` contains only `mergeraptor`; `users` and `teams` are empty.
 
-**What never auto-merges:** Major version bumps and any PR that fails, has pending, or is missing required CI checks. A major bump may still be merged manually by an agent when it has `clanker-queue` and all required checks pass.
+The bypass is only reachable through automation:
+
+| Piece | Responsibility |
+|---|---|
+| `.github/workflows/renovate-automerge.yml` | Local `workflow_run` caller. Fires on every CI workflow completion, passes `base_branch: main`, `require_auto_merge: true`, and the MergeRaptor app credentials. |
+| `.github/workflows/reusable-renovate-automerge.yml` | Mints the app installation token, qualifies the PR, validates the full check rollup, and merges (respecting a merge queue if one exists). |
+
+Three gates must all pass before a merge happens:
+
+1. **Author** is `mergeraptor` or `renovate` (in any spelling — see the gotcha below).
+2. **Renovate enabled auto-merge** on the PR (`autoMergeRequest != null`), i.e. `renovate.json` says it qualifies.
+3. **Every check is green *and* nothing is still running.** Any check not in `SUCCESS`/`SKIPPED`/`NEUTRAL` blocks. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics.
+
+**Gotcha — an absent check is not a passing check.** `gh pr checks` reports only the check-runs that currently *exist*. A workflow that is queued but has not yet registered a check-run is simply **missing from the rollup**, not `PENDING`; and re-running a workflow removes its check-runs entirely while they re-queue. A naive "nothing is pending, so we're done" gate will happily merge with most checks never having run. Since this workflow is triggered by *one* CI workflow completing while siblings may still be queued, that race is the normal case, not an edge case. Cross-check in-flight runs for the same commit:
+
+```bash
+gh run list --repo "$GITHUB_REPOSITORY" --commit "$HEAD_SHA" --limit 100 \
+  --json status --jq '[.[] | select(.status != "completed")] | length'
+```
+
+Treat a non-zero count, an empty rollup, *and* an unreadable run list as "keep waiting" — all three must fail closed. Only an all-`SUCCESS` rollup with zero in-flight runs may merge.
+
+Gate 3 is why it is safe for any CI workflow to trigger the caller: an
+early-finishing workflow cannot merge ahead of its still-running siblings. A
+skip is **not** a failure — the next successful `workflow_run` event retries the
+whole evaluation.
+
+**Gotcha — bot author login differs between REST and GraphQL.** For a GitHub App, GraphQL's `author.login` returns the bare slug `mergeraptor`, while REST and `gh pr list` return `app/mergeraptor`, and a legacy bot user returns `renovate[bot]`. Any author matcher must normalise all three spellings or it will silently match nothing. Verify a matcher against live data before trusting it:
+
+```bash
+gh api graphql -f query='{repository(owner:"projectbluefin",name:"actions"){
+  pullRequests(first:20,states:OPEN,baseRefName:"main"){
+    nodes{number author{login} autoMergeRequest{enabledAt}}}}}'
+```
+
+**Gotcha — `gh pr merge --auto` cannot be used here.** GitHub's auto-merge queue does not honour `bypass_pull_request_allowances`; only a direct merge does. `--auto` also errors with "Protected branch rules not configured" on unprotected base branches. The workflow therefore always does a direct merge, with the check-rollup gate standing in for what `--auto` would have waited on.
+
+**Gotcha — a merge queue rejects any explicit merge strategy, but only as a *warning*.** When the base branch has a merge queue, `gh pr merge --squash` prints `! The merge strategy for main is set by the merge queue` **and still exits 0**, having enqueued the PR. Never infer merge-queue behaviour from the exit status — match the stderr text. Two strings matter, and they do not share a substring:
+
+| Message (stderr, `!`-prefixed) | Meaning |
+|---|---|
+| `The merge strategy for <branch> is set by the merge queue` | strategy flag ignored; PR was enqueued |
+| `Pull request <repo>#<n> is already queued to merge` | a previous attempt enqueued it — success, not failure |
+
+The reusable workflow exposes `merge_method` (`squash` by default, `queue` to omit the flag entirely), treats both messages as success, and retries without the flag if a future `gh` version hard-fails instead of warning.
+
+**Never infer the merge outcome from stderr text or the exit code.** A plain `gh pr merge` with no strategy flag enqueues the PR while printing *nothing at all* and exiting 0 — indistinguishable from a real merge by output alone. Conversely, gh's success line goes to stderr and includes the PR title, so a PR titled "…update merge-queue action" would trip a naive `grep "merge queue"`. Ask GitHub for the actual state instead:
+
+```bash
+gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state
+# MERGED = landed; OPEN = enqueued, the queue lands it ~60s later
+```
+
+**Gotcha — the `secrets` context is unavailable in step-level `if:`.** To conditionally mint an app token in a reusable workflow, mirror credential presence into job-level `env` first (`HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}`) and branch on `env.HAS_APP_CREDS`.
 
 **Consumer-validation exemption:** Renovate PRs (author login ending in `[bot]` or starting with `app/`) are automatically exempt from the consumer PR + CI run evidence requirement, even when they touch action files. See `docs/skills/consumer-validation.md`.
 
@@ -225,6 +280,9 @@ Renovate keeps SHA pins current **for third-party actions in this repo**. Consum
 | Symptom | Cause | Fix |
 |---|---|---|
 | Renovate PR won't auto-merge | `allow_auto_merge` disabled on repo | `gh api -X PATCH repos/projectbluefin/actions -f allow_auto_merge=true` |
+| Renovate PR sits green and unmerged | `autoMergeRequest` is null — `renovate.json` doesn't mark this update type auto-mergeable (e.g. a major bump) | Expected. Review and merge by hand, or widen the `packageRules` automerge match |
+| Auto-merge job logs "No qualifying Renovate/Mergeraptor PR" on a real Renovate PR | Author matcher missed a login spelling, or the PR is a draft/conflicting | Compare against the live GraphQL `author.login` — GraphQL says `mergeraptor`, REST says `app/mergeraptor` |
+| Auto-merge job reaches the merge step and `gh pr merge` fails on review requirements | MergeRaptor missing from `bypass_pull_request_allowances`, or the job used `github.token` instead of the app token | Check the bypass list; confirm the caller passes `app_id` + `private_key` |
 | Renovate PR consumer-validation fails | Bot exemption not firing | Verify author login ends in `[bot]` or starts with `app/` - check `gh pr view NNN --json author` |
 | Renovate PR has merge conflict | Another bump landed first; branches diverged | Locally checkout the branch, `git rebase origin/main`, force-push |
 | Two Renovate PRs update the same action | Both opened before either merged | Close the older/lower version one; merge the newer |

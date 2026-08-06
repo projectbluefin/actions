@@ -1,7 +1,7 @@
-# Centralised Renovate auto-merge logic for projectbluefin image repos.
-# Each image repo keeps its own workflow_run trigger (which must reference
-# the repo-specific CI workflow name) but delegates the PR lookup + merge
-# logic here to avoid duplication.
+# Centralised Renovate auto-merge logic for projectbluefin repos.
+# Each repo keeps its own workflow_run trigger (which must reference the
+# repo-specific CI workflow names) but delegates the PR lookup, qualification,
+# check-rollup validation, and merge logic here to avoid duplication.
 #
 # Usage in the caller workflow:
 #
@@ -20,17 +20,12 @@
 #       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@v1
 #       with:
 #         head_sha: ${{ github.event.workflow_run.head_sha }}
-#       # Optional — REQUIRED when base_branch uses a merge queue: merge-queue
-#       # groups created by github-actions[bot] never dispatch required checks
-#       # (GITHUB_TOKEN events do not trigger workflows), so the queue entry
-#       # wedges at AWAITING_CHECKS until it times out. Pass GitHub App
-#       # credentials so the merge is performed by the app instead:
+#       # Optional — required when base_branch enforces reviews and the
+#       # review-bypass list contains the mergeraptor GitHub App rather than
+#       # github-actions[bot]:
 #       # secrets:
 #       #   app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
 #       #   private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
-#       # Or pass a stored token directly:
-#       # secrets:
-#       #   token: ${{ secrets.MERGE_TOKEN }}
 
 name: Reusable Renovate Auto-merge
 
@@ -46,25 +41,46 @@ on:
         type: string
         default: "testing"
         required: false
-    secrets:
-      token:
+      require_auto_merge:
         description: >
-          Optional GitHub token with merge permissions. Use when the base
-          branch has review-bypass rules that exclude github-actions[bot]
-          (e.g. a mergeraptor app token). Falls back to github.token when
-          not provided.
+          Only merge PRs for which Renovate has enabled GitHub auto-merge.
+          Turn this on for review-protected base branches so the repo's
+          renovate.json automerge policy stays the source of truth for what
+          qualifies, rather than this workflow merging every bot PR.
+        type: boolean
+        default: false
         required: false
+      check_timeout_seconds:
+        description: >
+          How long to wait for still-pending checks to settle before giving up
+          on this evaluation. Prevents a stall when the caller triggers from a
+          single CI workflow that finishes before its siblings.
+        type: number
+        default: 900
+        required: false
+      merge_method:
+        description: >
+          Merge strategy: squash, merge, rebase, or "queue" to pass no explicit
+          strategy and let a branch merge queue decide. A merge queue rejects
+          any explicit strategy flag, so the workflow also falls back to queue
+          behaviour automatically if it detects one.
+        type: string
+        default: squash
+        required: false
+    secrets:
       app_id:
         description: >
-          Optional GitHub App ID. When set together with private_key, a
-          short-lived app token is minted and used for the merge. Required
-          for merge-queue base branches: queue groups created by
-          github-actions[bot] never dispatch required checks. Takes
-          precedence over token.
+          App ID of a GitHub App whose installation may merge on the base
+          branch (e.g. MERGERAPTOR_APP_ID). Required when the base branch
+          enforces reviews and lists that app as a review-bypass actor.
         required: false
       private_key:
+        description: "Private key matching app_id."
+        required: false
+      token:
         description: >
-          Private key for app_id.
+          Legacy fallback token with merge permissions. Prefer app_id +
+          private_key. Falls back to github.token when not provided.
         required: false
 
 permissions:
@@ -75,57 +91,225 @@ jobs:
   automerge:
     name: Auto-merge Renovate PRs
     runs-on: ubuntu-latest
+    # The secrets context is unavailable in step-level `if:`, so mirror the
+    # presence of app credentials into env for the conditional token step.
+    env:
+      HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}
     steps:
-      - name: Mint app token
+      - name: Generate app token
         id: app-token
-        if: ${{ secrets.app_id != '' }}
+        if: env.HAS_APP_CREDS == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.private_key }}
-          permission-contents: write
-          permission-pull-requests: write
 
-      - name: Find Renovate PR for this commit
+      - name: Find qualifying Renovate PR for this commit
         id: find-pr
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           BASE_BRANCH: ${{ inputs.base_branch }}
+          REQUIRE_AUTO_MERGE: ${{ inputs.require_auto_merge }}
         run: |
-          PR_NUMBER=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --base "$BASE_BRANCH" \
-            --state open \
-            --json number,headRefOid,author \
-            --jq ".[] | select(.headRefOid == \"$HEAD_SHA\") | select(.author.login == \"renovate[bot]\" or .author.login == \"app/mergeraptor\") | .number" \
-            | head -1)
+          set -euo pipefail
 
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No open Renovate/Mergeraptor PR found for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
-            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2016  # $owner/$repo/$base are GraphQL variables, not shell
+          nodes=$(gh api graphql \
+            -f owner="${GITHUB_REPOSITORY%/*}" \
+            -f repo="${GITHUB_REPOSITORY#*/}" \
+            -f base="$BASE_BRANCH" \
+            -f query='
+              query($owner: String!, $repo: String!, $base: String!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequests(first: 100, states: OPEN, baseRefName: $base) {
+                    nodes {
+                      number
+                      isDraft
+                      mergeable
+                      headRefOid
+                      author { login }
+                      autoMergeRequest { enabledAt }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequests.nodes')
+
+          # GraphQL reports a GitHub App author as the bare slug ("mergeraptor"),
+          # while the REST/`gh pr list` view reports "app/mergeraptor" and a
+          # legacy bot user as "renovate[bot]". Match every spelling.
+          pr_number=$(jq -r \
+            --arg head "$HEAD_SHA" \
+            --arg require "$REQUIRE_AUTO_MERGE" '
+              .[]
+              | select(.headRefOid == $head)
+              | select(.isDraft | not)
+              | select(.mergeable != "CONFLICTING")
+              | select((.author.login | ascii_downcase | sub("^app/"; "") | sub("\\[bot\\]$"; ""))
+                       | . == "mergeraptor" or . == "renovate")
+              | select($require != "true" or .autoMergeRequest != null)
+              | .number' <<<"$nodes" | head -1)
+
+          if [ -z "$pr_number" ]; then
+            echo "No qualifying Renovate/Mergeraptor PR for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
           else
-            echo "Found Renovate/Mergeraptor PR #$PR_NUMBER"
-            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "Found qualifying PR #$pr_number"
           fi
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
-      - name: Merge PR
+      - name: Require a complete, all-successful check rollup
+        id: checks
         if: steps.find-pr.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          CHECK_TIMEOUT_SECONDS: ${{ inputs.check_timeout_seconds }}
         run: |
-          # Direct squash-merge. --auto is intentionally absent:
-          #   1. without branch protection rules, --auto fails
+          set -euo pipefail
+
+          # SKIPPED/NEUTRAL are non-blocking under GitHub's own merge semantics.
+          # Anything else (FAILURE, CANCELLED, TIMED_OUT, ...) blocks outright.
+          #
+          # An *absent* check is not a passing check. `gh pr checks` reports only
+          # the check-runs that currently exist, so a workflow that is queued but
+          # has not yet registered one is simply missing from the rollup rather
+          # than PENDING — and a re-run temporarily removes its check-runs
+          # entirely. Because this workflow is triggered by one CI workflow
+          # completing while siblings may still be queued, that race is the
+          # normal case. Cross-check in-flight workflow runs for the same commit
+          # so "no news" is never mistaken for good news.
+          deadline=$(( SECONDS + CHECK_TIMEOUT_SECONDS ))
+          ready=false
+
+          while :; do
+            checks=$(gh pr checks "$PR_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json name,state 2>/dev/null || true)
+            [ -n "$checks" ] || checks='[]'
+
+            succeeded=$(jq '[.[] | select(.state == "SUCCESS")] | length' <<<"$checks")
+            pending=$(jq '[.[] | select(.state == "PENDING")] | length' <<<"$checks")
+            blocked=$(jq '[.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and .state != "PENDING")] | length' <<<"$checks")
+
+            # Queued or running workflow runs for this exact commit, including
+            # any that have not yet surfaced a check-run on the PR.
+            inflight=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --commit "$HEAD_SHA" \
+              --limit 100 \
+              --json status \
+              --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo "unknown")
+
+            if [ "$blocked" -ne 0 ]; then
+              jq -r '.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and .state != "PENDING") | "  \(.state)\t\(.name)"' <<<"$checks"
+              echo "PR #$PR_NUMBER has $blocked non-passing check(s) — not merging"
+              break
+            fi
+
+            # Treat an unreadable run list as still-settling rather than idle;
+            # a transient API error must not be read as "nothing is running".
+            if [ "$inflight" = "unknown" ]; then
+              waiting=1
+              reason="workflow run list unavailable"
+            elif [ "$pending" -ne 0 ] || [ "$inflight" -ne 0 ]; then
+              waiting=1
+              reason="$pending pending check(s), $inflight in-flight run(s)"
+            elif [ "$succeeded" -eq 0 ]; then
+              # No checks at all yet: keep waiting rather than giving up, since
+              # the rollup may simply not have been populated for this commit.
+              waiting=1
+              reason="no checks reported yet"
+            else
+              waiting=0
+            fi
+
+            if [ "$waiting" -eq 0 ]; then
+              echo "All $succeeded checks succeeded for PR #$PR_NUMBER and no runs are in flight"
+              ready=true
+              break
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Timed out after ${CHECK_TIMEOUT_SECONDS}s — $reason; not merging"
+              break
+            fi
+
+            echo "PR #$PR_NUMBER not settled ($reason); re-checking in 30s"
+            sleep 30
+          done
+
+          # A non-ready result is deliberately not a job failure: Renovate will
+          # retry, and a later successful workflow_run re-evaluates the PR.
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+      - name: Merge PR
+        if: steps.checks.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+          MERGE_METHOD: ${{ inputs.merge_method }}
+        run: |
+          set -euo pipefail
+          # --auto is intentionally never used:
+          #   1. an unprotected base branch rejects it entirely
           #      (enablePullRequestAutoMerge → "Protected branch rules not configured")
-          #   2. --auto uses GitHub's auto-merge queue which does NOT honour
-          #      bypass_pull_request_allowances; only direct merges do.
-          # On a merge-queue branch this call enqueues instead of merging
-          # directly; the queue entry's actor is this step's token identity,
-          # and github-actions[bot] entries never dispatch required checks —
-          # pass app_id/private_key in that case.
-          # CI success is already guaranteed by the workflow_run trigger condition.
-          gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
-            --squash \
-            --repo "${{ github.repository }}" \
-            || echo "::warning::PR merge skipped (already merged or conflicting)"
-          echo "✅ Merged PR #${{ steps.find-pr.outputs.pr_number }}"
+          #   2. it routes through GitHub's auto-merge queue, which does NOT
+          #      honour bypass_pull_request_allowances; only direct merges do.
+          # CI success is verified by the check-rollup gate above.
+          case "$MERGE_METHOD" in
+            queue) flags=() ;;
+            squash|merge|rebase) flags=("--$MERGE_METHOD") ;;
+            *) echo "::error::merge_method must be squash, merge, rebase, or queue (got '$MERGE_METHOD')"; exit 1 ;;
+          esac
+
+          # `gh pr merge` writes advisories to stderr as "! ..." lines. Never
+          # infer the outcome from them or from the exit code: on a merge-queue
+          # branch an explicit strategy flag warns and still enqueues with exit
+          # 0, while a plain enqueue prints nothing at all. Ask for the real
+          # state afterwards instead.
+          report_outcome() {
+            local state
+            state=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json state --jq .state 2>/dev/null || echo "UNKNOWN")
+            case "$state" in
+              MERGED) echo "Merged PR #$PR_NUMBER" ;;
+              OPEN)   echo "Enqueued PR #$PR_NUMBER (merge queue will land it shortly)" ;;
+              *)      echo "PR #$PR_NUMBER accepted the merge; state is $state" ;;
+            esac
+          }
+
+          if gh pr merge "$PR_NUMBER" "${flags[@]}" --repo "$GITHUB_REPOSITORY" 2>merge.err; then
+            cat merge.err >&2
+            report_outcome
+            exit 0
+          fi
+
+          cat merge.err >&2
+
+          # Already enqueued by an earlier attempt — that is success. Note this
+          # message does NOT contain the substring "merge queue".
+          if grep -qi "queued to merge" merge.err; then
+            report_outcome
+            exit 0
+          fi
+
+          # Defensive: current gh only warns, but a future version may hard-fail
+          # when a strategy flag is passed on a queued branch. Retry with none.
+          if [ "${#flags[@]}" -ne 0 ] && grep -qi "merge queue" merge.err; then
+            echo "Base branch uses a merge queue; retrying without an explicit strategy"
+            if gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" 2>retry.err; then
+              cat retry.err >&2
+              report_outcome
+              exit 0
+            fi
+            cat retry.err >&2
+            if grep -qi "queued to merge" retry.err; then
+              report_outcome
+              exit 0
+            fi
+            exit 1
+          fi
+
+          exit 1
