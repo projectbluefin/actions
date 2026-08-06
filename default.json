@@ -22,6 +22,12 @@
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash"
+    },
+    {
+      "description": "Never manage projectbluefin/actions refs - first-party actions use the floating @v1 tag, advanced deliberately by the actions release process. SHA pinning defends against tag hijacking on repos we do not control; it does not apply to first-party code. Keep last so it wins over the automerge rule above.",
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["projectbluefin/actions"],
+      "enabled": false
     }
   ]
 }

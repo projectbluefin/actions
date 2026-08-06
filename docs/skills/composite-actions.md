@@ -76,6 +76,43 @@ uses: projectbluefin/actions/bootc-build/create-release@abc1234... # v1
 
 SHA pinning is a third-party supply-chain defence (prevents tag hijacking on external repos you don't control). It does not apply to code you own.
 
+### Renovate must be told to leave first-party refs alone
+
+`config:best-practices` pulls in `helpers:pinGitHubActionDigests`, which pins **every**
+`uses:` it finds — including this repo's references to itself. Once pinned, Renovate keeps
+opening "update projectbluefin/actions digest to …" PRs forever. Blocking an individual PR
+only treats the symptom; the next Renovate run regenerates it, and eventually someone merges
+it without noticing.
+
+The fix is a terminal `packageRules` entry disabling the dep outright. It lives in **both**
+config files:
+
+- `.github/renovate.json5` — this repo's own Renovate config
+- `default.json` — the shared preset other repos consume via `local>projectbluefin/actions`
+
+```json5
+// Keep this LAST in packageRules: later rules win, so it must override the
+// automerge rules above rather than be overridden by them.
+{
+  "matchManagers": ["github-actions"],
+  "matchPackageNames": ["projectbluefin/actions"],
+  "enabled": false
+}
+```
+
+**Why `matchPackageNames: ["projectbluefin/actions"]` catches everything:** the
+`github-actions` manager derives depName from the **repository only**, stripping the
+subdirectory and the workflow filename. So `projectbluefin/actions/bootc-build/chunka@v1`
+and `projectbluefin/actions/.github/workflows/reusable-release-gate.yml@v1` both report as
+depName `projectbluefin/actions`. One rule covers actions, composite actions, and reusable
+workflows.
+
+**Scope this to `projectbluefin/actions` only — not `projectbluefin/*`.** Other org repos
+(`projectbluefin/testsuite`, `projectbluefin/bonedigger`) are genuinely cross-repo: this repo
+does not control their tags and does not advance them, so their refs stay SHA-pinned and
+Renovate must keep updating them. `docs/skills/consumer-validation.md` applies the same
+narrow scope to the `no-floating-action-tags` pre-commit hook.
+
 ---
 
 ## Shell steps

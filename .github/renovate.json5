@@ -18,6 +18,18 @@
       "automerge": true,
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["digest", "pinDigest"]
+    },
+    // First-party self-references must stay on the floating @v1 tag, which this
+    // repo's release process advances deliberately. config:best-practices pulls in
+    // helpers:pinGitHubActionDigests, which would otherwise pin and then bump
+    // projectbluefin/actions -> itself. SHA pinning is a defence against tag
+    // hijacking on repos we do not control; it does not apply to our own code.
+    // Keep this rule last so it wins over the automerge rules above.
+    // Other projectbluefin repos (e.g. testsuite) are cross-repo and stay pinned.
+    {
+      "matchManagers": ["github-actions"],
+      "matchPackageNames": ["projectbluefin/actions"],
+      "enabled": false
     }
   ]
 }
