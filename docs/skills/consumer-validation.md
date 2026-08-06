@@ -27,6 +27,19 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
    ```
    The PR only needs to exist and pass CI. It does not need to build the specific file you changed.
 2. **Verify CI green**: Wait for the consumer PR's CI to pass completely.
+
+   > **A draft consumer PR produces no CI run in `projectbluefin/bluefin`.** Its
+   > `PR Validation — testsuite` workflow does not start while the PR is a draft,
+   > so pushing more commits will not help — `gh api "repos/projectbluefin/bluefin/actions/runs?branch=<branch>"`
+   > keeps returning `total_count: 0`, and there is no run ID to cite in step 3.
+   > Mark the PR ready for review to get a run:
+   >
+   > ```bash
+   > gh pr ready <number> --repo projectbluefin/bluefin
+   > ```
+   >
+   > Say in the PR body that it exists solely for consumer validation and is not
+   > for merge on its own. Close it once the actions PR has landed.
 3. **Fill the PR template evidence fields** in this repo:
    - `Consumer PR: https://github.com/projectbluefin/<consumer>/pull/<number>`
    - `Consumer CI run: https://github.com/projectbluefin/<consumer>/actions/runs/<id>`
