@@ -234,7 +234,14 @@ gh api graphql -f query='{repository(owner:"projectbluefin",name:"actions"){
 
 **Gotcha — `gh pr merge --auto` cannot be used here.** GitHub's auto-merge queue does not honour `bypass_pull_request_allowances`; only a direct merge does. `--auto` also errors with "Protected branch rules not configured" on unprotected base branches. The workflow therefore always does a direct merge, with the check-rollup gate standing in for what `--auto` would have waited on.
 
-**Gotcha — a merge queue rejects any explicit merge strategy.** When the base branch has a merge queue, `gh pr merge --squash` fails with *"merge strategy for main is set by the merge queue"*; the queue owns the strategy. Run `gh pr merge` with no strategy flag to enqueue instead. The reusable workflow exposes `merge_method` (`squash` by default, or `queue` to always omit the flag) and also retries without the flag automatically when it detects that error, so it works on queued and unqueued branches alike.
+**Gotcha — a merge queue rejects any explicit merge strategy, but only as a *warning*.** When the base branch has a merge queue, `gh pr merge --squash` prints `! The merge strategy for main is set by the merge queue` **and still exits 0**, having enqueued the PR. Never infer merge-queue behaviour from the exit status — match the stderr text. Two strings matter, and they do not share a substring:
+
+| Message (stderr, `!`-prefixed) | Meaning |
+|---|---|
+| `The merge strategy for <branch> is set by the merge queue` | strategy flag ignored; PR was enqueued |
+| `Pull request <repo>#<n> is already queued to merge` | a previous attempt enqueued it — success, not failure |
+
+The reusable workflow exposes `merge_method` (`squash` by default, `queue` to omit the flag entirely), treats both messages as success, and retries without the flag if a future `gh` version hard-fails instead of warning. A queued PR merges asynchronously roughly a minute later, so do not expect `gh pr merge` to return a merged PR.
 
 **Gotcha — the `secrets` context is unavailable in step-level `if:`.** To conditionally mint an app token in a reusable workflow, mirror credential presence into job-level `env` first (`HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}`) and branch on `env.HAS_APP_CREDS`.
 

@@ -238,21 +238,45 @@ jobs:
             *) echo "::error::merge_method must be squash, merge, rebase, or queue (got '$MERGE_METHOD')"; exit 1 ;;
           esac
 
+          # `gh pr merge` writes advisories to stderr as "! ..." lines, so
+          # always capture and echo stderr — some of them decide the outcome.
           if gh pr merge "$PR_NUMBER" "${flags[@]}" --repo "$GITHUB_REPOSITORY" 2>merge.err; then
-            echo "Merged PR #$PR_NUMBER"
+            cat merge.err >&2
+            # On a merge-queue branch an explicit strategy flag emits
+            # "! The merge strategy for main is set by the merge queue" and
+            # still enqueues the PR — with exit code 0. Report accurately.
+            if grep -qi "merge queue\|queued to merge" merge.err; then
+              echo "Enqueued PR #$PR_NUMBER (base branch uses a merge queue)"
+            else
+              echo "Merged PR #$PR_NUMBER"
+            fi
             exit 0
           fi
 
           cat merge.err >&2
 
-          # When the base branch has a merge queue, the queue owns the strategy
-          # and any explicit --squash/--merge/--rebase flag is rejected outright.
-          # Retry with no strategy flag so the PR is enqueued instead.
+          # Already enqueued by an earlier attempt — that is success, and note
+          # this message does NOT contain the substring "merge queue".
+          if grep -qi "queued to merge" merge.err; then
+            echo "PR #$PR_NUMBER is already queued to merge"
+            exit 0
+          fi
+
+          # Some gh versions hard-fail instead of warning when a strategy flag
+          # is passed on a queued branch. Retry with no flag so it is enqueued.
           if [ "${#flags[@]}" -ne 0 ] && grep -qi "merge queue" merge.err; then
             echo "Base branch uses a merge queue; retrying without an explicit strategy"
-            gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
-            echo "Enqueued PR #$PR_NUMBER"
-            exit 0
+            if gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" 2>retry.err; then
+              cat retry.err >&2
+              echo "Enqueued PR #$PR_NUMBER"
+              exit 0
+            fi
+            cat retry.err >&2
+            if grep -qi "queued to merge" retry.err; then
+              echo "PR #$PR_NUMBER is already queued to merge"
+              exit 0
+            fi
+            exit 1
           fi
 
           exit 1
