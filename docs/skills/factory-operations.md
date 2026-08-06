@@ -3,6 +3,9 @@ name: factory-operations
 description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge.
 metadata:
   type: reference
+  context7-sources:
+    - /actions/create-github-app-token
+    - /websites/cli_github_manual
 ---
 
 # Factory Operations Skill
