@@ -178,31 +178,42 @@ issues are opened.
 
 ### What it does
 
-Renovate runs as the MergeRaptors GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes. If auto-merge is not enabled, an agent may merge a qualifying PR when it carries the `clanker-queue` label and all required checks pass.
+Renovate runs as the MergeRaptor GitHub App and opens PRs to bump pinned action SHAs and digests. Qualifying PRs auto-merge when CI passes without human review. If auto-merge is not enabled, an agent may merge a qualifying PR when it carries the `clanker-queue` label and all required checks pass.
+
+### Review-bypass procedure
+
+`main` keeps required CODEOWNERS review. MergeRaptor is the only app allowed in
+`required_pull_request_reviews.bypass_pull_request_allowances.apps`, and only
+the CI-gated reusable workflow may mint a MergeRaptor installation token and
+use it to squash-merge a Renovate-eligible PR.
+
+The local `renovate-automerge.yml` caller is only a thin `workflow_run`
+wrapper. It forwards the completed workflow SHA, `base_branch: main`, and the
+MergeRaptor app credentials to the reusable workflow, which then:
+
+1. Finds a Renovate/MergeRaptor PR for the completed SHA
+2. Confirms the PR author and auto-merge enabler are Renovate/MergeRaptor
+3. Requires a non-empty PR check rollup where every bucket is `pass`
+4. Performs a direct squash merge with the app token
+
+Check the live branch-protection state with:
+
+```bash
+gh api repos/projectbluefin/actions/branches/main/protection \
+  --jq '.required_pull_request_reviews.bypass_pull_request_allowances'
+```
+
+Expect exactly one bypass app allowance: MergeRaptor. No users or teams should
+be present.
 
 ### Config
 
-Two files co-exist:
-- `.github/renovate.json5` - base org config (inherited from `projectbluefin/renovate-config`)
-- `renovate.json` - repo-level overrides, including the `packageRules` automerge block
+The repo-level Renovate config lives in `.github/renovate.json5`; there is no
+root `renovate.json` in this repository. The checked-in config extends
+`config:best-practices`, pins `baseBranchPatterns` to `main`, and automerges
+pin/pinDigest updates plus GitHub Actions digest/pinDigest bumps.
 
-The effective automerge rule in `renovate.json`:
-
-```json
-{
-  "packageRules": [
-    {
-      "description": "Automerge chore dep updates (digest, pin, patch, minor) when CI passes",
-      "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
-      "automerge": true,
-      "automergeType": "pr",
-      "automergeStrategy": "squash"
-    }
-  ]
-}
-```
-
-**What auto-merges:** SHA digest bumps, pin updates, patch and minor version bumps - when all CI checks pass. These are safe to auto-merge because they carry no behavior change. When handling the queue manually, the `clanker-queue` label authorizes an agent to merge only after confirming the PR is mergeable and every required check is green.
+**What auto-merges:** pin/pinDigest updates, plus GitHub Actions digest/pinDigest bumps, when all CI checks pass. These are safe to auto-merge because they carry no behavior change. When handling the queue manually, the `clanker-queue` label authorizes an agent to merge only after confirming the PR is mergeable and every required check is green.
 
 **What never auto-merges:** Major version bumps and any PR that fails, has pending, or is missing required CI checks. A major bump may still be merged manually by an agent when it has `clanker-queue` and all required checks pass.
 
