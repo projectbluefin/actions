@@ -206,6 +206,19 @@ The effective automerge rule in `renovate.json`:
 
 **What never auto-merges:** Major version bumps and any PR that fails, has pending, or is missing required CI checks. A major bump may still be merged manually by an agent when it has `clanker-queue` and all required checks pass.
 
+### Reusable auto-merge guardrails
+
+The reusable Renovate auto-merge workflow must validate **who enabled auto-merge**, not just that
+auto-merge is enabled. Query `pullRequest.autoMergeRequest.enabledBy` and require it to be
+`app/mergeraptor` or `renovate[bot]` in addition to the PR author check. This prevents a human
+from manually enabling auto-merge on a Renovate-authored major update and accidentally bypassing
+the intended review requirement.
+
+For final status checks, use `gh pr checks --json bucket,...` and merge **only** when the rollup is
+non-empty and every `bucket` is `pass`. Treat `pending`, `fail`, `skipping`, and `cancel` as a
+successful defer (`exit 0`) so the next `workflow_run` retry can re-evaluate, but still fail the
+job on infrastructure/API errors that do not return a valid JSON check array.
+
 **Consumer-validation exemption:** Renovate PRs (author login ending in `[bot]` or starting with `app/`) are automatically exempt from the consumer PR + CI run evidence requirement, even when they touch action files. See `docs/skills/consumer-validation.md`.
 
 ### Validation workflow

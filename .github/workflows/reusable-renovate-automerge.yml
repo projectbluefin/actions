@@ -104,7 +104,10 @@ jobs:
                     number
                     headRefOid
                     author { login }
-                    autoMergeRequest { enabledAt }
+                    autoMergeRequest {
+                      enabledAt
+                      enabledBy { login }
+                    }
                   }
                 }
               }
@@ -116,6 +119,8 @@ jobs:
               | select(.headRefOid == $head)
               | select(.author.login == "app/mergeraptor" or .author.login == "renovate[bot]")
               | select(.autoMergeRequest != null)
+              | select(.autoMergeRequest.enabledBy != null)
+              | select(.autoMergeRequest.enabledBy.login == "app/mergeraptor" or .autoMergeRequest.enabledBy.login == "renovate[bot]")
               | .number' | head -1)
 
           if [ -z "$PR_NUMBER" ]; then
@@ -133,16 +138,21 @@ jobs:
           PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
         run: |
           set +e
-          CHECKS=$(gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json name,state)
+          CHECKS=$(gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json bucket,name)
           CHECKS_STATUS=$?
           set -e
 
-          if [ "$CHECKS_STATUS" -ne 0 ] && [ "$CHECKS_STATUS" -ne 8 ]; then
+          if [ "$CHECKS_STATUS" -ne 0 ] && [ "$CHECKS_STATUS" -ne 1 ] && [ "$CHECKS_STATUS" -ne 8 ]; then
             exit "$CHECKS_STATUS"
           fi
 
+          if [ -z "$CHECKS" ] || ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$CHECKS"; then
+            echo "Failed to read PR check rollup for PR #$PR_NUMBER" >&2
+            exit 1
+          fi
+
           if [ "$(jq 'length' <<<"$CHECKS")" -eq 0 ] ||
-             [ "$(jq '[.[] | select(.state != "SUCCESS")] | length' <<<"$CHECKS")" -ne 0 ]; then
+             [ "$(jq '[.[] | select(.bucket != "pass")] | length' <<<"$CHECKS")" -ne 0 ]; then
             echo "PR #$PR_NUMBER does not have a complete successful check rollup; skipping"
             exit 0
           fi
