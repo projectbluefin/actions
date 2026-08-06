@@ -22,7 +22,6 @@ Reference for writing and maintaining composite GitHub Actions in this repo.
 - [CI-fix-first workflow (for agents)](#ci-fix-first-workflow-for-agents)
 - [Known workarounds](#known-workarounds)
 - [Self-repository composition](#self-repository-composition)
-- [Self-repository composition](#self-repository-composition)
 
 **Sub-files (load as needed):**
 - [`composite-actions/action-reference.md`](composite-actions/action-reference.md) - full action-by-action reference
@@ -461,5 +460,29 @@ Do not convert third-party or cross-repository references, including consumer-fa
 
 ```bash
 python3 scripts/check-self-repository-references.py
-python3 -m pytest tests/test_self_repository_refs.py -q
+python3 -m pytest tests/test_self_repository_references.py -q
+actionlint
 ```
+
+### Gotcha: escaping `$` in `.github/actionlint.yaml` ignore patterns
+
+`paths.<glob>.ignore` entries are Go regular expressions matched against the
+error message text. In a YAML **single-quoted** scalar a backslash is already
+literal — `''` is the only escape — so writing `'\\$/.+'` compiles to the regex
+`\\$/.+` (literal backslash, then an end-of-line anchor) and silently matches
+nothing. Use a single backslash:
+
+```yaml
+- 'specifying action "\$/.+" in invalid format because ref is missing'   # correct
+- 'specifying action "\\$/.+" in invalid format because ref is missing'  # never matches
+```
+
+A dead ignore pattern fails open, not closed: actionlint keeps reporting and CI
+stays red, so verify any new pattern locally with the same actionlint version
+pinned in `.pre-commit-config.yaml` before pushing. Always confirm the ignore is
+scoped rather than wholesale by checking that an unrelated injected error is
+still reported.
+
+Do not pass a bare `-ignore` flag to the actionlint pre-commit hook. `-ignore`
+takes a pattern argument and will otherwise consume the next value on the
+command line. Repository-wide ignores belong in `.github/actionlint.yaml`.

@@ -273,7 +273,7 @@ jobs:
       - name: Render promotion PR body
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
         id: render
-        uses: $/.github/actions/render-pr-body # v1
+        uses: $/.github/actions/render-pr-body
         with:
           variants:          ${{ inputs.variants }}
           repo:              ${{ github.repository }}
@@ -442,7 +442,7 @@ jobs:
       issues: write
       packages: read
       pull-requests: write
-    uses: $/.github/workflows/reusable-release-gate.yml # v1
+    uses: $/.github/workflows/reusable-release-gate.yml
     with:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}

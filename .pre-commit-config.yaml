@@ -13,12 +13,11 @@ repos:
   - repo: https://github.com/rhysd/actionlint
     rev: 03d0035246f3e81f36aed592ffb4bebf33a03106  # v1.7.7
     hooks:
+      # actionlint 1.7.7 predates GitHub's $/ self-repository syntax
+      # (rhysd/actionlint#711). The repository-level .github/actionlint.yaml
+      # scopes ignores to the two affected parser messages, so no -ignore
+      # argument is passed here.
       - id: actionlint
-        args:
-          # actionlint 1.7.7 predates GitHub's $/ self-repository syntax.
-          # The repository-level .github/actionlint.yaml scopes these ignores
-          # to the two parser messages until the hook is updated.
-          - -ignore
   - repo: local
     hooks:
       - id: no-floating-action-tags

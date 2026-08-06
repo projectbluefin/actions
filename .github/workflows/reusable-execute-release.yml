@@ -382,7 +382,7 @@ jobs:
 
       - name: Notify Discord releases channel
         if: success() && inputs.tag_name != ''
-        uses: $/.github/actions/discord-release-notify # v1
+        uses: $/.github/actions/discord-release-notify
         with:
           webhook_url: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
           tag_name: ${{ inputs.tag_name }}
