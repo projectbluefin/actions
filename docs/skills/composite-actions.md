@@ -21,6 +21,7 @@ Reference for writing and maintaining composite GitHub Actions in this repo.
 - [Common editing pitfalls](#common-editing-pitfalls)
 - [CI-fix-first workflow (for agents)](#ci-fix-first-workflow-for-agents)
 - [Known workarounds](#known-workarounds)
+- [Self-repository composition](#self-repository-composition)
 
 **Sub-files (load as needed):**
 - [`composite-actions/action-reference.md`](composite-actions/action-reference.md) - full action-by-action reference
@@ -439,3 +440,49 @@ do not attempt a full rebase of the branch. Instead:
 4. Force-push to the PR branch
 
 This avoids pulling obsolete intermediate state into main and produces a clean single commit.
+
+## Self-repository composition
+
+When implementation code in this repository invokes another action or reusable workflow owned by this repository, use the self-repository prefix `$/` rather than a qualified `projectbluefin/actions/...@ref` or workspace-relative `./` reference:
+
+```yaml
+steps:
+  - uses: $/bootc-build/push-image
+
+jobs:
+  gate:
+    uses: $/.github/workflows/reusable-release-gate.yml
+```
+
+`$/` resolves the action or workflow from the repository and commit currently executing. This is distinct from `./`, which resolves against the caller's checked-out workspace and therefore is unsafe for reusable workflows invoked by another repository. Keep `actions/checkout` when the caller's source tree, Justfile, artifacts, or git operations are needed; `$/` does not replace a checkout used for caller-owned files.
+
+Do not convert third-party or cross-repository references, including consumer-facing `projectbluefin/actions/...@v1` examples and references in comments that document how consumers call this repository. The syntax requires GitHub Actions runner **2.336.0 or newer**. The repository's pinned actionlint 1.7.7 predates this syntax, so `.github/actionlint.yaml` scopes parser ignores to the two affected messages until actionlint supports it. Validate with:
+
+```bash
+python3 scripts/check-self-repository-references.py
+python3 -m pytest tests/test_self_repository_references.py -q
+actionlint
+```
+
+### Gotcha: escaping `$` in `.github/actionlint.yaml` ignore patterns
+
+`paths.<glob>.ignore` entries are Go regular expressions matched against the
+error message text. In a YAML **single-quoted** scalar a backslash is already
+literal — `''` is the only escape — so writing `'\\$/.+'` compiles to the regex
+`\\$/.+` (literal backslash, then an end-of-line anchor) and silently matches
+nothing. Use a single backslash:
+
+```yaml
+- 'specifying action "\$/.+" in invalid format because ref is missing'   # correct
+- 'specifying action "\\$/.+" in invalid format because ref is missing'  # never matches
+```
+
+A dead ignore pattern fails open, not closed: actionlint keeps reporting and CI
+stays red, so verify any new pattern locally with the same actionlint version
+pinned in `.pre-commit-config.yaml` before pushing. Always confirm the ignore is
+scoped rather than wholesale by checking that an unrelated injected error is
+still reported.
+
+Do not pass a bare `-ignore` flag to the actionlint pre-commit hook. `-ignore`
+takes a pattern argument and will otherwise consume the next value on the
+command line. Repository-wide ignores belong in `.github/actionlint.yaml`.

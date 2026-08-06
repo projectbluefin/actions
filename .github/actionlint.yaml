@@ -1,0 +1,8 @@
+# actionlint 1.7.7 predates GitHub's $/ self-repository uses syntax.
+# Keep the workaround scoped to the two parser messages for this syntax until
+# actionlint natively supports it. See rhysd/actionlint#711.
+paths:
+  .github/workflows/**/*.{yaml,yml}:
+    ignore:
+      - 'reusable workflow call "\$/.+" at "uses" is not following the format'
+      - 'specifying action "\$/.+" in invalid format because ref is missing'

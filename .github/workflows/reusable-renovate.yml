@@ -32,7 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Validate RENOVATE_TOKEN
-        uses: ./actions/check-token-health
+        uses: $/actions/check-token-health
         with:
           token: ${{ secrets.renovate_token }}
           token_name: RENOVATE_TOKEN
