@@ -12,10 +12,12 @@
   "packageRules": [
     {
       "automerge": true,
+      "platformAutomerge": false,
       "matchUpdateTypes": ["pin", "pinDigest"]
     },
     {
       "automerge": true,
+      "platformAutomerge": false,
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["digest", "pinDigest"]
     }
