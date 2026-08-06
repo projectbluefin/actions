@@ -1,0 +1,44 @@
+# CI-gated auto-merge for MergeRaptor/Renovate dependency PRs.
+#
+# `main` keeps its required review and CODEOWNERS protection. The mergeraptor
+# GitHub App is the sole entry in the branch-protection review-bypass list, so
+# only this workflow — using that app's installation token — can merge without
+# a human approval, and only for PRs that qualify (bot author, Renovate
+# auto-merge enabled, and a complete all-SUCCESS check rollup).
+#
+# Any of the listed CI workflows completing successfully triggers a merge
+# attempt. The reusable workflow re-validates the full check rollup, so an
+# early-finishing workflow cannot merge before its siblings are done.
+
+name: Renovate Auto-merge
+
+on:
+  workflow_run:
+    workflows:
+      - actionlint
+      - Consumer Validation
+      - Dependency Review
+      - Modelith Contract Check
+      - PAT ban — no new unapproved secrets
+      - Unit Tests
+      - Validate Renovate Config
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/reusable-renovate-automerge.yml
+    with:
+      head_sha: ${{ github.event.workflow_run.head_sha }}
+      base_branch: main
+      # renovate.json decides what qualifies (pin/pinDigest + github-actions
+      # digest). Anything Renovate did not mark auto-mergeable still needs a
+      # human review.
+      require_auto_merge: true
+    secrets:
+      app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
+      private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}

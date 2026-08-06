@@ -1,7 +1,7 @@
-# Centralised Renovate auto-merge logic for projectbluefin image repos.
-# Each image repo keeps its own workflow_run trigger (which must reference
-# the repo-specific CI workflow name) but delegates the PR lookup + merge
-# logic here to avoid duplication.
+# Centralised Renovate auto-merge logic for projectbluefin repos.
+# Each repo keeps its own workflow_run trigger (which must reference the
+# repo-specific CI workflow names) but delegates the PR lookup, qualification,
+# check-rollup validation, and merge logic here to avoid duplication.
 #
 # Usage in the caller workflow:
 #
@@ -20,17 +20,12 @@
 #       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@v1
 #       with:
 #         head_sha: ${{ github.event.workflow_run.head_sha }}
-#       # Optional — REQUIRED when base_branch uses a merge queue: merge-queue
-#       # groups created by github-actions[bot] never dispatch required checks
-#       # (GITHUB_TOKEN events do not trigger workflows), so the queue entry
-#       # wedges at AWAITING_CHECKS until it times out. Pass GitHub App
-#       # credentials so the merge is performed by the app instead:
+#       # Optional — required when base_branch enforces reviews and the
+#       # review-bypass list contains the mergeraptor GitHub App rather than
+#       # github-actions[bot]:
 #       # secrets:
 #       #   app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
 #       #   private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
-#       # Or pass a stored token directly:
-#       # secrets:
-#       #   token: ${{ secrets.MERGE_TOKEN }}
 
 name: Reusable Renovate Auto-merge
 
@@ -46,25 +41,37 @@ on:
         type: string
         default: "testing"
         required: false
-    secrets:
-      token:
+      require_auto_merge:
         description: >
-          Optional GitHub token with merge permissions. Use when the base
-          branch has review-bypass rules that exclude github-actions[bot]
-          (e.g. a mergeraptor app token). Falls back to github.token when
-          not provided.
+          Only merge PRs for which Renovate has enabled GitHub auto-merge.
+          Turn this on for review-protected base branches so the repo's
+          renovate.json automerge policy stays the source of truth for what
+          qualifies, rather than this workflow merging every bot PR.
+        type: boolean
+        default: false
         required: false
+      check_timeout_seconds:
+        description: >
+          How long to wait for still-pending checks to settle before giving up
+          on this evaluation. Prevents a stall when the caller triggers from a
+          single CI workflow that finishes before its siblings.
+        type: number
+        default: 900
+        required: false
+    secrets:
       app_id:
         description: >
-          Optional GitHub App ID. When set together with private_key, a
-          short-lived app token is minted and used for the merge. Required
-          for merge-queue base branches: queue groups created by
-          github-actions[bot] never dispatch required checks. Takes
-          precedence over token.
+          App ID of a GitHub App whose installation may merge on the base
+          branch (e.g. MERGERAPTOR_APP_ID). Required when the base branch
+          enforces reviews and lists that app as a review-bypass actor.
         required: false
       private_key:
+        description: "Private key matching app_id."
+        required: false
+      token:
         description: >
-          Private key for app_id.
+          Legacy fallback token with merge permissions. Prefer app_id +
+          private_key. Falls back to github.token when not provided.
         required: false
 
 permissions:
@@ -75,57 +82,145 @@ jobs:
   automerge:
     name: Auto-merge Renovate PRs
     runs-on: ubuntu-latest
+    # The secrets context is unavailable in step-level `if:`, so mirror the
+    # presence of app credentials into env for the conditional token step.
+    env:
+      HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}
     steps:
-      - name: Mint app token
+      - name: Generate app token
         id: app-token
-        if: ${{ secrets.app_id != '' }}
+        if: env.HAS_APP_CREDS == 'true'
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           app-id: ${{ secrets.app_id }}
           private-key: ${{ secrets.private_key }}
-          permission-contents: write
-          permission-pull-requests: write
 
-      - name: Find Renovate PR for this commit
+      - name: Find qualifying Renovate PR for this commit
         id: find-pr
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           BASE_BRANCH: ${{ inputs.base_branch }}
+          REQUIRE_AUTO_MERGE: ${{ inputs.require_auto_merge }}
         run: |
-          PR_NUMBER=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --base "$BASE_BRANCH" \
-            --state open \
-            --json number,headRefOid,author \
-            --jq ".[] | select(.headRefOid == \"$HEAD_SHA\") | select(.author.login == \"renovate[bot]\" or .author.login == \"app/mergeraptor\") | .number" \
-            | head -1)
+          set -euo pipefail
 
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No open Renovate/Mergeraptor PR found for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
-            echo "pr_number=" >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2016  # $owner/$repo/$base are GraphQL variables, not shell
+          nodes=$(gh api graphql \
+            -f owner="${GITHUB_REPOSITORY%/*}" \
+            -f repo="${GITHUB_REPOSITORY#*/}" \
+            -f base="$BASE_BRANCH" \
+            -f query='
+              query($owner: String!, $repo: String!, $base: String!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequests(first: 100, states: OPEN, baseRefName: $base) {
+                    nodes {
+                      number
+                      isDraft
+                      mergeable
+                      headRefOid
+                      author { login }
+                      autoMergeRequest { enabledAt }
+                    }
+                  }
+                }
+              }' \
+            --jq '.data.repository.pullRequests.nodes')
+
+          # GraphQL reports a GitHub App author as the bare slug ("mergeraptor"),
+          # while the REST/`gh pr list` view reports "app/mergeraptor" and a
+          # legacy bot user as "renovate[bot]". Match every spelling.
+          pr_number=$(jq -r \
+            --arg head "$HEAD_SHA" \
+            --arg require "$REQUIRE_AUTO_MERGE" '
+              .[]
+              | select(.headRefOid == $head)
+              | select(.isDraft | not)
+              | select(.mergeable != "CONFLICTING")
+              | select((.author.login | ascii_downcase | sub("^app/"; "") | sub("\\[bot\\]$"; ""))
+                       | . == "mergeraptor" or . == "renovate")
+              | select($require != "true" or .autoMergeRequest != null)
+              | .number' <<<"$nodes" | head -1)
+
+          if [ -z "$pr_number" ]; then
+            echo "No qualifying Renovate/Mergeraptor PR for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
           else
-            echo "Found Renovate/Mergeraptor PR #$PR_NUMBER"
-            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "Found qualifying PR #$pr_number"
           fi
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
-      - name: Merge PR
+      - name: Require a complete, all-successful check rollup
+        id: checks
         if: steps.find-pr.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+          CHECK_TIMEOUT_SECONDS: ${{ inputs.check_timeout_seconds }}
         run: |
+          set -euo pipefail
+
+          # SKIPPED/NEUTRAL are non-blocking under GitHub's own merge semantics.
+          # PENDING is transient, so wait it out rather than skipping: a caller
+          # may only trigger this workflow from one CI workflow, in which case
+          # no later workflow_run event would retry the evaluation.
+          # Anything else (FAILURE, CANCELLED, TIMED_OUT, ...) blocks outright.
+          deadline=$(( SECONDS + CHECK_TIMEOUT_SECONDS ))
+          ready=false
+
+          while :; do
+            # `gh pr checks` exits non-zero whenever anything is failing or
+            # still pending, so capture its JSON regardless and judge here.
+            checks=$(gh pr checks "$PR_NUMBER" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json name,state 2>/dev/null || true)
+            [ -n "$checks" ] || checks='[]'
+
+            succeeded=$(jq '[.[] | select(.state == "SUCCESS")] | length' <<<"$checks")
+            pending=$(jq '[.[] | select(.state == "PENDING")] | length' <<<"$checks")
+            blocked=$(jq '[.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and .state != "PENDING")] | length' <<<"$checks")
+
+            if [ "$blocked" -ne 0 ]; then
+              jq -r '.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and .state != "PENDING") | "  \(.state)\t\(.name)"' <<<"$checks"
+              echo "PR #$PR_NUMBER has $blocked non-passing check(s) — not merging"
+              break
+            fi
+
+            if [ "$pending" -eq 0 ]; then
+              if [ "$succeeded" -eq 0 ]; then
+                echo "PR #$PR_NUMBER reported no successful checks — not merging"
+              else
+                echo "All $succeeded checks succeeded for PR #$PR_NUMBER"
+                ready=true
+              fi
+              break
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              jq -r '.[] | select(.state == "PENDING") | "  PENDING\t\(.name)"' <<<"$checks"
+              echo "Timed out after ${CHECK_TIMEOUT_SECONDS}s with $pending check(s) still pending — not merging"
+              break
+            fi
+
+            echo "$pending check(s) still pending for PR #$PR_NUMBER; re-checking in 30s"
+            sleep 30
+          done
+
+          # A non-ready result is deliberately not a job failure: Renovate will
+          # retry, and a later successful workflow_run re-evaluates the PR.
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+
+      - name: Merge PR
+        if: steps.checks.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
           # Direct squash-merge. --auto is intentionally absent:
-          #   1. without branch protection rules, --auto fails
+          #   1. an unprotected base branch rejects --auto entirely
           #      (enablePullRequestAutoMerge → "Protected branch rules not configured")
-          #   2. --auto uses GitHub's auto-merge queue which does NOT honour
+          #   2. --auto uses GitHub's auto-merge queue, which does NOT honour
           #      bypass_pull_request_allowances; only direct merges do.
-          # On a merge-queue branch this call enqueues instead of merging
-          # directly; the queue entry's actor is this step's token identity,
-          # and github-actions[bot] entries never dispatch required checks —
-          # pass app_id/private_key in that case.
-          # CI success is already guaranteed by the workflow_run trigger condition.
-          gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
-            --squash \
-            --repo "${{ github.repository }}" \
-            || echo "::warning::PR merge skipped (already merged or conflicting)"
-          echo "✅ Merged PR #${{ steps.find-pr.outputs.pr_number }}"
+          # CI success is verified by the check-rollup gate above.
+          gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"
+          echo "Merged PR #$PR_NUMBER"
