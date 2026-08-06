@@ -211,7 +211,7 @@ The bypass is only reachable through automation:
 | Piece | Responsibility |
 |---|---|
 | `.github/workflows/renovate-automerge.yml` | Local `workflow_run` caller. Fires on every CI workflow completion, passes `base_branch: main`, `require_auto_merge: true`, and the MergeRaptor app credentials. |
-| `.github/workflows/reusable-renovate-automerge.yml` | Mints the app installation token, qualifies the PR, validates the full check rollup, and squash-merges. |
+| `.github/workflows/reusable-renovate-automerge.yml` | Mints the app installation token, qualifies the PR, validates the full check rollup, and merges (respecting a merge queue if one exists). |
 
 Three gates must all pass before a merge happens:
 
@@ -232,7 +232,9 @@ gh api graphql -f query='{repository(owner:"projectbluefin",name:"actions"){
     nodes{number author{login} autoMergeRequest{enabledAt}}}}}'
 ```
 
-**Gotcha — `gh pr merge --auto` cannot be used here.** GitHub's auto-merge queue does not honour `bypass_pull_request_allowances`; only a direct merge does. `--auto` also errors with "Protected branch rules not configured" on unprotected base branches. The workflow therefore always does a direct `--squash` merge, with the check-rollup gate standing in for what `--auto` would have waited on.
+**Gotcha — `gh pr merge --auto` cannot be used here.** GitHub's auto-merge queue does not honour `bypass_pull_request_allowances`; only a direct merge does. `--auto` also errors with "Protected branch rules not configured" on unprotected base branches. The workflow therefore always does a direct merge, with the check-rollup gate standing in for what `--auto` would have waited on.
+
+**Gotcha — a merge queue rejects any explicit merge strategy.** When the base branch has a merge queue, `gh pr merge --squash` fails with *"merge strategy for main is set by the merge queue"*; the queue owns the strategy. Run `gh pr merge` with no strategy flag to enqueue instead. The reusable workflow exposes `merge_method` (`squash` by default, or `queue` to always omit the flag) and also retries without the flag automatically when it detects that error, so it works on queued and unqueued branches alike.
 
 **Gotcha — the `secrets` context is unavailable in step-level `if:`.** To conditionally mint an app token in a reusable workflow, mirror credential presence into job-level `env` first (`HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}`) and branch on `env.HAS_APP_CREDS`.
 
