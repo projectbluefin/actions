@@ -217,7 +217,16 @@ Three gates must all pass before a merge happens:
 
 1. **Author** is `mergeraptor` or `renovate` (in any spelling — see the gotcha below).
 2. **Renovate enabled auto-merge** on the PR (`autoMergeRequest != null`), i.e. `renovate.json` says it qualifies.
-3. **Every check is green.** Zero checks, or any check not in `SUCCESS`/`SKIPPED`/`NEUTRAL`, skips the merge. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics.
+3. **Every check is green *and* nothing is still running.** Any check not in `SUCCESS`/`SKIPPED`/`NEUTRAL` blocks. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics.
+
+**Gotcha — an absent check is not a passing check.** `gh pr checks` reports only the check-runs that currently *exist*. A workflow that is queued but has not yet registered a check-run is simply **missing from the rollup**, not `PENDING`; and re-running a workflow removes its check-runs entirely while they re-queue. A naive "nothing is pending, so we're done" gate will happily merge with most checks never having run. Since this workflow is triggered by *one* CI workflow completing while siblings may still be queued, that race is the normal case, not an edge case. Cross-check in-flight runs for the same commit:
+
+```bash
+gh run list --repo "$GITHUB_REPOSITORY" --commit "$HEAD_SHA" --limit 100 \
+  --json status --jq '[.[] | select(.status != "completed")] | length'
+```
+
+Treat a non-zero count, an empty rollup, *and* an unreadable run list as "keep waiting" — all three must fail closed. Only an all-`SUCCESS` rollup with zero in-flight runs may merge.
 
 Gate 3 is why it is safe for any CI workflow to trigger the caller: an
 early-finishing workflow cannot merge ahead of its still-running siblings. A
@@ -241,7 +250,14 @@ gh api graphql -f query='{repository(owner:"projectbluefin",name:"actions"){
 | `The merge strategy for <branch> is set by the merge queue` | strategy flag ignored; PR was enqueued |
 | `Pull request <repo>#<n> is already queued to merge` | a previous attempt enqueued it — success, not failure |
 
-The reusable workflow exposes `merge_method` (`squash` by default, `queue` to omit the flag entirely), treats both messages as success, and retries without the flag if a future `gh` version hard-fails instead of warning. A queued PR merges asynchronously roughly a minute later, so do not expect `gh pr merge` to return a merged PR.
+The reusable workflow exposes `merge_method` (`squash` by default, `queue` to omit the flag entirely), treats both messages as success, and retries without the flag if a future `gh` version hard-fails instead of warning.
+
+**Never infer the merge outcome from stderr text or the exit code.** A plain `gh pr merge` with no strategy flag enqueues the PR while printing *nothing at all* and exiting 0 — indistinguishable from a real merge by output alone. Conversely, gh's success line goes to stderr and includes the PR title, so a PR titled "…update merge-queue action" would trip a naive `grep "merge queue"`. Ask GitHub for the actual state instead:
+
+```bash
+gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state
+# MERGED = landed; OPEN = enqueued, the queue lands it ~60s later
+```
 
 **Gotcha — the `secrets` context is unavailable in step-level `if:`.** To conditionally mint an app token in a reusable workflow, mirror credential presence into job-level `env` first (`HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}`) and branch on `env.HAS_APP_CREDS`.
 
