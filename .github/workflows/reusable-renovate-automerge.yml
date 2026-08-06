@@ -20,8 +20,10 @@
 #       uses: projectbluefin/actions/.github/workflows/reusable-renovate-automerge.yml@v1
 #       with:
 #         head_sha: ${{ github.event.workflow_run.head_sha }}
-#       # Optional — REQUIRED when base_branch uses a merge queue: merge-queue
-#       # groups created by github-actions[bot] never dispatch required checks
+#       # Optional — only needed when the base branch review-bypass rules
+#       # exclude github-actions[bot] and require the MergeRaptor app identity.
+#       # REQUIRED when base_branch uses a merge queue: merge-queue groups
+#       # created by github-actions[bot] never dispatch required checks
 #       # (GITHUB_TOKEN events do not trigger workflows), so the queue entry
 #       # wedges at AWAITING_CHECKS until it times out. Pass GitHub App
 #       # credentials so the merge is performed by the app instead:
@@ -47,24 +49,22 @@ on:
         default: "testing"
         required: false
     secrets:
-      token:
-        description: >
-          Optional GitHub token with merge permissions. Use when the base
-          branch has review-bypass rules that exclude github-actions[bot]
-          (e.g. a mergeraptor app token). Falls back to github.token when
-          not provided.
-        required: false
       app_id:
         description: >
-          Optional GitHub App ID. When set together with private_key, a
-          short-lived app token is minted and used for the merge. Required
-          for merge-queue base branches: queue groups created by
-          github-actions[bot] never dispatch required checks. Takes
-          precedence over token.
+          Optional GitHub App ID used to mint the merge token for protected
+          branches that exclude github-actions[bot] from review bypass. Also
+          required for merge-queue base branches, where github-actions[bot]
+          queue groups never dispatch required checks.
         required: false
       private_key:
         description: >
-          Private key for app_id.
+          Optional GitHub App private key used with app_id to mint the merge
+          token for protected branches.
+        required: false
+      token:
+        description: >
+          Optional GitHub token with merge permissions. Falls back to
+          github.token when no app token or explicit token is provided.
         required: false
 
 permissions:
@@ -75,37 +75,54 @@ jobs:
   automerge:
     name: Auto-merge Renovate PRs
     runs-on: ubuntu-latest
+    env:
+      APP_ID: ${{ secrets.app_id }}
+      PRIVATE_KEY: ${{ secrets.private_key }}
     steps:
-      - name: Mint app token
+      - name: Generate MergeRaptor token
+        if: ${{ env.APP_ID != '' && env.PRIVATE_KEY != '' }}
         id: app-token
-        if: ${{ secrets.app_id != '' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ secrets.app_id }}
-          private-key: ${{ secrets.private_key }}
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Find Renovate PR for this commit
+      - name: Find qualifying Renovate PR for this commit
         id: find-pr
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           BASE_BRANCH: ${{ inputs.base_branch }}
         run: |
-          PR_NUMBER=$(gh pr list \
-            --repo "${{ github.repository }}" \
-            --base "$BASE_BRANCH" \
-            --state open \
-            --json number,headRefOid,author \
-            --jq ".[] | select(.headRefOid == \"$HEAD_SHA\") | select(.author.login == \"renovate[bot]\" or .author.login == \"app/mergeraptor\") | .number" \
-            | head -1)
+          PR_NUMBER=$(gh api graphql -f query="
+            query(\$owner: String!, \$repo: String!, \$base: String!) {
+              repository(owner: \$owner, name: \$repo) {
+                pullRequests(first: 100, states: OPEN, baseRefName: \$base) {
+                  nodes {
+                    number
+                    headRefOid
+                    author { login }
+                    autoMergeRequest { enabledAt }
+                  }
+                }
+              }
+            }" \
+            -f owner="${GITHUB_REPOSITORY_OWNER}" \
+            -f repo="${GITHUB_REPOSITORY#*/}" \
+            -f base="$BASE_BRANCH" \
+            | jq -r --arg head "$HEAD_SHA" '.data.repository.pullRequests.nodes[]
+              | select(.headRefOid == $head)
+              | select(.author.login == "app/mergeraptor" or .author.login == "renovate[bot]")
+              | select(.autoMergeRequest != null)
+              | .number' | head -1)
 
           if [ -z "$PR_NUMBER" ]; then
-            echo "No open Renovate/Mergeraptor PR found for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
+            echo "No eligible Renovate/Mergeraptor PR found for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
             echo "pr_number=" >> "$GITHUB_OUTPUT"
           else
-            echo "Found Renovate/Mergeraptor PR #$PR_NUMBER"
+            echo "Found eligible Renovate/Mergeraptor PR #$PR_NUMBER"
             echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           fi
 
@@ -113,19 +130,29 @@ jobs:
         if: steps.find-pr.outputs.pr_number != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
         run: |
-          # Direct squash-merge. --auto is intentionally absent:
-          #   1. without branch protection rules, --auto fails
-          #      (enablePullRequestAutoMerge → "Protected branch rules not configured")
-          #   2. --auto uses GitHub's auto-merge queue which does NOT honour
-          #      bypass_pull_request_allowances; only direct merges do.
-          # On a merge-queue branch this call enqueues instead of merging
-          # directly; the queue entry's actor is this step's token identity,
-          # and github-actions[bot] entries never dispatch required checks —
-          # pass app_id/private_key in that case.
-          # CI success is already guaranteed by the workflow_run trigger condition.
-          gh pr merge "${{ steps.find-pr.outputs.pr_number }}" \
-            --squash \
-            --repo "${{ github.repository }}" \
-            || echo "::warning::PR merge skipped (already merged or conflicting)"
-          echo "✅ Merged PR #${{ steps.find-pr.outputs.pr_number }}"
+          set +e
+          CHECKS=$(gh pr checks "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json name,state)
+          CHECKS_STATUS=$?
+          set -e
+
+          if [ "$CHECKS_STATUS" -ne 0 ] && [ "$CHECKS_STATUS" -ne 8 ]; then
+            exit "$CHECKS_STATUS"
+          fi
+
+          if [ "$(jq 'length' <<<"$CHECKS")" -eq 0 ] ||
+             [ "$(jq '[.[] | select(.state != "SUCCESS")] | length' <<<"$CHECKS")" -ne 0 ]; then
+            echo "PR #$PR_NUMBER does not have a complete successful check rollup; skipping"
+            exit 0
+          fi
+
+          # Direct squash-merge is intentional: the MergeRaptor installation
+          # token can use the protected-branch review bypass, while queue/auto
+          # merge cannot rely on that app-only exception. On a merge-queue
+          # branch this call enqueues instead of merging directly; the queue
+          # entry's actor is this step's token identity, and github-actions[bot]
+          # entries never dispatch required checks — pass app_id/private_key in
+          # that case.
+          gh pr merge "$PR_NUMBER" --squash --repo "$GITHUB_REPOSITORY"
+          echo "Merged PR #$PR_NUMBER"
