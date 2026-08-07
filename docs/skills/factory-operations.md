@@ -3,6 +3,8 @@ name: factory-operations
 description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge.
 metadata:
   type: reference
+  context7-sources:
+    - /renovatebot/renovate
 ---
 
 # Factory Operations Skill
@@ -288,6 +290,27 @@ Renovate keeps SHA pins current **for third-party actions in this repo**. Consum
 | Two Renovate PRs update the same action | Both opened before either merged | Close the older/lower version one; merge the newer |
 | Dependency Dashboard (issue #42) shows PRs as "Open" | Renovate dashboard is eventually consistent - PRs may already be merged | Confirm with `gh pr view NNN --json mergedAt` before acting; the dashboard self-corrects on next Renovate run |
 | Renovate warns: "Fallback to renovate.json as preset is deprecated" | Config file named `renovate.json` instead of `default.json` | Rename: `git mv renovate.json default.json` - content stays identical |
+
+### Verification — is auto-merge actually wired up?
+
+The bypass allowance and the workflow are independent halves. Configuring only one
+leaves the system inert but looking correct. Check all five:
+
+- [ ] `.github/workflows/renovate-automerge.yml` exists in **this** repo and its
+      `workflow_run.workflows:` list names every CI workflow that gates `main`.
+- [ ] The branch-protection bypass lists app `mergeraptor` and nothing else
+      (command at the top of this section).
+- [ ] `MERGERAPTOR_APP_ID` and `MERGERAPTOR_PRIVATE_KEY` are set as repo secrets —
+      without them the job runs as `github-actions[bot]`, which has no bypass and
+      cannot merge.
+- [ ] `gh api repos/projectbluefin/actions --jq .allow_auto_merge` returns `true`.
+- [ ] A recent run of the "Renovate Auto-merge" workflow exists and its log ends in
+      either a merge or an explicit skip reason — a workflow that never triggers is
+      the failure mode this checklist exists to catch:
+      ```bash
+      gh run list --repo projectbluefin/actions --workflow renovate-automerge.yml --limit 5
+      ```
+
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: consumer-validation
-description: Enforces the required consumer validation protocol before merging any action change. Covers blast radius table, draft consumer PR procedure, automated CI check behavior, N/A rules, bot exemptions, and cross-fork approval flow.
+description: Enforces the required consumer validation protocol before merging any action change. Covers blast radius table, consumer PR procedure (and why drafts produce no CI), automated CI check behavior, N/A rules, bot exemptions, and cross-fork approval flow.
 metadata:
   type: reference
 ---
@@ -20,12 +20,13 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 
 ## Validation steps (required before merge)
 
-1. **Open a draft consumer PR**: Create a draft PR in `projectbluefin/bluefin` (target: `testing`) using
+1. **Open a consumer PR**: Create a PR in `projectbluefin/bluefin` (target: `testing`) using
    `@v1` references — no SHA pinning needed:
    ```yaml
    uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1
    ```
    The PR only needs to exist and pass CI. It does not need to build the specific file you changed.
+   Open it as a draft to signal intent, but **it must be marked ready before CI will run** — see step 2.
 2. **Verify CI green**: Wait for the consumer PR's CI to pass completely.
 
    > **A draft consumer PR produces no CI run in `projectbluefin/bluefin`.** Its
@@ -72,7 +73,7 @@ the hook will flag it. Either SHA-pin the reference or add an explicit exemption
 | `Consumer CI run:` | ❌ No | Must be `.../actions/runs/NNN` |
 | `Out-of-org consumer impact:` | ✅ Yes | Any non-empty, non-`TODO`/`TBD` explanation (including "N/A — aurora/bazzite unaffected because...") |
 
-Even for additive-only changes (new optional input with a safe default), you still need to open a draft consumer PR and get a CI run number. The consumer CI run URL is what proves the action was exercised in a real workflow.
+Even for additive-only changes (new optional input with a safe default), you still need to open a consumer PR and get a CI run number. The consumer CI run URL is what proves the action was exercised in a real workflow.
 
 **Cross-fork PRs:** External contributor PRs from forks need a maintainer to approve the pending workflow run before CI executes. Use:
 ```bash
@@ -133,7 +134,7 @@ Consumer CI run: https://github.com/projectbluefin/bluefin/actions/runs/NNN
 Out-of-org consumer impact: N/A — aurora/bazzite unaffected because ...
 ```
 
-Even for internal-only workflows (like `reusable-renovate.yml`), the CI check still requires real URLs. Open a draft consumer PR in bluefin targeting `testing` — this exercises the actions repo at `@v1` and satisfies the check.
+Even for internal-only workflows (like `reusable-renovate.yml`), the CI check still requires real URLs. Open a consumer PR in bluefin targeting `testing` — this exercises the actions repo at `@v1` and satisfies the check.
 
 **How to create a consumer validation PR via API:**
 ```bash
@@ -141,12 +142,14 @@ Even for internal-only workflows (like `reusable-renovate.yml`), the CI check st
 gh api repos/projectbluefin/bluefin/git/refs --method POST \
   --field ref="refs/heads/consumer-validate/<name>" \
   --field sha="$(gh api repos/projectbluefin/bluefin/git/ref/heads/testing --jq '.object.sha')"
-# Open draft PR targeting testing — workflow files already use @v1, so no content changes needed
+# Open PR targeting testing — workflow files already use @v1, so no content changes needed
 gh pr create --repo projectbluefin/bluefin \
   --head consumer-validate/<name> --base testing \
   --title "ci: consumer validation for actions/<branch>" \
   --body "Consumer validation PR. No content changes — CI exercises @v1 references." \
   --draft
+# Drafts get no CI in bluefin — mark ready to produce a citable run
+gh pr ready <number> --repo projectbluefin/bluefin
 ```
 
 ## Gotchas when writing the enforcement workflow itself
