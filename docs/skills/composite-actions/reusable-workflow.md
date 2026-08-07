@@ -258,7 +258,7 @@ jobs:
 ### Gate behavior
 
 - The gate runs one matrix job per variant, so multi-variant promotions test each image independently.
-- The e2e job calls `projectbluefin/testsuite/.github/workflows/e2e.yml` pinned to the current `v1` SHA.
+- The e2e job calls `projectbluefin/testsuite/.github/workflows/e2e.yml@v1`.
 - The image ref passed to testsuite uses the digest resolved in the `resolve` job (`ghcr.io/projectbluefin/<image>@sha256:…`), not the source tag.
 - Set `run_release_gate: false` only as an emergency escape hatch; changing the default affects every consumer of this reusable workflow.
 
@@ -293,22 +293,29 @@ The legacy semver mode checks out with `fetch-depth: 0` (required by git-cliff),
 
 Promotes one or more OCI variants (e.g. `:testing` → `:stable`) for bootc image repos. The workflow resolves the source digest once, optionally runs testsuite e2e against that exact digest, then re-verifies cosign and promotes the same digest to the target tag. The digest is never re-resolved after the gate, eliminating TOCTOU drift between test and promotion.
 
-### Testsuite e2e pin — keep aligned with bluefin's `run-testsuite.yml`
+### Testsuite e2e refs — use managed `v1` for both layers
 
-The `release-gate` job calls `projectbluefin/testsuite/.github/workflows/e2e.yml@<SHA> # v1`. This pin **must match the SHA in `projectbluefin/bluefin/.github/workflows/run-testsuite.yml` exactly.** The two workflows execute the same testsuite e2e code — bluefin at PR time, the release gate at promotion time. A drift between them means the gate and bluefin CI can disagree on the same image.
+The `release-gate` job and Bluefin's `run-testsuite.yml` must both call
+`projectbluefin/testsuite/.github/workflows/e2e.yml@v1`. Testsuite advances
+that managed tag after each successful main-branch merge.
 
-To verify alignment before merging a change to this workflow:
+The reusable workflow's `uses` ref selects the workflow definition, including
+VM disk sizing and setup. Its `test_ref` input only selects the test tree that
+the workflow checks out. Setting `test_ref: v1` does not deliver workflow-level
+fixes when `uses` remains pinned to an older SHA.
+
+Verify both callers before merging a change to this workflow:
 
 ```bash
-# The pin in this workflow:
 grep 'testsuite.*e2e.yml@' .github/workflows/reusable-execute-release.yml
 
-# The pin bluefin uses (the source of truth for the managed @v1 tag):
 gh api repos/projectbluefin/bluefin/contents/.github/workflows/run-testsuite.yml --jq .content \
   | base64 -d | grep 'testsuite.*e2e.yml@'
 ```
 
-If they differ, bump this workflow's pin to bluefin's SHA in the same PR. Do not trust the `# v1 (matches ...)` comment — verify the SHAs themselves. The testsuite `v1` tag auto-tracks `main` on every testsuite merge, so the managed tag advances independently of this pin; the pin is the SHA the gate actually executes and must be a deliberate, verified match.
+Both commands must report `@v1`. Disable `projectbluefin/testsuite` for
+Renovate's `github-actions` manager so `config:best-practices` cannot replace
+the managed tag with an immutable digest.
 
 ### Gate behavior
 
