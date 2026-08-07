@@ -15,6 +15,9 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add a new action to the repo | `docs/skills/composite-actions.md` → "Adding a new action" |
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
 | Configure or understand Renovate auto-merge | `docs/skills/factory-operations.md` → "Renovate" |
+| Verify the Renovate auto-merge path is actually wired up (not inert) | `docs/skills/factory-operations.md` → "Verification — is auto-merge actually wired up?" |
+| Merge a PR in this repo (`main` uses a merge queue — exit codes lie) | AGENTS.md → "Merge Gate" |
+| Stop Renovate from pinning this repo's own first-party refs | `docs/skills/composite-actions.md` → "Renovate must be told to leave first-party refs alone" |
 | Update a third-party SHA pin | `docs/skills/composite-actions.md` → "SHA Pinning" |
 | Understand `@v1` tag and how to advance it | AGENTS.md → "@v1 tag" section |
 | Understand or change the promotion PR body format (Design C) | `docs/skills/factory-operations.md` → "Promotion PR Format" |
