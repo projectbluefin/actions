@@ -371,26 +371,56 @@ jobs:
         shell: bash
         env:
           DEFAULT_TAG: ${{ env.DEFAULT_TAG }}
+          STREAM_NAME: ${{ inputs.stream_name }}
           ALIAS_TAGS: ${{ steps.generate-tags.outputs.alias_tags }}
           PUBLISH_STREAM_TAG: ${{ inputs.publish_stream_tag }}
         run: |
           set -euo pipefail
-          if [[ "${PUBLISH_STREAM_TAG}" == "false" ]]; then
-            # Exclude the stream tag (:testing) — it will be promoted to :testing
-            # by post-build-e2e.yml only after smoke+common suites pass.
-            # Use the first alias tag as the primary push target.
-            read -r -a ALIAS_ARR <<< "${ALIAS_TAGS}"
-            if [[ ${#ALIAS_ARR[@]} -eq 0 ]]; then
-              echo "::error::publish_stream_tag=false but no alias tags are available — cannot push"
-              exit 1
-            fi
-            echo "push_default=${ALIAS_ARR[0]}" >> "$GITHUB_OUTPUT"
-            echo "push_tags=${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
-            echo "Stream tag (${DEFAULT_TAG}) excluded — will be promoted after e2e gate"
-          else
+          # publish_stream_tag is a string input, not a boolean. Compare explicitly
+          # and fail closed: anything that is not exactly "true" or "false" is a
+          # misconfiguration and must not silently publish a mutable stream tag.
+          if [[ "${PUBLISH_STREAM_TAG}" != "true" && "${PUBLISH_STREAM_TAG}" != "false" ]]; then
+            echo "::error::publish_stream_tag must be exactly \"true\" or \"false\" (got: '${PUBLISH_STREAM_TAG}')"
+            exit 1
+          fi
+
+          if [[ "${PUBLISH_STREAM_TAG}" == "true" ]]; then
             echo "push_default=${DEFAULT_TAG}" >> "$GITHUB_OUTPUT"
             echo "push_tags=${DEFAULT_TAG} ${ALIAS_TAGS}" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Gated mode: withhold every mutable stream pointer (:testing, :stable,
+          # :stable-daily, :latest) — those are promoted only after the post-build
+          # e2e gate passes. `just generate-build-tags` includes the bare stream
+          # tag in its alias list, so filtering DEFAULT_TAG out of ALIAS_TAGS is
+          # required; dropping it only from the push_default slot is not enough.
+          read -r -a ALIAS_ARR <<< "${ALIAS_TAGS}"
+          GATED_TAGS=()
+          for tag in ${ALIAS_ARR[@]+"${ALIAS_ARR[@]}"}; do
+            if [[ "${tag}" == "${DEFAULT_TAG}" || "${tag}" == "${STREAM_NAME}" ]]; then
+              continue
+            fi
+            GATED_TAGS+=("${tag}")
+          done
+
+          if [[ ${#GATED_TAGS[@]} -eq 0 ]]; then
+            echo "::error::publish_stream_tag=false but no non-stream alias tags are available — cannot push"
+            exit 1
+          fi
+
+          # Regression guard: the stream pointers must never reach the push list.
+          for tag in "${GATED_TAGS[@]}"; do
+            if [[ "${tag}" == "${DEFAULT_TAG}" || "${tag}" == "${STREAM_NAME}" ]]; then
+              echo "::error::stream tag '${tag}' leaked into push list while publish_stream_tag=false"
+              exit 1
+            fi
+          done
+
+          echo "push_default=${GATED_TAGS[0]}" >> "$GITHUB_OUTPUT"
+          echo "push_tags=${GATED_TAGS[*]}" >> "$GITHUB_OUTPUT"
+          echo "Stream tags (${DEFAULT_TAG}, ${STREAM_NAME}) excluded — promoted after e2e gate"
+          echo "Push tags: ${GATED_TAGS[*]}"
 
       - name: Export image for scanning
         shell: bash
