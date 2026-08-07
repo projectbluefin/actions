@@ -13,6 +13,7 @@ on:
       - "scripts/**"
       - ".github/actions/**"
       - "tests/**"
+      - ".github/workflows/reusable-build.yml"
       - ".github/workflows/unit-tests.yml"
   pull_request:
     paths:
@@ -25,6 +26,7 @@ on:
       - "scripts/**"
       - ".github/actions/**"
       - "tests/**"
+      - ".github/workflows/reusable-build.yml"
       - ".github/workflows/unit-tests.yml"
 
 permissions: {}

@@ -82,6 +82,14 @@ Pin GitHub-hosted Linux jobs to explicit runner labels (`ubuntu-24.04` / `ubuntu
 
 `bootc-build/create-manifest` is also a Path 2 building block today. The reusable workflow builds and pushes per-architecture images and emits digests, but it does **not** assemble or push a multi-arch manifest index; callers that need a manifest job should add an explicit follow-on `create-manifest` step in their own workflow.
 
+### `publish_stream_tag` and the e2e gate
+
+`publish_stream_tag` (string, default `"true"`) decides whether the mutable stream pointer (`:testing`, `:stable`, `:stable-daily`, `:latest`) is pushed at build time. Consumers that gate the stream tag behind a post-build e2e job pass `"false"`; a separate `promote-to-testing`-style job then does `skopeo copy @digest → :testing` only after the suites pass.
+
+**The alias tag list already contains the stream tag.** `just generate-build-tags` emits `<stream> <stream>-<version> <stream>-<date>` — the bare stream tag is `alias_tags[0]`, not a separate value. So gating cannot be implemented by only choosing a different `push_default`: the stream tag must be *filtered out of the tag list itself*. Any future edit to `compute-push-tags` must keep that filter, and the guard in `tests/bats/test_compute_push_tags.bats` must be updated in the same change.
+
+**Compare string inputs explicitly.** `publish_stream_tag` is `type: string`, so `if: inputs.publish_stream_tag` is truthy even for `"false"`. Always compare against the literal (`== 'true'` in an `if:`, `[[ "$X" == "true" ]]` in bash) and fail closed on any value that is not exactly `true` or `false`.
+
 ---
 
 ## Digest output shape (multi-arch safe)
