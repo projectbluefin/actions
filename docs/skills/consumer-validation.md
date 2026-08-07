@@ -1,6 +1,6 @@
 ---
 name: consumer-validation
-description: Enforces the required consumer validation protocol before merging any action change. Covers blast radius table, consumer PR procedure (and why drafts produce no CI), automated CI check behavior, N/A rules, bot exemptions, and cross-fork approval flow.
+description: Enforces the required consumer validation protocol before merging any action change. Covers blast radius table, consumer PR procedure (and why drafts produce no CI), automated CI check behavior, N/A rules, bot and docs-only path exemptions, and cross-fork approval flow.
 metadata:
   type: reference
 ---
@@ -58,6 +58,18 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 - It fails if any required field is missing or in the wrong format.
 
 **Bot/Renovate exemption:** PRs authored by a bot (login ending in `[bot]` or starting with `app/`, e.g. `renovate[bot]`, `mergeraptor[bot]`) are automatically exempt — they skip all three evidence checks. SHA pin bumps carry no behavior change and cannot provide consumer PR URLs.
+
+**Path-based exemption:** PRs that change no consumer-facing action files — docs-only,
+tests-only — are also exempt. The check logs:
+
+```
+No consumer-facing action changes detected; skipping.
+```
+
+Both exemptions are evaluated **before** the URL format rules, which is why a docs-only PR
+passes with `N/A` in `Consumer PR:` even though `N/A` is otherwise rejected there. The
+exemption is decided from the changed paths, not from the PR body — writing "N/A" does not
+grant it. If your PR touches even one action or workflow file, you need real URLs.
 
 **`no-floating-action-tags` pre-commit exemption scope:** The hook exempts `@v1` refs to
 `projectbluefin/actions` only — not all `projectbluefin/*` repos. If a workflow in this repo
