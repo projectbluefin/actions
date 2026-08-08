@@ -24,7 +24,7 @@ jobs:
           node-version: '24'
 
       - name: Install renovate
-        run: npm install -g renovate@latest
+        run: npm install -g renovate@44.14.12
 
       - name: Validate Renovate config
         run: renovate-config-validator --strict
