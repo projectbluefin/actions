@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
     steps:
       - name: Enforce design workflow
         uses: projectbluefin/actions/.github/actions/design-enforcement@2295d66a8283d7668c303fa51b83a94c1ed25928
