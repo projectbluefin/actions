@@ -35,6 +35,11 @@ inputs:
       Whether cosign writes signatures in the Sigstore "new bundle format" (OCI 1.1
       referrers) instead of the legacy `sha256-<digest>.sig` tag.
 
+      Also controls `--use-signing-config`, which cosign requires to agree with it:
+      `--new-bundle-format=false` with the default `--use-signing-config=true` is
+      rejected outright ("must provide --new-bundle-format or --bundle where
+      applicable with --signing-config or --use-signing-config").
+
       MUST stay "false" for bootc/podman consumers. containers/image — which backs
       podman, skopeo and `bootc switch` — only discovers signatures via the legacy
       `.sig` tag, so a policy.json `sigstoreSigned` entry cannot see new-format
@@ -98,7 +103,7 @@ runs:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" "${IMAGE}@${DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --use-signing-config="${NEW_BUNDLE_FORMAT}" "${IMAGE}@${DIGEST}"
 
     - name: Sign container image (key-based)
       if: inputs.signing-mode == 'key'
@@ -112,7 +117,7 @@ runs:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --use-signing-config="${NEW_BUNDLE_FORMAT}" --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
 
     - name: Verify signature
       if: inputs.signing-mode == 'keyless'
@@ -143,7 +148,7 @@ runs:
       run: |
         set -euo pipefail
         sig_tag="${DIGEST/:/-}.sig"
-        if ! cosign manifest download "${IMAGE}:${sig_tag}" >/dev/null 2>&1; then
+        if ! cosign download signature "${IMAGE}@${DIGEST}" >/dev/null 2>&1; then
           echo "::error::No legacy signature tag ${IMAGE}:${sig_tag} in the registry."
           echo "::error::cosign verify passed, but containers/image (podman, skopeo, bootc)"
           echo "::error::only discovers signatures via the .sig tag, so this image would be"
@@ -238,7 +243,7 @@ runs:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" "${IMAGE}@${SBOM_DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --use-signing-config="${NEW_BUNDLE_FORMAT}" "${IMAGE}@${SBOM_DIGEST}"
 
     - name: Sign SBOM artifact (key-based)
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'key'
@@ -252,7 +257,7 @@ runs:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --use-signing-config="${NEW_BUNDLE_FORMAT}" --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
 
     - name: GitHub Build Provenance Attestation
       if: inputs.push-attestation == 'true'
