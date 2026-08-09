@@ -39,7 +39,7 @@ inputs:
       podman, skopeo and `bootc switch` — only discovers signatures via the legacy
       `.sig` tag, so a policy.json `sigstoreSigned` entry cannot see new-format
       signatures. cosign 3.x flipped this default to true, which silently produced
-      images that `cosign verify` accepts but podman rejects. See projectbluefin/common#XXX.
+      images that `cosign verify` accepts but podman rejects. See projectbluefin/common#977.
     default: "false"
   certificate-identity-regexp:
     description: >
