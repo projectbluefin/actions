@@ -166,6 +166,22 @@ Two signing modes:
 - `keyless` (default): OIDC/Fulcio via `cosign sign -y`. **Requires** `id-token: write` in the calling job. Validated early — fails immediately if `ACTIONS_ID_TOKEN_REQUEST_URL` is unset.
 - `key`: `cosign sign -y --key env://COSIGN_PRIVATE_KEY`. Requires `inputs.signing-key` to be set.
 
+**Signature format — `new-bundle-format` (default `"false"`). Do not change this.**
+
+All four `cosign sign` invocations pass `--new-bundle-format=false`. cosign 3.x flipped
+this default to `true`, which writes the signature as an OCI 1.1 referrer under a
+`sha256-<digest>` tag instead of the legacy `sha256-<digest>.sig` tag.
+
+`containers/image` — the library behind podman, skopeo and `bootc switch` — discovers
+signatures **only** via the `.sig` tag. A new-format signature is therefore invisible to
+a `policy.json` `sigstoreSigned` entry: the image is signed, `cosign verify` passes, and
+podman still rejects it. Because `cosign verify` accepts both formats, nothing in CI
+catches the regression, which is why the `Assert legacy .sig tag exists` step exists —
+it queries the registry directly for the `.sig` tag and fails the build if it is absent.
+
+Only set `new-bundle-format: "true"` if every consumer of the image verifies with cosign
+rather than with podman/bootc policy.
+
 **Step order (important):** gen-sbom → GitHub SBOM attestation → ORAS attach → sign SBOM artifact → SLSA provenance attestation.
 
 **SBOM flow** (when `generate-sbom: true`): Syft generates SPDX JSON → `actions/attest` with `sbom-path` creates a GitHub-native SBOM attestation in the attestation store → ORAS attaches the same SPDX JSON as an OCI referrer artifact → cosign signs the ORAS artifact digest. Both are needed: ORAS serves OCI-native consumers; the GitHub attestation store serves `gh attestation verify` and GitHub-native consumers.

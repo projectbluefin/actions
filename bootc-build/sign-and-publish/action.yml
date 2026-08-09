@@ -30,6 +30,17 @@ inputs:
   image-name:
     description: "Short image name for SBOM file path (e.g. bluefin)"
     default: ""
+  new-bundle-format:
+    description: >
+      Whether cosign writes signatures in the Sigstore "new bundle format" (OCI 1.1
+      referrers) instead of the legacy `sha256-<digest>.sig` tag.
+
+      MUST stay "false" for bootc/podman consumers. containers/image — which backs
+      podman, skopeo and `bootc switch` — only discovers signatures via the legacy
+      `.sig` tag, so a policy.json `sigstoreSigned` entry cannot see new-format
+      signatures. cosign 3.x flipped this default to true, which silently produced
+      images that `cosign verify` accepts but podman rejects. See projectbluefin/common#XXX.
+    default: "false"
   certificate-identity-regexp:
     description: >
       Regexp for cosign verify --certificate-identity-regexp. Defaults to known signing
@@ -80,18 +91,20 @@ runs:
       if: inputs.signing-mode == 'keyless'
       uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
+        NEW_BUNDLE_FORMAT: ${{ inputs.new-bundle-format }}
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
       with:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y "${IMAGE}@${DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" "${IMAGE}@${DIGEST}"
 
     - name: Sign container image (key-based)
       if: inputs.signing-mode == 'key'
       uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
+        NEW_BUNDLE_FORMAT: ${{ inputs.new-bundle-format }}
         IMAGE: ${{ inputs.image }}
         DIGEST: ${{ inputs.digest }}
         COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
@@ -99,7 +112,7 @@ runs:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${DIGEST}"
 
     - name: Verify signature
       if: inputs.signing-mode == 'keyless'
@@ -114,6 +127,31 @@ runs:
           --certificate-identity-regexp="${CERT_IDENTITY_REGEXP}" \
           --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
           "${IMAGE}@${DIGEST}"
+
+    # `cosign verify` succeeds against BOTH the legacy `.sig` tag and the new
+    # OCI 1.1 bundle format, so it cannot detect a format regression on its own —
+    # that is exactly how cosign 3.x's default flip shipped months of images that
+    # verified cleanly but that podman/bootc could not validate.
+    # containers/image (podman, skopeo, `bootc switch`) resolves signatures ONLY
+    # via `sha256-<digest>.sig`, so assert that tag exists in the registry.
+    - name: Assert legacy .sig tag exists (podman/bootc compatibility)
+      if: inputs.new-bundle-format == 'false'
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        DIGEST: ${{ inputs.digest }}
+      run: |
+        set -euo pipefail
+        sig_tag="${DIGEST/:/-}.sig"
+        if ! cosign manifest download "${IMAGE}:${sig_tag}" >/dev/null 2>&1; then
+          echo "::error::No legacy signature tag ${IMAGE}:${sig_tag} in the registry."
+          echo "::error::cosign verify passed, but containers/image (podman, skopeo, bootc)"
+          echo "::error::only discovers signatures via the .sig tag, so this image would be"
+          echo "::error::rejected by a policy.json sigstoreSigned entry. Check that"
+          echo "::error::--new-bundle-format=false reached the cosign sign invocation."
+          exit 1
+        fi
+        echo "Legacy signature tag present: ${IMAGE}:${sig_tag}"
 
     - name: Install Syft
       if: inputs.generate-sbom == 'true'
@@ -193,18 +231,20 @@ runs:
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'keyless'
       uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
+        NEW_BUNDLE_FORMAT: ${{ inputs.new-bundle-format }}
         IMAGE: ${{ inputs.image }}
         SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
       with:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y "${IMAGE}@${SBOM_DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" "${IMAGE}@${SBOM_DIGEST}"
 
     - name: Sign SBOM artifact (key-based)
       if: inputs.generate-sbom == 'true' && inputs.signing-mode == 'key'
       uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
       env:
+        NEW_BUNDLE_FORMAT: ${{ inputs.new-bundle-format }}
         IMAGE: ${{ inputs.image }}
         SBOM_DIGEST: ${{ steps.upload-sbom.outputs.sbom-digest }}
         COSIGN_PRIVATE_KEY: ${{ inputs.signing-key }}
@@ -212,7 +252,7 @@ runs:
         timeout_minutes: 5
         max_attempts: 3
         retry_wait_seconds: 30
-        command: cosign sign -y --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
+        command: cosign sign -y --new-bundle-format="${NEW_BUNDLE_FORMAT}" --key env://COSIGN_PRIVATE_KEY "${IMAGE}@${SBOM_DIGEST}"
 
     - name: GitHub Build Provenance Attestation
       if: inputs.push-attestation == 'true'
