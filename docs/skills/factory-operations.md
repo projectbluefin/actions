@@ -406,6 +406,48 @@ REMOTE_TREE=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1 | xargs git ca
 [ "$SQUASH_TREE" = "$REMOTE_TREE" ] && echo "no-op, skipping force-push"
 ```
 
+### gh api failure output goes to stdout — capture defensively
+
+`gh api` on a failed request (HTTP 404/500) prints the API error body to **stdout**
+and the human-readable `gh: ...` message to **stderr**, then exits non-zero. A
+capture like this is therefore NOT safe — `2>/dev/null` only drops the stderr
+message, and the error JSON becomes the variable value:
+
+```bash
+# WRONG — SHA becomes '{"message":"Not Found",...}' on a missing ref, because
+# the error body is on stdout and '' only gets appended, never substituted
+SHA=$(gh api repos/$REPO/git/ref/heads/$BRANCH --jq '.object.sha' 2>/dev/null || echo "")
+```
+
+Use the exit status to replace the value instead of `|| echo ""`:
+
+```bash
+# RIGHT — SHA is empty on failure, populated on success
+SHA=$(gh api repos/$REPO/git/ref/heads/$BRANCH --jq '.object.sha' 2>/dev/null) || SHA=""
+```
+
+Apply this pattern to every variable captured from a `gh api` call that can 404.
+A leaked error JSON travels into downstream URLs and produces confusing failures
+like `unsupported protocol scheme ""`.
+
+### Branch-derived names must be defined once at the job level
+
+Any value derived from workflow inputs and used by multiple steps (squash branch
+name, image ref, tag list) belongs in the **job-level `env:`** block as a single
+expression:
+
+```yaml
+env:
+  PROMOTION_BRANCH: ${{ format('auto/promote-{0}-to-{1}', inputs.source_branch, inputs.target_branch) }}
+```
+
+Duplicating the expression in each step's `env:` invites one step to be edited
+and the others to drift. This bit the promote-squash workflow: rebuild/upsert
+hardcoded the squash branch name while the validate-status step derived it from
+the inputs, so any caller with a non-default branch model (main→stable) pushed
+one branch and looked up another — 404-ing before auto-merge could run. With the
+name defined once, all steps stay in lockstep.
+
 ### reusable-sync-branches: optional GH_TOKEN + force-reset for diverged branches
 
 `reusable-sync-branches.yml` merges `source_branch` into `target_branch` after a promotion.

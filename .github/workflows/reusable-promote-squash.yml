@@ -1,8 +1,9 @@
-# reusable-promote-squash.yml — shared squash-promote logic for bluefin, bluefin-lts
+# reusable-promote-squash.yml — shared squash-promote logic for bluefin, bluefin-lts, finpilot
 #
-# Consolidates promote-testing-to-main.yml across image repos:
-#   projectbluefin/bluefin     (~343 LoC) → thin caller (~25 LoC)
-#   projectbluefin/bluefin-lts (~354 LoC) → thin caller (~25 LoC)
+# Consolidates per-repo promotion workflows into one reusable:
+#   projectbluefin/bluefin      (~343 LoC) → thin caller (~25 LoC)
+#   projectbluefin/bluefin-lts  (~354 LoC) → thin caller (~25 LoC)
+#   projectbluefin/finpilot                → thin caller (promote-main-to-stable.yml)
 #
 # Implements consistency-audit C1 from projectbluefin/common.
 #
@@ -11,9 +12,12 @@
 #     no conflict drift, no "parent is stale" failures.
 #   - --auto replaces the 12-step mergeability-polling + GraphQL enqueue loop.
 #
-# Branch model support:
-#   - Default (bluefin): source_branch=testing promotes into target_branch=main
-#   - bluefin-lts:       source_branch=main   promotes into target_branch=lts
+# Branch model support — the squash branch name is derived ONCE from the inputs as
+# auto/promote-<source_branch>-to-<target_branch> (job-level env PROMOTION_BRANCH),
+# so every step that pushes, updates, or validates the branch uses the same name:
+#   - bluefin:      source_branch=testing promotes into target_branch=main  → auto/promote-testing-to-main
+#   - bluefin-lts:  source_branch=testing promotes into target_branch=main  → auto/promote-testing-to-main
+#   - finpilot:     source_branch=main   promotes into target_branch=stable → auto/promote-main-to-stable
 
 name: reusable-promote-squash
 
@@ -56,14 +60,14 @@ on:
         description: >
           Branch to promote FROM. Compared against target_branch; if trees
           differ a squash PR is opened. Default: testing (bluefin model).
-          Use main for repos with a separate production branch (e.g. bluefin-lts).
+          Use main for repos with a separate production branch (e.g. finpilot).
         required: false
         type: string
         default: 'testing'
       target_branch:
         description: >
           Branch to promote TO. The squash PR targets this branch.
-          Default: main. Use lts for bluefin-lts.
+          Default: main. Use stable for finpilot.
         required: false
         type: string
         default: 'main'
@@ -91,6 +95,12 @@ jobs:
     name: Build and maintain squash promotion PR
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Single source of truth for the squash branch name. Derived from the
+    # branch-model inputs once at the job level so the rebuild, upsert, and
+    # validate-status steps can never drift apart again (regression of #422,
+    # where two steps hardcoded the name and one step derived it dynamically).
+    env:
+      PROMOTION_BRANCH: ${{ format('auto/promote-{0}-to-{1}', inputs.source_branch, inputs.target_branch) }}
     permissions:
       contents: write
       pull-requests: write
@@ -114,8 +124,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           # E2E workflows run on builds to source_branch:
-          #   bluefin:     source_branch=testing  → post-testing-e2e runs carry testing HEAD SHA
-          #   bluefin-lts: source_branch=main     → post-merge-e2e runs carry main HEAD SHA
+          #   bluefin:     source_branch=testing → post-testing-e2e runs carry testing HEAD SHA
+          #   bluefin-lts: source_branch=testing → post-testing-e2e runs carry testing HEAD SHA
+          #   finpilot:    source_branch=main    → post-merge-e2e runs carry main HEAD SHA
           # Gate queries Actions API by head_sha — must match the branch where e2e actually ran.
           E2E_HEAD_BRANCH: ${{ inputs.source_branch }}
         run: |
@@ -164,7 +175,6 @@ jobs:
         if: steps.compare.outputs.sync_needed == 'true'
         id: rebuild
         env:
-          PROMOTION_BRANCH: auto/promote-testing-to-main
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
@@ -175,12 +185,14 @@ jobs:
           # Build the squash content by checking out source's full tree.
           # Using 'git checkout <source> -- .' avoids all merge-conflict scenarios
           # (rename/delete, add/add, etc.) while still producing the correct delta:
-          # the resulting commit on auto/promote-* has lts as parent but main's tree,
-          # so merging it into lts makes lts identical to main.
+          # the resulting commit on auto/promote-* has target_branch as parent but
+          # source_branch's tree, so merging it into target_branch makes
+          # target_branch identical to source_branch.
           git checkout "origin/${SOURCE_BRANCH}" -- .
           git add -A
-          # Restore index-only deletions: files deleted in main but present in lts
-          # must be staged as deletions so the squash commit removes them from lts.
+          # Restore index-only deletions: files deleted in source_branch but present
+          # in target_branch must be staged as deletions so the squash commit
+          # removes them from target_branch.
           git diff --name-only --diff-filter=D "origin/${TARGET_BRANCH}" "origin/${SOURCE_BRANCH}" \
             | xargs -r git rm -f --ignore-unmatch -- 2>/dev/null || true
           git add -A
@@ -295,7 +307,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_BODY_FILE: ${{ runner.temp }}/promotion-pr-body.md
-          PROMOTION_BRANCH: auto/promote-testing-to-main
           PR_TITLE: ${{ steps.render.outputs.pr_title }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
@@ -372,17 +383,21 @@ jobs:
         if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-          PROMOTION_BRANCH: auto/promote-${{ inputs.source_branch }}-to-${{ inputs.target_branch }}
         run: |
           set -euo pipefail
+          # On a failed ref lookup, gh api prints the API error body to stdout and
+          # exits non-zero. Capture defensively so the error JSON can never become
+          # SHA (regression of #422 — 2>/dev/null || echo "" only swallowed stderr
+          # and leaked the body into the statuses/ URL). Job-level PROMOTION_BRANCH
+          # matches the name pushed by the rebuild/upsert steps.
           SHA=$(gh api "repos/${{ github.repository }}/git/ref/heads/${PROMOTION_BRANCH}" \
-            --jq '.object.sha' 2>/dev/null || echo "")
+            --jq '.object.sha' 2>/dev/null) || SHA=""
           if [[ -z "$SHA" ]]; then
             echo "Squash branch not found — skipping validate post"
             exit 0
           fi
           EXISTING=$(gh api "repos/${{ github.repository }}/commits/${SHA}/statuses" \
-            --jq '[.[] | select(.context == "validate")] | first | .state // ""' 2>/dev/null || echo "")
+            --jq '[.[] | select(.context == "validate")] | first | .state // ""' 2>/dev/null) || EXISTING=""
           if [[ "$EXISTING" == "success" || "$EXISTING" == "failure" ]]; then
             echo "validate already ${EXISTING} on ${SHA} — skipping"
             exit 0
