@@ -377,7 +377,7 @@ Wraps `aquasecurity/trivy-action` to scan a locally built OCI image for CVEs **b
 
 **Placement rule:** must run per-arch in the matrix build job, after `Tag Images` and **before** `Push to GHCR`. Scanning after push means shipping a known-critical image to the registry. This action is already wired into `reusable-build.yml` at the correct position.
 
-`scan-image` is now **always non-blocking** for CVE findings: it forces Trivy `exit-code: 0`, uploads SARIF, parses Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue summarizing the affected packages, CVE IDs, and fixed versions.
+`scan-image` is now **always non-blocking** for CVE findings: it forces Trivy `exit-code: 0`, uploads SARIF, parses Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue summarizing the affected packages, CVE IDs, and fixed versions. When Trivy crashes and produces no results file, the summarize step **fails closed** (exit 1) with a `::error::` annotation — scan infrastructure failures are visible in CI, never silently masked as "no CVEs".
 
 Inputs:
 

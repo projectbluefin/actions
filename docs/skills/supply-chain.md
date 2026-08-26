@@ -196,6 +196,13 @@ SARIF results to the GitHub Security tab (always, even when the scan passes), pa
 Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue with the
 affected packages, CVE IDs, installed versions, and fixed versions.
 
+**Fail-closed on scan crashes:** when Trivy crashes (e.g. DB missing CPE indices for a new OS
+family), it does not produce `trivy-results.json`. The summarize step treats a missing results
+file as a **scan failure** (exit 1, `::error::` annotation), not as "no CVEs detected". This
+ensures scan infrastructure failures are visible in CI rather than silently masked. The
+`continue-on-error: true` on both the Trivy steps and the caller means the overall build is
+never blocked — but the scan step is visibly red. See [trivy-db#435](https://github.com/aquasecurity/trivy-db/issues/435).
+
 Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
 
 ```yaml
