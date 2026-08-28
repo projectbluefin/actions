@@ -14,6 +14,7 @@ sys.path.insert(0, str(REPO_ROOT / "bootc-build" / "chunka"))
 sys.path.insert(0, str(REPO_ROOT / ".github" / "actions" / "render-pr-body"))
 sys.path.insert(0, str(REPO_ROOT / ".github" / "actions" / "render-gate-section"))
 
-# Top-level scripts — inserted last so they shadow the .github/actions copies and
-# coverage lands on the shipped wrapper files (scripts/render_pr_body.py etc.)
+# Top-level scripts — inserted last so they take precedence. scripts/render_pr_body.py
+# and scripts/render_gate_section.py are thin re-export wrappers around the
+# .github/actions copies, so coverage lands on the implementation that CI runs.
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
