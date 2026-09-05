@@ -75,7 +75,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install just
-        uses: taiki-e/install-action@0aad1e145276e872773365c6f6827f542c1c5614 # just
+        uses: taiki-e/install-action@1938d65511705cfc38a640c66eddcce76384d60e # just
         with:
           tool: just
 
