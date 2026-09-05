@@ -42,6 +42,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Add bats tests for a shell script or inline action shell step | `docs/skills/testing.md` → "Shell scripts (bats)" + "Testing shell logic embedded in action YAML" |
 | Wire a new bats test into CI | `docs/skills/testing.md` → "Shell scripts (bats)" (bats job in `unit-tests.yml`) |
 | Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
+| Review a PR the user pointed at (ambiguous target, read-only rule) | `docs/skills/session-hygiene.md` |
+| End a session (working-tree cleanliness, no stranded changes) | `docs/skills/session-hygiene.md` |
 | Understand or debug the promotion PR body or gate checklist | `docs/skills/factory-operations.md` → "Promotion PR Format" |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
 | Enforce Conventional Commits PR title format | `docs/skills/composite-actions/action-reference.md` → "validate-pr-title" |
@@ -70,3 +72,4 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
 | [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), factory health monitor, Renovate auto-merge, promotion PR format (Design C) |
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |
+| [`session-hygiene.md`](skills/session-hygiene.md) | Review-target disambiguation, read-only reviews, clean working tree at session end, answer-first communication |
