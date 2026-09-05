@@ -45,6 +45,7 @@ Coverage gate: `--cov-fail-under=75`
 | `push-image` push/retry/alias shell logic | `tests/bats/test_push_image.bats` (16 tests) |
 | `sign-and-publish` keyless/key validation + SBOM attach/cache/path guards | `tests/bats/test_sign_and_publish.bats` (19 tests) |
 | `setup-runner` native-overlay setup | `tests/bats/test_setup_runner.bats` (9 tests) |
+| `reusable-renovate-automerge.yml` check-rollup classification | `tests/bats/test_renovate_automerge_checks.bats` (8 tests) |
 
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
