@@ -250,6 +250,45 @@ gh release view v6.0.3 --repo actions/checkout --json tagName
 
 ---
 
+## When to Use
+
+Use this skill when comparing artifacts from repeated builds, reviewing dependency or runner
+pinning, or deciding whether observed output drift is acceptable.
+
+## When NOT to Use
+
+Do not use this skill to debug a single workflow failure with no reproducibility signal, or to
+change a consumer's release policy without an explicit design decision.
+
+## Core Process
+
+1. Identify the input, output, and exact build boundary that differs.
+2. Classify the surface as acceptable drift, already pinned, or under investigation.
+3. Verify immutable references and compare logs, metadata, and digests at that boundary.
+4. Record mitigation and an owner; create follow-up work when drift is unresolved.
+
+## Common Rationalizations
+
+- "The tag is stable enough." Tags and branch refs remain mutable; resolve and compare SHAs.
+- "Only one architecture matters." Multi-architecture builds can diverge independently.
+- "The digest changed, so the source changed." First rule out timestamps, runner state, and
+  platform-specific image digests.
+
+## Red Flags
+
+- Floating action, image, branch, or dependency references in a reproducibility-critical path.
+- A changed artifact without a recorded input SHA or build metadata.
+- A mitigation that relies on rerunning until output happens to match.
+
+## Verification
+
+- [ ] Input commit, dependency pins, architecture, and runner are recorded.
+- [ ] Output digests or hashes are compared at the same artifact boundary.
+- [ ] Drift is classified and mitigation is documented.
+- [ ] Unresolved drift has a tracking issue and owner.
+
+---
+
 ## Related Reading
 
 - [`docs/skills/composite-actions.md`](composite-actions.md) — SHA pinning conventions and adding new actions
