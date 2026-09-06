@@ -153,13 +153,14 @@ jobs:
           IDENTITY_REGEXP: ${{ inputs.cosign_identity_regexp }}
           REGISTRY: ${{ inputs.registry }}
           VARIANTS_JSON: ${{ inputs.variants }}
+          RESOLVE_OK: ${{ steps.resolve.outputs.ok }}
         run: |
           set -euo pipefail
           results='{}'
           rows=''
           failed=0
 
-          if [ '${{ steps.resolve.outputs.ok }}' != 'true' ]; then
+          if [ "${RESOLVE_OK}" != 'true' ]; then
             {
               echo 'ok=false'
               echo 'summary=Skipped signature verification because digest resolution failed.'
