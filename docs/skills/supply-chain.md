@@ -1,6 +1,6 @@
 ---
 name: supply-chain
-description: Secures the bootc image build supply chain. Covers vendoring external build files (Containerfiles, scripts), SLSA Build L2 posture and verification, cosign verify scoping, shift-left CVE scanning with Trivy (including secret scanning), and SBOM attestation patterns.
+description: Secures the bootc image build supply chain. Use when adding build inputs, signing or verifying images, configuring provenance, scanning images, or generating SBOMs. Covers vendoring external build files (Containerfiles, scripts), SLSA Build L2 posture and verification, cosign verify scoping, shift-left CVE scanning with Trivy (including secret scanning), and SBOM attestation patterns.
 metadata:
   type: reference
   context7-sources:
@@ -58,6 +58,45 @@ If the `Containerfile.splitter` changes in a way that requires coordinated chang
 became `oci:out`), the vendor workflow will commit the new file but CI may fail, signalling that
 `action.yml` also needs a manual update. The skill file change and action.yml fix should be done in a
 single follow-up commit on the Renovate branch before merging.
+
+## When to Use
+
+Use this skill when changing image build inputs, action downloads, signing, attestations, CVE or
+secret scans, SBOM generation, or promotion verification.
+
+## When NOT to Use
+
+Do not use this skill as a substitute for consumer-specific release policy, or to treat a
+report-only scan as proof that an image is vulnerability-free.
+
+## Core Process
+
+1. Inventory every external file, image, tool, credential, and registry boundary involved.
+2. Pin immutable inputs and vendor or hash-verify downloaded build instructions.
+3. Apply least-privilege permissions and scope signing identities to expected workflows.
+4. Generate and attach SBOM and provenance artifacts using the repository's supported formats.
+5. Verify signatures, attestations, and scan outputs at the promotion boundary.
+
+## Common Rationalizations
+
+- "The upstream URL is trusted." Mutable content can change independently of its release tag.
+- "The image is signed, so it is safe." A signature proves origin, not policy or vulnerability
+  status.
+- "The scan can run after push." Post-push scanning permits known-bad content into the registry.
+
+## Red Flags
+
+- Network-fetched scripts or Containerfiles passed directly to a privileged build.
+- Organization-wide cosign identity regexes or unscoped write permissions.
+- Missing, empty, or stub scan/SBOM output treated as a successful security result.
+- A platform digest used where a multi-architecture manifest index is required.
+
+## Verification
+
+- [ ] External build inputs are vendored or SHA-256 verified.
+- [ ] Third-party actions and OCI images use immutable pins.
+- [ ] Signing and attestation verification scopes match the intended repository and workflow.
+- [ ] Scan, SBOM, and provenance outputs are present and checked before promotion.
 
 ---
 

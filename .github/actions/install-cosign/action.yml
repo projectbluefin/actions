@@ -15,6 +15,10 @@ inputs:
     description: "Use sudo when installing the binary"
     required: false
     default: "false"
+  expected-sha256:
+    description: "SHA-256 of the release asset. Required when cosign-release is not a pinned known release."
+    required: false
+    default: ""
 
 runs:
   using: "composite"
@@ -40,8 +44,8 @@ runs:
       with:
         path: ${{ steps.prepare.outputs.install-dir }}
         key: cosign-${{ runner.os }}-${{ runner.arch }}-${{ steps.prepare.outputs.release }}
-        restore-keys: |
-          cosign-${{ runner.os }}-${{ runner.arch }}-
+        # No restore-keys: a prefix match could restore a binary from a
+        # different cosign release than the one requested.
 
     - name: Install cosign
       if: steps.cache.outputs.cache-hit != 'true'
@@ -50,6 +54,7 @@ runs:
         COSIGN_RELEASE: ${{ steps.prepare.outputs.release }}
         INSTALL_DIR: ${{ steps.prepare.outputs.install-dir }}
         USE_SUDO: ${{ inputs.use-sudo }}
+        EXPECTED_SHA256: ${{ inputs.expected-sha256 }}
       run: |
         set -euo pipefail
         binary="${INSTALL_DIR}/cosign"
@@ -71,6 +76,17 @@ runs:
             ;;
         esac
 
+        # Pinned SHA-256 for known releases (from cosign_checksums.txt in the
+        # upstream release). Any other release requires expected-sha256 input.
+        if [ -z "${EXPECTED_SHA256}" ]; then
+          case "${COSIGN_RELEASE}:${os}:${arch}" in
+            v3.0.6:linux:amd64)  EXPECTED_SHA256="c956e5dfcac53d52bcf058360d579472f0c1d2d9b69f55209e256fe7783f4c74" ;;
+            v3.0.6:linux:arm64)  EXPECTED_SHA256="bedac92e8c3729864e13d4a17048007cfafa79d5deca993a43a90ffe018ef2b8" ;;
+            v3.0.6:darwin:amd64) EXPECTED_SHA256="4c3e7af8372d3ca3296e62fa56f23fcbb5721cc6ac1827900d398f110d7cd280" ;;
+            v3.0.6:darwin:arm64) EXPECTED_SHA256="5fadd012ae6381a6a29ff86a7d39aa873878852f1073fc90b15995961ecfb084" ;;
+          esac
+        fi
+
         asset_url="https://github.com/sigstore/cosign/releases/download/${COSIGN_RELEASE}/cosign-${os}-${arch}"
         tmp_dir="$(mktemp -d)"
         tmp_file="${tmp_dir}/cosign"
@@ -85,6 +101,19 @@ runs:
         done
 
         if [ -s "${tmp_file}" ]; then
+          if [ -z "${EXPECTED_SHA256}" ]; then
+            echo "No pinned SHA-256 for ${COSIGN_RELEASE} ${os}/${arch} and no expected-sha256 input given." >&2
+            echo "Refusing to install an unverified cosign binary." >&2
+            exit 1
+          fi
+          actual_sha256="$(sha256sum "${tmp_file}" | awk '{print $1}')"
+          if [ "${actual_sha256}" != "${EXPECTED_SHA256}" ]; then
+            echo "SHA-256 mismatch for cosign-${os}-${arch} (${COSIGN_RELEASE}):" >&2
+            echo "  expected: ${EXPECTED_SHA256}" >&2
+            echo "  actual:   ${actual_sha256}" >&2
+            exit 1
+          fi
+          echo "SHA-256 verified: ${actual_sha256}"
           install_cmd=(install)
           if [ "${USE_SUDO}" = "true" ]; then
             install_cmd=(sudo install)

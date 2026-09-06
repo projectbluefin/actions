@@ -26,7 +26,7 @@ runs:
   using: "composite"
   steps:
     - name: Install just
-      uses: taiki-e/install-action@0aad1e145276e872773365c6f6827f542c1c5614 # just
+      uses: taiki-e/install-action@1938d65511705cfc38a640c66eddcce76384d60e # just
       with:
         tool: just
 
@@ -125,7 +125,7 @@ runs:
         exit "$failed"
 
     - name: Lint Containerfile
-      uses: hadolint/hadolint-action@2a66e89f53d0771bb131a7fa31f3136336094aa6 # v3.4.0
+      uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
       with:
         dockerfile: ${{ inputs.dockerfile }}
         config: ${{ inputs.hadolint-config }}

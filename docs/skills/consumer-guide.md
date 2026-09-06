@@ -1,6 +1,6 @@
 ---
 name: consumer-guide
-description: Onboards a new bootc image repo to use projectbluefin/actions. Covers Path 1 (full reusable-build.yml workflow with Justfile contract) and Path 2 (à la carte composite actions), SHA pinning strategy, known constraints, and pre-live checklist. For upgrade/migration test gates and live consumer examples, see consumer-guide/upgrade-and-migration.md.
+description: Onboards a new bootc image repo to use projectbluefin/actions. Use when integrating, upgrading, or validating a consumer build. Covers Path 1 (full reusable-build.yml workflow with Justfile contract) and Path 2 (à la carte composite actions), SHA pinning strategy, known constraints, and pre-live checklist. For upgrade/migration test gates and live consumer examples, see consumer-guide/upgrade-and-migration.md.
 metadata:
   type: reference
 ---
@@ -276,3 +276,40 @@ Move back to `@v1` after the branch merges. Renovate manages SHA bumps automatic
 
 - File issues at [projectbluefin/actions](https://github.com/projectbluefin/actions/issues)
 - Working examples: [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) (Path 1) and [projectbluefin/bluefin-lts](https://github.com/projectbluefin/bluefin-lts) (Path 2 à la carte)
+
+## When to Use
+
+Use this skill when onboarding a repository, selecting reusable-workflow versus composite-action
+integration, upgrading action references, or validating a consumer before release.
+
+## When NOT to Use
+
+Do not use this skill to modify shared action internals, bypass consumer validation, or infer
+consumer compatibility from a local syntax check alone.
+
+## Core Process
+
+1. Select Path 1 or Path 2 from the repository's build model and constraints.
+2. Satisfy required inputs, Justfile contract, permissions, secrets, and immutable pins.
+3. Exercise integration on a testing stream or draft consumer PR before production use.
+4. Verify build, signing, SBOM, provenance, and promotion gates with real workflow evidence.
+
+## Common Rationalizations
+
+- "The defaults match our image." Confirm every recipe signature, stream, flavor, and architecture.
+- "A local action test is enough." Consumer wiring and permissions only execute in the caller.
+- "The stable tag is safe to try first." Use the testing stream to limit blast radius.
+
+## Red Flags
+
+- Missing `id-token: write`, package permissions, or required inherited secrets.
+- First-party `@v1` references replaced with stale SHAs or third-party floating tags.
+- Consumer PR or CI run omitted from validation for an action change.
+- Multi-architecture builds without explicit per-architecture runner and manifest steps.
+
+## Verification
+
+- [ ] Integration path and all required inputs are documented.
+- [ ] Permissions, secrets, streams, and architecture settings are validated.
+- [ ] A real consumer workflow passes against intended action reference.
+- [ ] Promotion is gated by verified signing, SBOM, provenance, and environment policy.

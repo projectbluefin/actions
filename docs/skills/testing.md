@@ -1,5 +1,7 @@
 ---
-description: pytest setup, coverage baseline, and regression gate for the Python scripts in this repo. Use when modifying the unit-tests workflow, adding tests, or changing the coverage threshold.
+description: pytest setup, coverage baseline, and regression gate for the Python scripts in this repo. Use when modifying the unit-tests workflow, adding tests, changing the coverage threshold, or testing shell logic embedded in actions.
+metadata:
+  type: reference
 ---
 
 # Testing — Python Unit Tests
@@ -45,7 +47,7 @@ Coverage gate: `--cov-fail-under=75`
 | `push-image` push/retry/alias shell logic | `tests/bats/test_push_image.bats` (16 tests) |
 | `sign-and-publish` keyless/key validation + SBOM attach/cache/path guards | `tests/bats/test_sign_and_publish.bats` (19 tests) |
 | `setup-runner` native-overlay setup | `tests/bats/test_setup_runner.bats` (9 tests) |
-| `scan-image` summarize-cves fail-closed + CVE parsing | `tests/bats/test_scan_image.bats` (13 tests) |
+| `reusable-renovate-automerge.yml` check-rollup classification | `tests/bats/test_renovate_automerge_checks.bats` (8 tests) |
 
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
@@ -261,3 +263,44 @@ pyyaml>=6.0
 ```
 
 `pytest-cov` ships as a pytest plugin — no extra import needed in test files.
+
+## When to Use
+
+Use this skill when changing Python scripts, shell logic in actions, unit-test workflows, test
+coverage, or mocks for external commands.
+
+## When NOT to Use
+
+Do not use this skill as proof of end-to-end consumer or QEMU behavior; those require workflow
+and environment checks described by their respective runbooks.
+
+## Core Process
+
+1. Locate shipped entry point and its existing test or coverage path.
+2. Add focused regression coverage for changed branches and preserve exact embedded shell when
+   testing action YAML.
+3. Mock external commands through a temporary PATH and isolate filesystem and environment state.
+4. Run smallest relevant pytest or bats selector, then repository gate when shared test
+   infrastructure or coverage changed.
+
+## Common Rationalizations
+
+- "The wrapper is covered." Confirm coverage targets the file CI actually executes, not a
+  duplicate module selected by `sys.path`.
+- "The command failed, so the test passed." Assert output variables when scripts intentionally
+  return zero after partial failures.
+- "A broad mock is simpler." Broad mocks hide argument and ordering regressions; assert calls.
+
+## Red Flags
+
+- Tests invoking real host `rpm`, `podman`, `buildah`, `skopeo`, or `cosign`.
+- Coverage thresholds raised above the measured total.
+- Shell snippets copied loosely instead of captured from the action definition.
+- Tests depending on current working directory, host privileges, or persistent environment state.
+
+## Verification
+
+- [ ] Changed entry points and failure branches have focused tests.
+- [ ] External tools and privileged calls are isolated with PATH mocks.
+- [ ] Relevant pytest/bats command passes with configured coverage gate.
+- [ ] Tests fail when guarded behavior is intentionally reverted.

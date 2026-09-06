@@ -169,8 +169,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          # `gh pr checks --json state` reports a check-run's *status* while it
+          # is unfinished and its *conclusion* once COMPLETED; legacy status
+          # contexts report their raw state. Every nonterminal state — gh's own
+          # "pending" bucket: PENDING, QUEUED, IN_PROGRESS, WAITING, REQUESTED,
+          # EXPECTED — is awaited below, never treated as a failure.
           # SKIPPED/NEUTRAL are non-blocking under GitHub's own merge semantics.
-          # Anything else (FAILURE, CANCELLED, TIMED_OUT, ...) blocks outright.
+          # Anything else — terminal failure conclusions (FAILURE, CANCELLED,
+          # TIMED_OUT, ACTION_REQUIRED, STARTUP_FAILURE, STALE, ERROR) or an
+          # unrecognized state — blocks outright.
+          nonterminal='["PENDING", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "EXPECTED"]'
           #
           # An *absent* check is not a passing check. `gh pr checks` reports only
           # the check-runs that currently exist, so a workflow that is queued but
@@ -190,8 +198,8 @@ jobs:
             [ -n "$checks" ] || checks='[]'
 
             succeeded=$(jq '[.[] | select(.state == "SUCCESS")] | length' <<<"$checks")
-            pending=$(jq '[.[] | select(.state == "PENDING")] | length' <<<"$checks")
-            blocked=$(jq '[.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and .state != "PENDING")] | length' <<<"$checks")
+            pending=$(jq --argjson nt "$nonterminal" '[.[] | select(.state as $s | $nt | index($s) != null)] | length' <<<"$checks")
+            blocked=$(jq --argjson nt "$nonterminal" '[.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and (.state as $s | $nt | index($s) == null))] | length' <<<"$checks")
 
             # Queued or running workflow runs for this exact commit, including
             # any that have not yet surfaced a check-run on the PR.
@@ -203,7 +211,7 @@ jobs:
               --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo "unknown")
 
             if [ "$blocked" -ne 0 ]; then
-              jq -r '.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and .state != "PENDING") | "  \(.state)\t\(.name)"' <<<"$checks"
+              jq -r --argjson nt "$nonterminal" '.[] | select(.state != "SUCCESS" and .state != "SKIPPED" and .state != "NEUTRAL" and (.state as $s | $nt | index($s) == null)) | "  \(.state)\t\(.name)"' <<<"$checks"
               echo "PR #$PR_NUMBER has $blocked non-passing check(s) — not merging"
               break
             fi

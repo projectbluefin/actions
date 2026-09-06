@@ -217,7 +217,7 @@ Three gates must all pass before a merge happens:
 
 1. **Author** is `mergeraptor` or `renovate` (in any spelling — see the gotcha below).
 2. **Renovate enabled auto-merge** on the PR (`autoMergeRequest != null`), i.e. `renovate.json` says it qualifies.
-3. **Every check is green *and* nothing is still running.** Any check not in `SUCCESS`/`SKIPPED`/`NEUTRAL` blocks. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics.
+3. **Every check is green *and* nothing is still running.** Nonterminal check states — `PENDING`, `QUEUED`, `IN_PROGRESS`, `WAITING`, `REQUESTED`, `EXPECTED` (the same set `gh pr checks` places in its own `pending` bucket) — are awaited up to `check_timeout_seconds`, never treated as failures. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics. Only terminal failure conclusions (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`, `STARTUP_FAILURE`, `STALE`, `ERROR`) or an unrecognized state block outright.
 
 **Gotcha — an absent check is not a passing check.** `gh pr checks` reports only the check-runs that currently *exist*. A workflow that is queued but has not yet registered a check-run is simply **missing from the rollup**, not `PENDING`; and re-running a workflow removes its check-runs entirely while they re-queue. A naive "nothing is pending, so we're done" gate will happily merge with most checks never having run. Since this workflow is triggered by *one* CI workflow completing while siblings may still be queued, that race is the normal case, not an edge case. Cross-check in-flight runs for the same commit:
 
