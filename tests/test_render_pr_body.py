@@ -377,9 +377,14 @@ class TestSectionFooter:
         assert "---" in md
 
     @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
-    def test_contains_maintainers_group(self, module):
+    def test_describes_branch_protection_requirements(self, module):
         md = module._section_footer()
-        assert "@projectbluefin/maintainers" in md
+        assert "branch-protection requirements" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_does_not_name_a_specific_reviewer(self, module):
+        md = module._section_footer()
+        assert "projectbluefin/maintainers" not in md
 
     @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
     def test_contains_gh_merge_command(self, module):
@@ -412,9 +417,9 @@ class TestSectionFooter:
         assert "<pr-number>" in md
 
     @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
-    def test_approvals_count_mentioned(self, module):
+    def test_does_not_require_a_fixed_approval_count(self, module):
         md = module._section_footer()
-        assert "2" in md
+        assert "2 approvals" not in md
 
     @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
     def test_main_render_includes_footer_separator(self, module, tmp_path):

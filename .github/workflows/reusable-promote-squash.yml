@@ -81,6 +81,20 @@ on:
         required: false
         type: boolean
         default: false
+      request_reviewer:
+        description: >
+          Request a reviewer for the promotion PR. When true and reviewer is empty,
+          requests the conventional <repository owner>/maintainers team.
+        required: false
+        type: boolean
+        default: true
+      reviewer:
+        description: >
+          GitHub user or organization team slug to request, for example
+          projectbluefin/maintainers. Used only when request_reviewer is true.
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -101,6 +115,7 @@ jobs:
     # where two steps hardcoded the name and one step derived it dynamically).
     env:
       PROMOTION_BRANCH: ${{ format('auto/promote-{0}-to-{1}', inputs.source_branch, inputs.target_branch) }}
+      PROMOTION_REVIEWER: ${{ inputs.request_reviewer && (inputs.reviewer || format('{0}/maintainers', github.repository_owner)) || '' }}
     permissions:
       contents: write
       pull-requests: write
@@ -311,6 +326,10 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
+          reviewer_args=()
+          if [ -n "$PROMOTION_REVIEWER" ]; then
+            reviewer_args=(--reviewer "$PROMOTION_REVIEWER")
+          fi
 
           PR_NUMBER=$(gh pr list \
             --repo "${{ github.repository }}" \
@@ -333,21 +352,22 @@ jobs:
               --head "$PROMOTION_BRANCH" \
               --title "${PR_TITLE}" \
               --body-file "${PR_BODY_FILE}" \
-              --reviewer "${{ github.repository_owner }}/maintainers")
+              "${reviewer_args[@]}")
             PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
             echo "Created PR #${PR_NUMBER}"
           fi
 
-          # Re-request the maintainers team after a force-push (promoted=true).
+          # Re-request the configured reviewer after a force-push (promoted=true).
           # A force-push dismisses existing reviews and clears reviewer requests,
           # leaving nobody assigned for the second review. Skip on promoted=skipped
-          # (tree unchanged, existing approvals preserved — no re-request needed).
-          if [ "${{ steps.rebuild.outputs.promoted }}" = "true" ]; then
+          # (tree unchanged, existing approvals preserved — no re-request needed), and
+          # when request_reviewer is false.
+          if [ "${{ steps.rebuild.outputs.promoted }}" = "true" ] && [ -n "$PROMOTION_REVIEWER" ]; then
             gh pr edit "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
-              --add-reviewer "${{ github.repository_owner }}/maintainers" 2>/dev/null \
-              && echo "✅ Re-requested maintainers review" \
-              || echo "⚠️  Could not re-request reviewers (team may not exist or no permission)"
+              --add-reviewer "$PROMOTION_REVIEWER" 2>/dev/null \
+              && echo "✅ Re-requested reviewer" \
+              || echo "⚠️  Could not re-request reviewer (it may not exist or no permission)"
           fi
 
           PR_URL=$(gh pr view "$PR_NUMBER" \
