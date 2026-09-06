@@ -15,7 +15,7 @@ inputs:
     description: "Report vulnerabilities at this severity and above (CRITICAL, HIGH, MEDIUM, LOW)."
     default: "CRITICAL"
   exit-code:
-    description: "Deprecated compatibility input. scan-image always exits 0 and never blocks builds."
+    description: "Deprecated compatibility input. CVE findings never block builds; scan failures are reported."
     default: "0"
   ignore-unfixed:
     description: "Ignore vulnerabilities that have no available fix"
