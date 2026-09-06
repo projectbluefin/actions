@@ -225,7 +225,14 @@ podman_calls() {
 
 @test "validate: fails with an error annotation when podman is missing" {
   rm -f "${STUB_BIN}/podman"
-  run env PATH="${STUB_BIN}:/usr/bin:/bin" bash "${TEST_TMP}/validate.sh"
+  # Resolve bash's real path before restricting PATH to just STUB_BIN: env
+  # still needs to locate the bash binary, but STUB_BIN alone (without
+  # /usr/bin:/bin) keeps this test isolated from a real podman that may be
+  # preinstalled on the runner (e.g. ubuntu-24.04 ships Podman), which would
+  # otherwise let `command -v podman` succeed and mask the missing-tool path.
+  local bash_bin
+  bash_bin="$(command -v bash)"
+  run env PATH="${STUB_BIN}" "${bash_bin}" "${TEST_TMP}/validate.sh"
   [ "$status" -eq 1 ]
   [[ "$output" == *"::error::podman is required"* ]]
 }
