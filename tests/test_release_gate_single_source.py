@@ -7,10 +7,9 @@ that `tests/bats/test_release_gate.bats` actually exercises. Nothing invokes the
 scripts at runtime, so without this gate the BATS suite can stay green while the
 shipped gate regresses. These tests make the two copies provably identical.
 
-The workflow and the scripts differ in exactly one respect: the workflow reads
-`${{ steps.resolve.outputs.ok }}` where the script reads `${RESOLVE_OK}`. That
-substitution is declared once, in NORMALISATIONS, and applied before comparison
-so every *other* difference fails the build.
+NORMALISATIONS declares the only sanctioned divergences between an inline step
+body and its script (currently none). Keep it minimal: every entry is a place
+where the drift gate is blind.
 """
 from pathlib import Path
 
@@ -30,9 +29,7 @@ STEP_TO_SCRIPT = {
 # The only sanctioned divergences between an inline step body and its script.
 # Each entry maps a workflow-expression form to the env-var form the script uses.
 # Keep this table minimal: every entry is a place where the drift gate is blind.
-NORMALISATIONS = {
-    "verify": [("'${{ steps.resolve.outputs.ok }}'", '"${RESOLVE_OK}"')],
-}
+NORMALISATIONS = {}
 
 
 def _gate_steps():
