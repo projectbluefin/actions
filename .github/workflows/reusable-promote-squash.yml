@@ -108,6 +108,7 @@ jobs:
   normalize-registry:
     name: Normalize registry
     runs-on: ubuntu-latest
+    permissions: {}
     outputs:
       registry: ${{ steps.normalize.outputs.registry }}
     steps:
