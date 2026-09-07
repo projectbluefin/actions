@@ -70,8 +70,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  normalize-registry:
+    name: Normalize registry
+    runs-on: ubuntu-latest
+    outputs:
+      registry: ${{ steps.normalize.outputs.registry }}
+    steps:
+      - id: normalize
+        shell: bash
+        env:
+          INPUT_REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          registry="${INPUT_REGISTRY#docker://}"
+          echo "registry=${registry,,}" >> "$GITHUB_OUTPUT"
+
   gate:
     name: gate
+    needs: [normalize-registry]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -88,7 +104,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          REGISTRY_HOST: ${{ inputs.registry }}
+          REGISTRY_HOST: ${{ needs.normalize-registry.outputs.registry }}
         run: |
           set -euo pipefail
           registry_host="${REGISTRY_HOST:-}"
@@ -100,7 +116,7 @@ jobs:
         id: resolve
         shell: bash
         env:
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
           TARGET_TAG: ${{ inputs.target_tag }}
           VARIANTS_JSON: ${{ inputs.variants }}
         run: |
@@ -151,7 +167,7 @@ jobs:
         env:
           DIGESTS_JSON: ${{ steps.resolve.outputs.digests }}
           IDENTITY_REGEXP: ${{ inputs.cosign_identity_regexp }}
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
           VARIANTS_JSON: ${{ inputs.variants }}
         run: |
           set -euo pipefail
