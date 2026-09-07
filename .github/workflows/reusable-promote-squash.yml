@@ -105,8 +105,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  normalize-registry:
+    name: Normalize registry
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      registry: ${{ steps.normalize.outputs.registry }}
+    steps:
+      - id: normalize
+        shell: bash
+        env:
+          INPUT_REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          registry="${INPUT_REGISTRY#docker://}"
+          echo "registry=${registry,,}" >> "$GITHUB_OUTPUT"
+
   promote:
     name: Build and maintain squash promotion PR
+    needs: [normalize-registry]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Single source of truth for the squash branch name. Derived from the
@@ -469,7 +486,7 @@ jobs:
 
   gate:
     name: Release gate checks
-    needs: [promote]
+    needs: [normalize-registry, promote]
     if: needs.promote.outputs.sync_needed == 'true' && needs.promote.outputs.promoted != 'false'
     permissions:
       actions: read
@@ -482,7 +499,7 @@ jobs:
       repo: ${{ github.repository }}
       pr_number: ${{ needs.promote.outputs.pr_number }}
       head_sha: ${{ needs.promote.outputs.source_sha }}
-      registry: ${{ inputs.registry }}
+      registry: ${{ needs.normalize-registry.outputs.registry }}
       variants: ${{ inputs.variants }}
       cosign_identity_regexp: ${{ inputs.cosign_identity_regexp }}
       target_tag: testing

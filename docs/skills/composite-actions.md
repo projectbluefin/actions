@@ -180,6 +180,13 @@ Registry/org names must be lowercased before any push or reference:
 REGISTRY_LOWER="${REGISTRY,,}/${GITHUB_REPOSITORY_OWNER,,}"
 ```
 
+For reusable workflows, normalize the public `registry` input once in a
+preparation job and expose the canonical, `docker://`-stripped lowercase value
+as a job output. Every job that logs in to a registry or constructs an OCI
+reference must consume that output rather than `inputs.registry`. Reusables
+remain safe for direct callers this way; callers may continue to pass
+`ghcr.io/${{ github.repository_owner }}` without pre-normalizing it.
+
 ### Privileged operations
 
 Container/storage commands that need root use `sudo -E` to preserve the environment:

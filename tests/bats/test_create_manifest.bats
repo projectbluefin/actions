@@ -224,8 +224,10 @@ podman_calls() {
 }
 
 @test "validate: fails with an error annotation when podman is missing" {
-  rm -f "${STUB_BIN}/podman"
-  run env PATH="${STUB_BIN}:/usr/bin:/bin" bash "${TEST_TMP}/validate.sh"
+  validate_bin="${TEST_TMP}/validate-bin"
+  mkdir -p "${validate_bin}"
+  ln -s "$(command -v jq)" "${validate_bin}/jq"
+  run env PATH="${validate_bin}" /bin/bash "${TEST_TMP}/validate.sh"
   [ "$status" -eq 1 ]
   [[ "$output" == *"::error::podman is required"* ]]
 }

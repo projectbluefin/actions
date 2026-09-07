@@ -52,8 +52,24 @@ on:
 permissions: {}
 
 jobs:
+  normalize-registry:
+    name: Normalize registry
+    runs-on: ubuntu-latest
+    outputs:
+      registry: ${{ steps.normalize.outputs.registry }}
+    steps:
+      - id: normalize
+        shell: bash
+        env:
+          INPUT_REGISTRY: ${{ inputs.registry }}
+        run: |
+          set -euo pipefail
+          registry="${INPUT_REGISTRY#docker://}"
+          echo "registry=${registry,,}" >> "$GITHUB_OUTPUT"
+
   resolve:
     name: Resolve candidate digests
+    needs: [normalize-registry]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -82,7 +98,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
         run: |
           set -euo pipefail
           registry_host="${REGISTRY#docker://}"
@@ -93,7 +109,7 @@ jobs:
         id: resolve
         shell: bash
         env:
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
           VARIANTS_JSON: ${{ inputs.variants }}
         run: |
           set -euo pipefail
@@ -113,7 +129,7 @@ jobs:
 
   release-gate:
     name: Release gate — ${{ matrix.variant.image }}
-    needs: [resolve]
+    needs: [normalize-registry, resolve]
     if: inputs.run_release_gate
     permissions:
       contents: read
@@ -124,13 +140,13 @@ jobs:
         variant: ${{ fromJSON(inputs.variants) }}
     uses: projectbluefin/testsuite/.github/workflows/e2e.yml@ee82d53a4f86617d807df831a60ad1deaa0d5366 # v1 (matches projectbluefin/bluefin run-testsuite.yml pin)
     with:
-      image: ${{ format('{0}/{1}@{2}', inputs.registry, matrix.variant.image, fromJSON(needs.resolve.outputs.digests)[matrix.variant.image]) }}
+      image: ${{ format('{0}/{1}@{2}', needs.normalize-registry.outputs.registry, matrix.variant.image, fromJSON(needs.resolve.outputs.digests)[matrix.variant.image]) }}
       suites: ${{ inputs.gate_suites }}
       test_ref: v1
 
   execute:
     name: Promote release
-    needs: [resolve, release-gate]
+    needs: [normalize-registry, resolve, release-gate]
     if: always() && needs.resolve.result == 'success' && (needs.release-gate.result == 'success' || needs.release-gate.result == 'skipped')
     runs-on: ubuntu-latest
     permissions:
@@ -145,14 +161,14 @@ jobs:
     env:
       DIGESTS_JSON: ${{ needs.resolve.outputs.digests }}
       PROMOTED_SHA: ${{ needs.resolve.outputs.sha }}
-      REGISTRY: ${{ inputs.registry }}
+      REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
       VARIANTS_JSON: ${{ inputs.variants }}
     steps:
       - name: Authenticate to GHCR
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
         run: |
           set -euo pipefail
           registry_host="${REGISTRY#docker://}"
@@ -167,7 +183,7 @@ jobs:
         env:
           DIGESTS_JSON: ${{ needs.resolve.outputs.digests }}
           IDENTITY_REGEXP: ${{ inputs.cosign_identity_regexp }}
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
           VARIANTS_JSON: ${{ inputs.variants }}
         run: |
           set -euo pipefail
@@ -187,7 +203,7 @@ jobs:
         shell: bash
         env:
           DIGESTS_JSON: ${{ needs.resolve.outputs.digests }}
-          REGISTRY: ${{ inputs.registry }}
+          REGISTRY: ${{ needs.normalize-registry.outputs.registry }}
           VARIANTS_JSON: ${{ inputs.variants }}
         run: |
           set -uo pipefail
