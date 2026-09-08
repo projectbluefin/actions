@@ -365,3 +365,10 @@ JSON
   # In case of API failure, it safely proceeds past the guard without crashing
   [ -f "$GIT_PUSH_LOG_FILE" ]
 }
+
+@test "rebuild step queue-guard GraphQL query has shellcheck disable annotation for SC2016" {
+  local workflow_file="${BATS_TEST_DIRNAME}/../../.github/workflows/reusable-promote-squash.yml"
+  run grep -B 1 "PR_DATA=\$(gh api graphql" "$workflow_file"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"# shellcheck disable=SC2016"* ]]
+}

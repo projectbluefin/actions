@@ -416,6 +416,7 @@ open promotion PR. If a queue entry exists, emit an informative notice, set `pro
 and exit 0 so the merge queue can progress undisturbed:
 
 ```bash
+# shellcheck disable=SC2016  # GraphQL variables, not shell variables
 PR_DATA=$(gh api graphql \
   -f query='query($owner: String!, $repo: String!, $head: String!, $base: String!) {
     repository(owner: $owner, name: $repo) {
