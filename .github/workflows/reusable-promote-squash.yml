@@ -124,8 +124,8 @@ jobs:
       sync_needed: ${{ steps.compare.outputs.sync_needed }}
       testing_sha: ${{ steps.compare.outputs.testing_sha }}
       source_sha: ${{ steps.source-sha.outputs.sha }}
-      pr_number: ${{ steps.upsert.outputs.pr_number }}
-      pr_url: ${{ steps.upsert.outputs.pr_url }}
+      pr_number: ${{ steps.upsert.outputs.pr_number || steps.rebuild.outputs.pr_number }}
+      pr_url: ${{ steps.upsert.outputs.pr_url || steps.rebuild.outputs.pr_url }}
       promoted: ${{ steps.rebuild.outputs.promoted }}
     steps:
       - name: Checkout repository
@@ -190,10 +190,58 @@ jobs:
         if: steps.compare.outputs.sync_needed == 'true'
         id: rebuild
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
+
+          # Queue-entry guard: if an open promotion PR already has an active
+          # merge queue entry, avoid all branch rewrites and exit successfully
+          # so the merge queue can progress without GH006 force-push rejection.
+          REPO="${GITHUB_REPOSITORY:-${{ github.repository }}}"
+          REPO_OWNER="${REPO%/*}"
+          REPO_NAME="${REPO#*/}"
+
+          PR_DATA=""
+          if [ -n "$REPO_OWNER" ] && [ -n "$REPO_NAME" ]; then
+            PR_DATA=$(gh api graphql \
+              -f query='query($owner: String!, $repo: String!, $head: String!, $base: String!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 1) {
+                    nodes {
+                      id
+                      number
+                      url
+                      mergeQueueEntry {
+                        id
+                        state
+                      }
+                    }
+                  }
+                }
+              }' \
+              -F owner="$REPO_OWNER" \
+              -F repo="$REPO_NAME" \
+              -F head="$PROMOTION_BRANCH" \
+              -F base="$TARGET_BRANCH" \
+              --jq '.data.repository.pullRequests.nodes[0] // empty' 2>/dev/null) || PR_DATA=""
+          fi
+
+          if [ -n "$PR_DATA" ]; then
+            QUEUE_ENTRY_ID=$(echo "$PR_DATA" | jq -r '.mergeQueueEntry.id // empty' 2>/dev/null || echo "")
+            if [ -n "$QUEUE_ENTRY_ID" ]; then
+              PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number // empty' 2>/dev/null || echo "")
+              PR_URL=$(echo "$PR_DATA" | jq -r '.url // empty' 2>/dev/null || echo "")
+              QUEUE_STATE=$(echo "$PR_DATA" | jq -r '.mergeQueueEntry.state // "QUEUED"' 2>/dev/null || echo "QUEUED")
+              echo "::notice::Promotion PR #${PR_NUMBER} has active merge queue entry (${QUEUE_ENTRY_ID}, state: ${QUEUE_STATE}) — skipping branch mutation"
+              echo "promoted=false" >> "$GITHUB_OUTPUT"
+              [ -n "$PR_NUMBER" ] && echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+              [ -n "$PR_URL" ] && echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
           # Always rebuild from current origin/target_branch — eliminates staleness and conflict
           # drift. Force-push ensures the PR always shows a clean single-commit diff.
           git checkout -B "$PROMOTION_BRANCH" "origin/${TARGET_BRANCH}"

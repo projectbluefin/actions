@@ -43,6 +43,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Wire a new bats test into CI | `docs/skills/testing.md` → "Shell scripts (bats)" (bats job in `unit-tests.yml`) |
 | Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
 | Understand or debug the promotion PR body or gate checklist | `docs/skills/factory-operations.md` → "Promotion PR Format" |
+| Understand the promotion merge queue guard (GH006 prevention) | `docs/skills/factory-operations.md` → "Queue-entry guard" |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
 | Enforce Conventional Commits PR title format | `docs/skills/composite-actions/action-reference.md` → "validate-pr-title" |
 | Understand SLSA Build L2 posture and scope | `docs/skills/supply-chain.md` → "SLSA Build L2 posture" |

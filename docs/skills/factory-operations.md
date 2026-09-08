@@ -406,6 +406,48 @@ REMOTE_TREE=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1 | xargs git ca
 [ "$SQUASH_TREE" = "$REMOTE_TREE" ] && echo "no-op, skipping force-push"
 ```
 
+### Queue-entry guard: avoid branch rewrites when PR is merge-queued
+
+When a promotion PR is enrolled in a merge queue, GitHub locks the head branch and rejects
+any force-push or branch mutation with `GH006: Ref cannot be updated: A pull request using this branch as its head is in the merge queue and cannot be modified.` Subsequent workflow runs (e.g. daily cron, push to testing, or PR review triggers) must not attempt to rebuild or mutate the branch while it is queued.
+
+Before checkout or branch mutation, query GraphQL for an existing `mergeQueueEntry` on the
+open promotion PR. If a queue entry exists, emit an informative notice, set `promoted=false`,
+and exit 0 so the merge queue can progress undisturbed:
+
+```bash
+PR_DATA=$(gh api graphql \
+  -f query='query($owner: String!, $repo: String!, $head: String!, $base: String!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 1) {
+        nodes {
+          id
+          number
+          url
+          mergeQueueEntry {
+            id
+            state
+          }
+        }
+      }
+    }
+  }' \
+  -F owner="$REPO_OWNER" \
+  -F repo="$REPO_NAME" \
+  -F head="$PROMOTION_BRANCH" \
+  -F base="$TARGET_BRANCH" \
+  --jq '.data.repository.pullRequests.nodes[0] // empty' 2>/dev/null) || PR_DATA=""
+
+if [ -n "$PR_DATA" ]; then
+  QUEUE_ENTRY_ID=$(echo "$PR_DATA" | jq -r '.mergeQueueEntry.id // empty' 2>/dev/null || echo "")
+  if [ -n "$QUEUE_ENTRY_ID" ]; then
+    echo "::notice::Promotion PR #${PR_NUMBER} has active merge queue entry (${QUEUE_ENTRY_ID}) — skipping branch mutation"
+    echo "promoted=false" >> "$GITHUB_OUTPUT"
+    exit 0
+  fi
+fi
+```
+
 ### gh api failure output goes to stdout — capture defensively
 
 `gh api` on a failed request (HTTP 404/500) prints the API error body to **stdout**
