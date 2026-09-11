@@ -1,6 +1,6 @@
 ---
 name: factory-operations
-description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge.
+description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge. Use when configuring or verifying the 2-human production environment gate, managing promotion cadence and merge queues across image repos, troubleshooting factory pipeline health monitoring, or verifying Renovate auto-merge configuration.
 metadata:
   type: reference
 ---
@@ -537,3 +537,54 @@ Renovate keeps pins fresh automatically; the factory health monitor surfaces fai
 |---|---|---|
 | Environment gate never appears | `production` Environment not configured in GitHub UI | Follow the Manual GitHub UI setup steps above |
 | Both reviewers approved but job didn't start | GitHub Environments cache can take ~30s to register approvals | Wait 30s and refresh the Actions run page |
+
+---
+
+## When to Use
+
+Use this skill when:
+- Setting up or auditing the machine-enforced 2-human production approval gate in consumer repositories.
+- Modifying promotion schedules, cadence, or merge-queue integration across bluefin, dakota, or bluefin-lts.
+- Investigating factory health monitoring alerts or failure issue generation in `projectbluefin/common`.
+- Debugging or configuring Renovate dependency updates and automated merge rules for first-party or third-party pins.
+- Verifying the end-to-end promotion PR format (Design C) and checklist markers.
+
+## When NOT to Use
+
+Do not use this skill to:
+- Modify individual composite action implementations (use `composite-actions.md`).
+- Bypass the 2-human approval gate or force promotions directly to stable without verification.
+- Manually edit generated promotion PRs while automation is active.
+
+## Core Process
+
+1. **Production gate enforcement**: Configure GitHub Environment `production` with 2 required maintainer reviewers; ensure promotional workflows declare `environment: production`.
+2. **Promotion workflow orchestration**: Validate that weekly promotions lock the main HEAD SHA, execute full e2e testsuites, and post structured Design C promotion PRs.
+3. **Merge-queue compliance**: Follow the merge-queue contract (`use_merge_queue`), ensuring queue entry guards prevent out-of-order race conditions.
+4. **Health monitoring**: Maintain the 6-hour scheduled health check; confirm automated alerts fire when pipeline success rates drop below 80%.
+5. **Renovate automation**: Configure Renovate presets and package rules; ensure first-party references are ignored and third-party SHA bumps auto-merge upon passing CI.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "Only one maintainer is available, so bypass the environment gate." | The 2-human rule is an intentional safety invariant preventing single-point compromise or accidental releases. |
+| "Promotion can skip e2e tests because testing passed yesterday." | Builds drift constantly with upstream packages; promotional gates require explicit e2e verification of the exact SHA. |
+| "A single failing run isn't worth investigating." | Repeated silent failures degrade pipeline health until mass breakages occur. |
+| "Renovate auto-merge doesn't need verification if actionlint passed." | Auto-merge can fail silently if GitHub App credentials or branch protection rules are misconfigured. |
+
+## Red Flags
+
+- Production promotion jobs executing without an `environment: production` block.
+- Self-approval or single-human approvals pushing images to the `:stable` tag.
+- Disabling `run_e2e` or promotion gates without explicit maintainer sign-off.
+- Renovate creating duplicate PRs to pin first-party `projectbluefin/actions` references.
+- Missing `MERGERAPTOR_APP_ID` or private keys leading to silent auto-merge workflow failures.
+
+## Verification
+
+- [ ] GitHub Environment `production` is configured with 2 required maintainer reviewers.
+- [ ] Weekly promotion workflows specify `environment: production`.
+- [ ] Merge queue configuration matches each repository's promotion contract (`use_merge_queue`).
+- [ ] Factory health monitor scheduled runs complete and create alert issues when failure thresholds are crossed.
+- [ ] Renovate auto-merge workflow runs with valid GitHub App authentication and branch protection bypasses.

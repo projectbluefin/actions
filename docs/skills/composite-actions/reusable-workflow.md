@@ -1,6 +1,6 @@
 ---
 name: reusable-workflow
-description: Reference for reusable-build.yml and reusable-release.yml in projectbluefin/actions. Covers cross-repo action ref resolution, digest output shape, JSON array inputs, SBOM artifact naming, release modes (image stable and semver), and permissions hardening. Load when authoring or debugging these reusable workflows.
+description: Reference for reusable workflows in projectbluefin/actions (reusable-build.yml, reusable-release.yml, reusable-execute-release.yml). Use when authoring or debugging shared reusable workflows, wiring consuming repos, configuring multi-arch matrix builds, managing promotion gates, or auditing job permissions. Covers cross-repo action ref resolution, digest output shape, JSON array inputs, SBOM artifact naming, release modes, and permissions hardening.
 metadata:
   type: reference
 ---
@@ -319,3 +319,53 @@ If they differ, bump this workflow's pin to bluefin's SHA in the same PR. Do not
 ### Permissions
 
 The caller must grant `packages: write` so the nested testsuite workflow can push desktop-screenshot OCI artifacts. The promotion job itself needs `contents: write`, `issues: write`, `packages: write`, and `pull-requests: write` for the release mechanics.
+
+---
+
+## When to Use
+
+Use this skill when:
+- Authoring, maintaining, or debugging the shared reusable workflows (`reusable-build.yml`, `reusable-release.yml`, `reusable-execute-release.yml`).
+- Integrating a consumer repository with `reusable-build.yml` (Path 1 consumer integration).
+- Configuring JSON array inputs for matrix builds, architectures, or flavor lists.
+- Hardening permissions on reusable workflow caller jobs and step definitions.
+- Aligning testsuite e2e pins between `reusable-execute-release.yml` and consumer repos.
+
+## When NOT to Use
+
+Do not use this skill to:
+- Learn individual composite action interfaces or implementations (use `composite-actions.md` and `action-reference.md`).
+- Implement consumer repo custom Justfiles (use `consumer-guide.md`).
+- Manage high-level promotion schedules and 2-human approval gates (use `factory-operations.md`).
+
+## Core Process
+
+1. **Review workflow contract**: Check `workflow_call` triggers, inputs, and secrets required by the reusable workflow.
+2. **Apply permissions hardening**: Set top-level `permissions: {}` and grant minimum required permissions on each individual job.
+3. **Use self-repository syntax**: Reference internal actions using `$/bootc-build/<name>` rather than hardcoded repo refs.
+4. **Preserve multi-arch digest shapes**: Ensure build jobs emit immutable image digests rather than mutable tags.
+5. **Verify pins across repos**: Ensure external pins (like testsuite e2e) match the caller repos exactly.
+6. **Validate with actionlint**: Run `actionlint` locally before submitting PRs.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "Top-level `permissions: write-all` is easier for reusable workflows." | Reusable workflows inherit wide permissions if set at the top level; per-job least privilege prevents token compromise. |
+| "A tag is fine as an output instead of a digest." | Tags are mutable and introduce race conditions (TOCTOU) between testing, signing, and promotion; digests are immutable. |
+| "The e2e pin comment matches, so the SHA must match." | Comments can drift from actual commit SHAs; always compare SHA hashes directly via git or the API. |
+
+## Red Flags
+
+- Top-level workflow permissions granting write access globally across all jobs.
+- Passing bare unvalidated JSON strings into matrix dimensions without decoding.
+- Resolving image digests multiple times across gates instead of carrying a single resolved digest.
+- Mismatched `projectbluefin/testsuite` e2e pins between the release gate and consuming repos.
+
+## Verification
+
+- [ ] Top-level `permissions: {}` is set on the workflow.
+- [ ] Each job specifies only the exact permissions needed for its execution.
+- [ ] Internal composite action invocations use `$/bootc-build/...` self-repo syntax.
+- [ ] Output digests are verified immutable SHA-256 strings (`sha256:...`).
+- [ ] Actionlint and consumer contract checks pass without errors.
