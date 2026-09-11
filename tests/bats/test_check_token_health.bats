@@ -183,3 +183,42 @@ teardown() {
   [ "$status" -eq 0 ]
   grep -q "expires_at=none" "$GITHUB_OUTPUT"
 }
+
+# ── GitHub App installation tokens (ghs_ prefix) ─────────────────────────────
+
+@test "GitHub App token (ghs_) passes and skips scope check even when required_scopes set" {
+  export GH_TOKEN="ghs_test_app_token"
+  export REQUIRED_SCOPES="repo,workflow"
+  make_curl_mock 200
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q "valid=true" "$GITHUB_OUTPUT"
+  [[ "$output" == *"GitHub App installation token — scope check skipped"* ]]
+}
+
+@test "GitHub App token (ghs_) HTTP 401 sets valid=false and exits 1" {
+  export GH_TOKEN="ghs_test_app_token"
+  make_curl_mock 401
+  run bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  grep -q "valid=false" "$GITHUB_OUTPUT"
+  [[ "$output" == *"invalid or expired (HTTP 401)"* ]]
+}
+
+@test "GitHub App token (ghs_) non-200 HTTP code sets valid=false and exits 1" {
+  export GH_TOKEN="ghs_test_app_token"
+  make_curl_mock 403
+  run bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  grep -q "valid=false" "$GITHUB_OUTPUT"
+  [[ "$output" == *"auth check returned HTTP 403"* ]]
+}
+
+@test "GitHub App token (ghs_) with expiry sets expires_at output" {
+  export GH_TOKEN="ghs_test_app_token"
+  echo '{"repositories":[],"expires_at":"2026-12-31T23:59:59Z"}' > "$AUTH_RESPONSE_FILE"
+  make_curl_mock 200
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q "expires_at=2026-12-31T23:59:59Z" "$GITHUB_OUTPUT"
+}

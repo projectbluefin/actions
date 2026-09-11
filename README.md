@@ -46,6 +46,7 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 |--------|---------|
 | [`.github/workflows/reusable-build.yml`](.github/workflows/reusable-build.yml) | Full Fedora bootc image build pipeline (Path 1) |
 | [`.github/workflows/reusable-release.yml`](.github/workflows/reusable-release.yml) | Image stable-release orchestration and Conventional Commits GitHub Release creation |
+| [`.github/workflows/reusable-design-enforcement.yml`](.github/workflows/reusable-design-enforcement.yml) | Enforce the seven-label issue and review workflow |
 
 ## Quick Start
 

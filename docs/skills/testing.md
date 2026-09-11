@@ -49,6 +49,12 @@ Coverage gate: `--cov-fail-under=75`
 | `setup-runner` native-overlay setup | `tests/bats/test_setup_runner.bats` (9 tests) |
 | `reusable-renovate-automerge.yml` check-rollup classification | `tests/bats/test_renovate_automerge_checks.bats` (8 tests) |
 
+The Node suite runs in the `node` job in `unit-tests.yml`:
+
+```bash
+node --test tests/node/*.test.mjs
+```
+
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
 ```bash
