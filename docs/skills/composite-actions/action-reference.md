@@ -1,6 +1,6 @@
 ---
 name: composite-actions-reference
-description: Full action-by-action reference for all bootc-build composite actions: setup-runner, dnf-cache, preflight, push-image, sign-and-publish, chunka, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest. Load when implementing, debugging, or wiring a specific action.
+description: Full action-by-action reference for all bootc-build composite actions. Use when implementing, configuring, or debugging any specific action in bootc-build/ (setup-runner, dnf-cache, preflight, push-image, sign-and-publish, chunka, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest). Covers inputs, outputs, environment requirements, quirks, and integration examples.
 metadata:
   type: reference
 ---
@@ -584,3 +584,50 @@ Consumer usage (call from any PR validation workflow):
   with:
     pr-title: ${{ github.event.pull_request.title }}
 ```
+
+---
+
+## When to Use
+
+Use this skill when:
+- Integrating or updating any specific action from the `bootc-build/` catalog in a consumer workflow.
+- Looking up specific inputs, outputs, defaults, or side effects of actions like `setup-runner`, `push-image`, `sign-and-publish`, or `chunka`.
+- Debugging execution quirks in a specific action (e.g. runner disk exhaustion, native overlay mounting, or SBOM size limits in `create-release`).
+- Extending or modifying the behavior or interface of an existing composite action.
+
+## When NOT to Use
+
+Do not use this skill to:
+- Learn broad authoring conventions or SHA-pinning guidelines (use parent `composite-actions.md`).
+- Implement top-level reusable workflows (use `reusable-workflow.md`).
+- Bypass consumer validation for changes to any of these actions (use `consumer-validation.md`).
+
+## Core Process
+
+1. **Locate target action**: Identify the action in `bootc-build/<name>/action.yml` and review its documentation section.
+2. **Review input/output contracts**: Check required vs optional inputs, default values, and outputs needed by downstream steps.
+3. **Verify caller environment**: Ensure prerequisites are met (e.g. `setup-runner` executed first, necessary permissions granted such as `packages: write` or `id-token: write`).
+4. **Wire and test**: Invoke the action via `@v1` (or relative/self-repo syntax within this repository).
+5. **Update docs on changes**: When inputs, outputs, or internal behaviors change, update this reference and `docs/consumer-contract.yml`.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "The action worked in local testing without `setup-runner`." | GitHub runners lack necessary storage configuration (BTRFS/overlay) and updated Podman required for chunking and annotations. |
+| "I can omit `github-token` if GITHUB_TOKEN is available in caller environment." | Composite actions do not automatically inherit `secrets.GITHUB_TOKEN`; it must be explicitly passed. |
+| "A large release body is fine since GitHub allows extensive markdown." | GitHub releases hard-fail above 125,000 characters; `create-release` handles chunking/summarization to avoid failure. |
+
+## Red Flags
+
+- Missing `native-overlay: "true"` when running nested Podman-in-container builds that walk directories.
+- Calling `push-image` without verifying that image tags or digests were properly generated.
+- Hardcoding repository-specific identity regular expressions in `sign-and-publish` or `create-release`.
+- Skipping `scan-image` or ignoring CVE scan failures before publishing.
+
+## Verification
+
+- [ ] Target action inputs and outputs match caller workflow expectations.
+- [ ] Required runner prerequisites (tools, storage backend) are satisfied.
+- [ ] Caller provides sufficient permissions (`id-token: write`, `packages: write`, `contents: write` as needed).
+- [ ] `docs/consumer-contract.yml` remains consistent with any changed inputs/outputs.

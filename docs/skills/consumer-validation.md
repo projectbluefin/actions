@@ -1,6 +1,6 @@
 ---
 name: consumer-validation
-description: Enforces the required consumer validation protocol before merging any action change. Covers blast radius table, draft consumer PR procedure, automated CI check behavior, N/A rules, bot exemptions, and cross-fork approval flow.
+description: Enforces the required consumer validation protocol before merging any action change. Use when modifying any action under bootc-build/ or reusable workflow under .github/workflows/, preparing a PR for review, running downstream integration tests in projectbluefin/bluefin, or resolving consumer validation CI check failures. Covers blast radius table, draft consumer PR procedure, automated CI check behavior, N/A rules, bot exemptions, and cross-fork approval flow.
 metadata:
   type: reference
 ---
@@ -159,3 +159,54 @@ The `pat-ban.yml` enforcement workflow scans diff lines for `secrets.XXX` patter
 **Fix applied:** The scanner filters `grep -v '^+++\|^+[[:space:]]*#'` to skip diff headers and YAML comment lines before extracting secret names. When writing or modifying enforcement checks that scan their own diffs, always add this filter.
 
 **Authoring rule:** In any workflow file that discusses `secrets.NAME` in comments, write the name without the `secrets.` prefix to avoid triggering the scan. E.g., write `# GITHUB_TOKEN (built-in)` not `# secrets.GITHUB_TOKEN`.
+
+---
+
+## When to Use
+
+Use this skill when:
+- Preparing a PR that touches any file in `bootc-build/` or `.github/workflows/reusable-*.yml`.
+- Creating a consumer validation PR in `projectbluefin/bluefin` (or other first-party consumer).
+- Filling out the `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields in the actions PR template.
+- Diagnosing failures in the `.github/workflows/consumer-validation.yml` CI check.
+- Assessing blast radius across bluefin, bluefin-lts, aurora, and bazzite before landing changes.
+
+## When NOT to Use
+
+Do not use this skill to:
+- Bypass consumer validation when changing action behavior, inputs, or workflow outputs.
+- Validate pure docs-only changes or unit-test-only changes (these do not affect action execution, though CI checks evaluate path filters automatically).
+- Configure upstream runner infrastructure or write new composite actions (see `composite-actions.md`).
+
+## Core Process
+
+1. **Assess blast radius**: Identify all consuming repositories (first-party and external) affected via the `@v1` floating tag.
+2. **Open a consumer PR**: In `projectbluefin/bluefin` (or designated consumer), open a PR targeting the `testing` branch using `@v1` action references.
+3. **Trigger and await CI**: Ensure the PR is ready for review (draft PRs in bluefin do not trigger CI workflows) and wait for a green CI run.
+4. **Record evidence**: Obtain the full URLs for the consumer PR and consumer CI run.
+5. **Populate actions PR template**: Insert the exact URLs into `Consumer PR:` and `Consumer CI run:`. Write a clear explanation in `Out-of-org consumer impact:` explaining why aurora and bazzite are safe.
+6. **Verify CI passes**: Confirm that `.github/workflows/consumer-validation.yml` passes on your actions PR.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "My change is purely additive (new optional input), so no consumer PR is needed." | Additive changes can still break YAML parsing or introduce syntax bugs. CI check strictly enforces real URLs. |
+| "Writing 'N/A' for Consumer PR because it is an internal workflow." | Only `Out-of-org consumer impact` accepts N/A with rationale; Consumer PR and CI run require valid URLs. |
+| "The PR in bluefin is open as a draft; that's enough." | Draft PRs in bluefin do not trigger CI. The PR must be marked ready for review to generate a valid CI run. |
+| "I'll merge the actions PR first, then test in bluefin." | That breaks `@v1` for all consumers simultaneously if anything is wrong. Consumer validation MUST precede merging. |
+
+## Red Flags
+
+- `N/A`, `TODO`, or `TBD` in `Consumer PR:` or `Consumer CI run:` fields in an action/workflow PR.
+- Citing a bluefin branch without an actual PR or without an executed workflow run ID.
+- Assuming an external consumer like aurora or bazzite will automatically report breaking changes before merge.
+- Merging to `main` without verifying that the consumer PR's CI run completed successfully.
+
+## Verification
+
+- [ ] A valid consumer PR URL is present in `Consumer PR:` (`https://github.com/projectbluefin/.../pull/<id>`).
+- [ ] A valid completed consumer workflow run URL is present in `Consumer CI run:` (`https://github.com/projectbluefin/.../actions/runs/<id>`).
+- [ ] The referenced consumer CI run is green (all jobs passed).
+- [ ] `Out-of-org consumer impact:` provides concrete rationale for why downstream external images will not break.
+- [ ] The automated `consumer-validation.yml` check passes on the actions PR.
