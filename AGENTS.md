@@ -158,6 +158,8 @@ Do not request review without evidence. Before opening a PR for review:
 
 **Read-first:** Read `AGENTS.md`, `docs/SKILL.md`, and `.github/copilot-instructions.md` before touching any action.
 
+**Session hygiene (enforced):** Reviews are read-only — never edit files during a review unless explicitly asked to fix. When asked to "review this PR" with a generic `/pulls` link, list open PRs and confirm the target; never review the local working tree as a substitute. End every session with a clean working tree — commit to a branch, stash with a message, or revert; stranded uncommitted changes mislead the next session. See `docs/skills/session-hygiene.md`.
+
 **Skill contribution (enforced):** If you discover a pattern, fix a recurring mistake, or learn something that would help future agents — update the relevant file in `docs/skills/` in the **same PR** as your change. If no skill file exists for the area, create one and add it to the routing table in `docs/SKILL.md`. Skills live here, not in per-agent configs.
 
 **Supply chain gates:** Every action that downloads external files (Containerfiles, scripts, configs) at build time must vendor those files into the action directory or verify their SHA-256 before use. Never pass a mutable URL directly to `buildah build` or `bash`. See `docs/skills/supply-chain.md` for the full pattern, the chunkah `Containerfile.splitter` vendoring procedure, and the manifest-index-vs-platform-digest rule for OCI image pins. Routine chunkah upgrades are now fully automated via Renovate + `vendor-chunka-files.yml` — no manual steps required.
