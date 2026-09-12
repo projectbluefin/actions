@@ -58,7 +58,6 @@ For implementation-time calls owned by this repository, use the self-repository 
 
 ```yaml
 uses: $/bootc-build/setup-runner
-uses: $/.github/actions/install-cosign
 uses: $/.github/workflows/reusable-release-gate.yml
 ```
 
