@@ -61,6 +61,11 @@ on:
         default: false
         required: false
         type: boolean
+      target_branch:
+        description: "Branch in the consumer repo to open the cadence PR against (usually its default branch)"
+        default: "main"
+        required: false
+        type: string
     secrets:
       app_id:
         description: "GitHub App ID"
@@ -212,14 +217,27 @@ jobs:
             git diff --stat "${{ inputs.intervals_file }}"
           fi
 
-      - name: Commit updated cadence files
+      - name: Commit cadence files and open a PR
         if: steps.changes.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           cd consumer
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "bluefin-ghost-arc[bot]"
+          git config user.email "bluefin-ghost-arc[bot]@users.noreply.github.com"
+          # main sits behind a merge-queue ruleset (and the app lacks a direct
+          # push grant), so push a feature branch and open a PR instead of a
+          # direct push to main — see projectbluefin/bluefin-lts#503.
+          BRANCH="cadence/update-intervals-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
           git add files/pkg-versions.json files/pkg-churn.json "${{ inputs.intervals_file }}"
-          git commit -m "chore(cadence): update pkg interval classifications"
-          git push origin HEAD:main
+          # -s keeps the DCO check green on the consumer repo's merge-queue gate.
+          git commit -s -m "chore(cadence): update pkg interval classifications"
+          git push origin "$BRANCH"
+          gh pr create \
+            --repo "${{ inputs.repo }}" \
+            --base "$TARGET_BRANCH" \
+            --head "$BRANCH" \
+            --title "chore(cadence): update pkg interval classifications" \
+            --body "Automated update of package interval classifications derived from stable-image version churn. \`pkg-intervals.tsv\` changed this run (that is what the build actually reads); \`pkg-churn.json\` and \`pkg-versions.json\` were refreshed alongside."
