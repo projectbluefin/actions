@@ -61,7 +61,10 @@ runs:
 
         # CHUNKAH_CONFIG_STR passes existing OCI labels (containers.bootc=1, etc.)
         # into chunkah so they are preserved on the rechunked image.
-        CHUNKAH_CONFIG_STR="$(sudo podman inspect "${SOURCE}")"
+        # Pass existing OCI labels into chunkah via a JSON file to avoid E2BIG on large base images (#462).
+        CHUNKAH_CONFIG_FILE="$(mktemp -p /var/tmp chunkah-config.XXXXXX.json)"
+        sudo podman inspect "${SOURCE}" --format '{{json .Config}}' | sudo tee "${CHUNKAH_CONFIG_FILE}" > /dev/null
+        sudo chmod 644 "${CHUNKAH_CONFIG_FILE}"
 
         if [[ -n "${XATTR_MANIFEST}" ]]; then
           # ── BST path ────────────────────────────────────────────────────────────
@@ -123,7 +126,8 @@ runs:
             --security-opt label=type:unconfined_t \
             -v "${MERGED}:/chunkah:ro" \
             -e "CHUNKAH_ROOTFS=/chunkah" \
-            -e "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
+            -v "${CHUNKAH_CONFIG_FILE}:/chunkah-config.json:ro" \
+            --config /chunkah-config.json \
             "${CHUNKAH_REF}" build \
               --max-layers "${MAX_LAYERS}" \
               --prune /sysroot/ \
@@ -157,16 +161,17 @@ runs:
             --skip-unused-stages=false \
             --from "${SOURCE}" \
             --build-arg "CHUNKAH=${CHUNKAH_REF}" \
-            --build-arg "CHUNKAH_CONFIG_STR=${CHUNKAH_CONFIG_STR}" \
-            --build-arg "CHUNKAH_ARGS=--max-layers ${MAX_LAYERS} --prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-" \
+                        --build-arg "CHUNKAH_ARGS=--config /run/src/config.json --max-layers ${MAX_LAYERS} --prune /sysroot/ --label ostree.commit- --label ostree.final-diffid-" \
             -t "${OUTPUT_TAG}" \
             -v "$(pwd):/run/src" \
+            -v "${CHUNKAH_CONFIG_FILE}:/run/src/config.json:ro" \
             --security-opt=label=disable \
             ${FC_FLAG:+${FC_FLAG}} \
             "${CONTAINERFILE}"
 
           sudo rm -rf out
         fi
+        sudo rm -f "${CHUNKAH_CONFIG_FILE}"
 
         # Transfer rechunked image from root (buildah/podman) storage to user (podman) storage.
         # Both paths leave the tagged image in root's container store; this step makes it
