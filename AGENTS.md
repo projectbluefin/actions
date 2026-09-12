@@ -138,6 +138,24 @@ Agents implement autonomously **except** at these gates. Stop and request human 
 | **Breakage Gate** | Cross-repo breaking changes — removing/renaming inputs, changing defaults that affect consuming repos |
 | **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge unless they carry the `clanker-queue` label. An agent may merge a `clanker-queue` PR once all required checks pass and the PR is mergeable. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
 
+**`main` is governed by a merge queue — never trust `gh pr merge`'s exit code.** Every
+merge path in this repo hits it, agents and humans alike:
+
+- `gh pr merge --squash` prints `! The merge strategy for main is set by the merge queue`
+  and **exits 0**, having enqueued the PR rather than merged it.
+- A re-run prints `! Pull request <repo>#<n> is already queued to merge` — a different
+  string sharing no substring with the first — and also exits 0.
+- Plain `gh pr merge` (queue strategy) enqueues with **empty stderr and exit 0**.
+
+Never infer the outcome from exit status or stderr text. Confirm it:
+
+```bash
+gh pr view <n> --json state --jq .state   # MERGED, or still OPEN (= queued)
+```
+
+The same rule is encoded in `reusable-renovate-automerge.yml`; see
+`docs/skills/factory-operations.md` → "Renovate" for the full gotcha list.
+
 When in doubt, open a draft PR with your implementation and ask explicitly.
 
 ---
@@ -168,9 +186,9 @@ Do not request review without evidence. Before opening a PR for review:
 
 **No breaking changes without a version signal:** Removing or renaming an input, or changing default behavior, requires coordinating with consuming repos. Document the blast radius in the PR description.
 
-**Consumer validation (required before merging):** For any action change, open a draft PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) that uses `@v1` on the affected workflows. CI must pass there before merging to `main` and advancing the `@v1` tag. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
+**Consumer validation (required before merging):** For any action change, open a PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) that uses `@v1` on the affected workflows. CI must pass there before merging to `main` and advancing the `@v1` tag. Note that a *draft* PR in bluefin produces **no** CI run — run `gh pr ready <n>` to get a citable run ID. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
 
-**Consumer validation "N/A" rules (enforced by CI):** `Consumer PR:` and `Consumer CI run:` must be real GitHub URLs — `https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/NNN` and `.../actions/runs/NNN` respectively. "N/A" is **only** accepted for `Out-of-org consumer impact:`. Even additive-only changes need a draft consumer PR. Bot/Renovate PRs (author login ending in `[bot]` or starting with `app/`) are exempt automatically.
+**Consumer validation "N/A" rules (enforced by CI):** `Consumer PR:` and `Consumer CI run:` must be real GitHub URLs — `https://github.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/NNN` and `.../actions/runs/NNN` respectively. "N/A" is **only** accepted for `Out-of-org consumer impact:`. Even additive-only changes need a consumer PR. Two exemptions are applied automatically, before the URL rules are evaluated: bot/Renovate PRs (author login ending in `[bot]` or starting with `app/`), and PRs that touch no consumer-facing action files at all (docs-only, tests-only — the check logs `No consumer-facing action changes detected; skipping`). Do not hand-write "N/A" expecting it to pass; the exemption is path-based and decided by the workflow, not by the PR body.
 
 **Consumer PRs use `@v1`, not SHA pins.** Consumer workflow files reference first-party actions with `@v1`. The consumer validation PR simply triggers CI against those `@v1` references. After CI passes, merge the actions PR, advance `@v1` to the new `main` HEAD (see the runbook above), and the consumer repos pick up the change on their next workflow run.
 

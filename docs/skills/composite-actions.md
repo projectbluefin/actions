@@ -3,6 +3,8 @@ name: composite-actions
 description: Authors, modifies, and debugs composite GitHub Actions in projectbluefin/actions. Covers action structure, SHA pinning, shell best practices, rollout strategy, CI-fix-first workflow, and known workarounds. For full action-by-action details see composite-actions/action-reference.md; for reusable workflow details see composite-actions/reusable-workflow.md.
 metadata:
   type: reference
+  context7-sources:
+    - /renovatebot/renovate
 ---
 
 # Composite Actions - Authoring Skill
@@ -79,8 +81,10 @@ SHA pinning is a third-party supply-chain defence (prevents tag hijacking on ext
 
 ### Renovate must be told to leave first-party refs alone
 
-`config:best-practices` pulls in `helpers:pinGitHubActionDigests`, which pins **every**
-`uses:` it finds — including this repo's references to itself. Once pinned, Renovate keeps
+`config:best-practices` pulls in `helpers:pinGitHubActionDigests`, whose entire body is
+`{ matchDepTypes: ["action"], pinDigests: true }`. **Reusable workflow refs are also
+`depType: action`**, so this pins every `uses:` it finds — including this repo's
+references to itself. Once pinned, Renovate keeps
 opening "update projectbluefin/actions digest to …" PRs forever. Blocking an individual PR
 only treats the symptom; the next Renovate run regenerates it, and eventually someone merges
 it without noticing.
@@ -113,6 +117,14 @@ workflows.
 does not control their tags and does not advance them, so their refs stay SHA-pinned and
 Renovate must keep updating them. `docs/skills/consumer-validation.md` applies the same
 narrow scope to the `no-floating-action-tags` pre-commit hook.
+
+**Why the rule must be last:** Renovate's `applyPackageRules()` iterates `packageRules` in
+order and merges every matching rule with `mergeChildConfig()`. The last matching rule wins
+on any given property, so an `enabled: false` placed above the automerge rules would be
+silently overridden by them.
+
+Verified against Context7 `/renovatebot/renovate`
+(`lib/config/presets/internal/helpers.preset.ts`, `lib/util/package-rules/index.ts`).
 
 ---
 
