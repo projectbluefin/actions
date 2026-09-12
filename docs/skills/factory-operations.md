@@ -159,6 +159,11 @@ Use the workflow `github.token` for read-only `gh run list` calls against the pu
 Generate a GitHub App token scoped to `projectbluefin/common` before creating issues there. This keeps
 cross-repo issue writes explicit while avoiding broader write scopes for routine monitoring.
 
+Token generation is best-effort so a GitHub App installation permission mismatch cannot prevent the
+health checks from running. If the cross-repo token is unavailable, use the workflow's repository-scoped
+`github.token` to file alerts in `projectbluefin/actions`. This preserves monitoring and alerting while
+keeping the fallback credential unable to write outside its source repository.
+
 **`MERGERAPTOR_APP_ID` is a `secrets.*` value, not a `vars.*` value** — see the approved-secrets
 table in `docs/skills/supply-chain.md`. Passing `vars.MERGERAPTOR_APP_ID` to
 `actions/create-github-app-token` silently resolves to an empty string (repo/org variables and

@@ -20,6 +20,7 @@ jobs:
     steps:
       - name: Generate common issue token
         id: app-token
+        continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ secrets.MERGERAPTOR_APP_ID }}
@@ -38,7 +39,15 @@ jobs:
           WINDOW_HOURS=24
           THRESHOLD=80
           CUTOFF_EPOCH=$(date -u -d "${WINDOW_HOURS} hours ago" '+%s')
-          COMMON_REPO="projectbluefin/common"
+
+          if [[ -n "${COMMON_ISSUE_TOKEN}" ]]; then
+            ISSUE_REPO="projectbluefin/common"
+            ISSUE_TOKEN="${COMMON_ISSUE_TOKEN}"
+          else
+            ISSUE_REPO="${GITHUB_REPOSITORY}"
+            ISSUE_TOKEN="${GH_TOKEN}"
+            echo "::warning::The common issue token is unavailable; factory alerts will be filed in ${ISSUE_REPO}."
+          fi
 
           monitor_pipeline() {
             local repo="$1"
@@ -152,14 +161,14 @@ jobs:
             echo "${summary_table}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          open_issues_json=$(GH_TOKEN="${COMMON_ISSUE_TOKEN}" gh issue list \
-            --repo "${COMMON_REPO}" \
+          open_issues_json=$(GH_TOKEN="${ISSUE_TOKEN}" gh issue list \
+            --repo "${ISSUE_REPO}" \
             --state open \
             --limit 100 \
             --json number,title,url)
 
-          existing_labels=$(GH_TOKEN="${COMMON_ISSUE_TOKEN}" gh label list \
-            --repo "${COMMON_REPO}" \
+          existing_labels=$(GH_TOKEN="${ISSUE_TOKEN}" gh label list \
+            --repo "${ISSUE_REPO}" \
             --limit 200 \
             --json name \
             --jq '.[].name')
@@ -169,7 +178,7 @@ jobs:
             if grep -Fxq "${label}" <<<"${existing_labels}"; then
               label_args+=(--label "${label}")
             else
-              echo "::warning::Label '${label}' does not exist in ${COMMON_REPO}; skipping it."
+              echo "::warning::Label '${label}' does not exist in ${ISSUE_REPO}; skipping it."
             fi
           done
 
@@ -221,8 +230,8 @@ jobs:
           EOF
             )
 
-            GH_TOKEN="${COMMON_ISSUE_TOKEN}" gh issue create \
-              --repo "${COMMON_REPO}" \
+            GH_TOKEN="${ISSUE_TOKEN}" gh issue create \
+              --repo "${ISSUE_REPO}" \
               --title "${issue_title}" \
               --body "${issue_body}" \
               "${label_args[@]}"
