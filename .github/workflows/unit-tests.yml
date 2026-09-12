@@ -10,6 +10,7 @@ on:
       - ".github/actions/**"
       - "tests/**"
       - ".github/workflows/reusable-build.yml"
+      - ".github/workflows/reusable-renovate.yml"
       - ".github/workflows/unit-tests.yml"
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - ".github/actions/**"
       - "tests/**"
       - ".github/workflows/reusable-build.yml"
+      - ".github/workflows/reusable-renovate.yml"
       - ".github/workflows/unit-tests.yml"
 
 permissions: {}
