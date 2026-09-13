@@ -317,6 +317,15 @@ if ! timeout 300 syft registry:... --catalogers rpm -o spdx-json=sbom.spdx.json 
 fi
 ```
 
+**GitHub Attestations 16MB limit:** GitHub's attestation API (`actions/attest`) rejects any
+predicate or SBOM file exceeding 16MB (16,777,216 bytes). In bootc desktop images with ~1,800+
+RPM packages, Syft's default inclusion of package-to-file relationships generates 100k+ graph
+edges, ballooning the SPDX JSON to 35-50MB. Set `SYFT_RELATIONSHIPS_PACKAGE_FILE_OWNERSHIP="false"`
+to eliminate file-ownership edges while preserving all packages, versions, and licenses (~85%
+size reduction). Additionally, `sign-and-publish` guards against oversized files by checking
+file size before invoking `actions/attest`, skipping GitHub attestation with a warning and
+`continue-on-error: true` while preserving ORAS attach and Cosign signing.
+
 **Do not** pass a local image name to Syft when the image was built by a `sudo buildah` process.
 Syft runs as the unprivileged runner user and cannot see root's container storage. Always
 push the image first and use the `registry:` prefix.

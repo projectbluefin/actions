@@ -65,6 +65,17 @@ mkdir -p "${SBOM_DIR}"
 echo "sbom-path=${SBOM_DIR}/sbom.json" >> "$GITHUB_OUTPUT"
 echo "sbom-dir=${SBOM_DIR}" >> "$GITHUB_OUTPUT"
 echo "image-name=${NAME}" >> "$GITHUB_OUTPUT"
+
+SBOM_FILE="${SBOM_DIR}/sbom.json"
+SBOM_SIZE=$(wc -c < "${SBOM_FILE}" | tr -d '"'"' '"'"')
+echo "sbom-size=${SBOM_SIZE}" >> "$GITHUB_OUTPUT"
+# GitHub Attestations enforces a hard 16MB (16,777,216 bytes) limit on predicate/SBOM files.
+if [[ "${SBOM_SIZE}" -gt 16777216 ]]; then
+  echo "::warning::SBOM file size (${SBOM_SIZE} bytes) exceeds GitHub Attestations 16MB limit (16777216 bytes). Skipping GitHub SBOM attestation; SBOM will still be attached to registry via ORAS and signed."
+  echo "attestable=false" >> "$GITHUB_OUTPUT"
+else
+  echo "attestable=true" >> "$GITHUB_OUTPUT"
+fi
 '
 
 setup() {
@@ -303,6 +314,44 @@ EOF
   [ "$(get_output sbom-path)" = "sbom_out/bluefin-lts/sbom.json" ]
   [ "$(get_output sbom-dir)" = "sbom_out/bluefin-lts" ]
   [ "$(get_output image-name)" = "bluefin-lts" ]
+}
+
+@test "sbom: normal file size (<= 16MB) sets attestable=true and records sbom-size" {
+  cd "${TEST_TMP}"
+  export IMAGE="ghcr.io/projectbluefin/bluefin"
+  export DIGEST="sha256:feedface"
+  export IMAGE_NAME="bluefin"
+  make_syft
+
+  run bash -c "$GENERATE_SBOM"
+  [ "$status" -eq 0 ]
+  [ "$(get_output attestable)" = "true" ]
+  [ "$(get_output sbom-size)" = "3" ]
+  [[ "$output" != *"exceeds GitHub Attestations 16MB limit"* ]]
+}
+
+@test "sbom: oversized file (> 16MB) sets attestable=false, emits warning, and records sbom-size" {
+  cd "${TEST_TMP}"
+  export IMAGE="ghcr.io/projectbluefin/bluefin-lts"
+  export DIGEST="sha256:feedface"
+  export IMAGE_NAME="bluefin-lts"
+
+  export SYFT_CMD="${TEST_TMP}/syft-large"
+  cat > "${SYFT_CMD}" <<'EOF'
+#!/usr/bin/env bash
+out="${*: -1}"
+outfile="${out#spdx-json=}"
+mkdir -p "$(dirname "$outfile")"
+# Create file slightly larger than 16MB (16777217 bytes)
+truncate -s 16777217 "$outfile"
+EOF
+  chmod +x "${SYFT_CMD}"
+
+  run bash -c "$GENERATE_SBOM"
+  [ "$status" -eq 0 ]
+  [ "$(get_output attestable)" = "false" ]
+  [ "$(get_output sbom-size)" = "16777217" ]
+  [[ "$output" == *"::warning::SBOM file size (16777217 bytes) exceeds GitHub Attestations 16MB limit"* ]]
 }
 
 @test "attach sbom: propagates oras attach failure" {
