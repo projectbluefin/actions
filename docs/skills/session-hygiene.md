@@ -50,15 +50,15 @@ multiple times.
 
 ### 3. Leave the working tree clean at session end
 
-Before ending a session, every uncommitted change must be either:
+Before ending a session, every uncommitted change you created during this session must be either:
 
 - committed to a feature branch (with a PR or a stated reason), or
 - stashed with a descriptive message
   (`git stash push -u -m "wip: <what and why>"`), or
 - reverted deliberately.
 
-If you *find* a dirty tree you didn't create, leave it untouched and tell the
-user — do not build on top of it, review it, or "fix" it unprompted. If it is
+If you *find* pre-existing dirty changes you didn't create, leave them untouched and tell the
+user — do not build on top of them, review them, stash them, or "fix" them unprompted. If it is
 abandoned agent debris from a prior session and the user asks for cleanup,
 clean it up yourself (stash with a descriptive message); never hand cleanup of
 agent-made state back to the user.
