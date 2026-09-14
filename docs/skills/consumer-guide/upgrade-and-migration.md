@@ -1,6 +1,6 @@
 ---
 name: upgrade-and-migration-tests
-description: Upgrade test and migration test reusable workflows for bootc image repos. Upgrade-test boots the image in QEMU and runs the lifecycle suite (upgrade, rollback, /etc persistence, idempotency). Migration-test validates the ublue-os→projectbluefin registry transition via bootc switch. Load when wiring post-build gates or troubleshooting test failures.
+description: Upgrade test and migration test reusable workflows for bootc image repos. Use when wiring post-build test gates, troubleshooting QEMU lifecycle testsuite failures, validating registry transitions with bootc switch, or referencing Dakota and Bluefin-LTS Path 2 integration examples. Covers lifecycle test suites, inputs, outputs, permissions, and consumer adaptations.
 metadata:
   type: reference
 ---
@@ -218,3 +218,50 @@ bluefin-lts uses CentOS Stream 10 (non-Fedora base) and cannot use the full reus
 | `chunka` | `force-compression: true` | CentOS base must migrate gzip layers to zstd:chunked — passes `--compression-format zstd:chunked --force-compression` to `buildah build` |
 
 This is the reference implementation for any bootc image repo that diverges from the bluefin path convention.
+
+---
+
+## When to Use
+
+Use this skill when:
+- Adding or configuring the `upgrade-test.yml` post-build gate workflow in a bootc image repository.
+- Configuring `migration-test.yml` to test bootc switch transitions across container registries.
+- Troubleshooting failures during QEMU virtual machine lifecycle testing (upgrade, rollback, idempotency, or /etc state persistence).
+- Implementing Path 2 à la carte action adoption for non-standard image repositories (such as Dakota or Bluefin-LTS).
+
+## When NOT to Use
+
+Do not use this skill to:
+- Test Python scripts or unit-level action logic (use `testing.md`).
+- Run initial build pipelines or configure Justfile build recipes (use `consumer-guide.md` and `reusable-workflow.md`).
+- Modify the QEMU testsuite test definitions themselves (these live in `projectbluefin/testsuite`).
+
+## Core Process
+
+1. **Build and push artifact**: Complete the container image build and obtain the immutable digest output.
+2. **Wire upgrade-test workflow**: Add a job invoking `projectbluefin/actions/.github/workflows/upgrade-test.yml@v1` passing the image digest.
+3. **Configure suites and options**: Set test suites (default `lifecycle`), flatpak screenshot lists, or native app flags as required by the image.
+4. **Gate promotion**: Ensure promotion jobs depend on `upgrade-test` output (`needs.upgrade-test.outputs.result == 'success'`).
+5. **Inspect failure artifacts**: If QEMU tests fail, download testsuite logs and screenshots from GitHub Actions artifacts for triage.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "The build succeeded, so upgrade and rollback will work." | Building a container says nothing about whether systemd boots, ostree stages updates, or rollback preserves `/etc`. |
+| "Testing against the floating tag is acceptable." | Tests must run against the exact build digest (`@sha256:...`) to ensure the tested artifact matches what gets promoted. |
+| "Dakota can just adopt `reusable-build.yml` later." | Dakota builds via BuildStream (`bst2`), not Containerfiles; it is a permanent Path 2 consumer. |
+
+## Red Flags
+
+- Promoting an image to `:stable` without gating on successful `upgrade-test` execution.
+- Invoking `upgrade-test` with a mutable tag instead of a verified image digest.
+- Missing `packages: write` permission on caller jobs when testsuite needs to upload screenshot artifacts.
+- Attempting to force non-Fedora or custom build systems into Path 1 workflows.
+
+## Verification
+
+- [ ] `upgrade-test.yml` is invoked with an exact `@sha256:...` image digest.
+- [ ] Caller permissions include `packages: write` and `contents: read`.
+- [ ] Promotional steps execute only when `needs.upgrade-test.outputs.result == 'success'`.
+- [ ] Test artifacts (logs, screenshots) are verified on test completion.

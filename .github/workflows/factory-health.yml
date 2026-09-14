@@ -71,7 +71,12 @@ jobs:
 
             completed_json=$(jq '
               [ .[]
-              | select(.status == "completed" and .conclusion != "skipped")
+              # Only genuine build outcomes count toward the success rate.
+              # Cancelled runs were preempted (not failed) and action_required
+              # runs are pending approval — neither produced a build result, so
+              # counting them deflates the rate and fires false alerts
+              # (projectbluefin/actions#483). skipped/in_progress excluded too.
+              | select(.status == "completed" and (.conclusion == "success" or .conclusion == "failure"))
               ]
             ' <<<"${recent_json}")
 

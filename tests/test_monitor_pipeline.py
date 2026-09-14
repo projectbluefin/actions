@@ -152,18 +152,44 @@ class TestComputePipelineHealth:
         result = compute_pipeline_health(runs, CUTOFF_1D_AGO)
         assert result["status"] == "no-runs"
 
-    def test_mixed_conclusions_rate_calculation(self):
-        # 6 success, 2 failure, 2 cancelled = 10 total, 60% success
+    def test_genuine_outcomes_only_count(self):
+        # 6 success, 2 failure, 2 cancelled -> cancelled excluded: 8 total, 75%
         runs = (
             [_make_run("success", minutes_ago=30) for _ in range(6)]
             + [_make_run("failure", minutes_ago=30) for _ in range(2)]
             + [_make_run("cancelled", minutes_ago=30) for _ in range(2)]
         )
         result = compute_pipeline_health(runs, CUTOFF_1H_AGO, threshold=80)
-        assert result["total"] == 10
+        assert result["total"] == 8
         assert result["success"] == 6
-        assert result["rate_value"] == 60
+        assert result["rate_value"] == 75
         assert result["status"] == "alert"
+
+    def test_cancelled_and_action_required_excluded(self):
+        # The bug this fix addresses: cancelled (preempted) and action_required
+        # (pending approval) runs must NOT count against the success rate.
+        # Mirrors projectbluefin/actions#483: 6 success + 1 cancelled + 1
+        # action_required reported 75% instead of 100%.
+        runs = (
+            [_make_run("success", minutes_ago=30) for _ in range(6)]
+            + [_make_run("cancelled", minutes_ago=30)]
+            + [_make_run("action_required", minutes_ago=30)]
+        )
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO, threshold=80)
+        assert result["total"] == 6
+        assert result["success"] == 6
+        assert result["rate_value"] == 100
+        assert result["status"] == "healthy"
+
+    def test_failures_md_ignores_non_outcomes(self):
+        # Cancelled/action_required must not appear as "failing runs".
+        runs = [
+            _make_run("success", minutes_ago=30),
+            _make_run("cancelled", minutes_ago=30, url="https://github.com/runs/c1"),
+            _make_run("action_required", minutes_ago=30, url="https://github.com/runs/a1"),
+        ]
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO)
+        assert result["failures_md"] == ""
 
 
 # ── should_open_issue ─────────────────────────────────────────────────────────

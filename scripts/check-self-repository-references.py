@@ -16,7 +16,9 @@ def workflow_files() -> list[Path]:
         path
         for root in SEARCH_ROOTS
         for path in root.rglob("*")
-        if path.is_file() and path.suffix in {".yml", ".yaml"}
+        if path.is_file()
+        and path.suffix in {".yml", ".yaml"}
+        and not any(part.endswith(("-work", "-worktree")) for part in path.parts)
     )
 
 

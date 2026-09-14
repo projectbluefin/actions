@@ -5,6 +5,8 @@ on:
     - cron: "0 4 * * 1" # Weekly on Mondays at 04:00 UTC
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   prune:
     name: Delete branches with merged PRs

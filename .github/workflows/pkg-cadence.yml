@@ -24,7 +24,9 @@ jobs:
       image: ghcr.io/projectbluefin/bluefin:stable
       repo: projectbluefin/bluefin
       force_reclassify: ${{ inputs.force_reclassify || false }}
-    secrets: inherit
+    secrets:
+      app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
+      private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
 
   bluefin-lts:
     uses: $/.github/workflows/reusable-pkg-cadence.yml
@@ -32,4 +34,6 @@ jobs:
       image: ghcr.io/projectbluefin/bluefin:lts
       repo: projectbluefin/bluefin-lts
       force_reclassify: ${{ inputs.force_reclassify || false }}
-    secrets: inherit
+    secrets:
+      app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
+      private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}

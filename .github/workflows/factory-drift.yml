@@ -26,6 +26,9 @@ jobs:
           client-id: ${{ secrets.MERGERAPTOR_APP_ID }}
           private-key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
           owner: projectbluefin
+          # Don't request broad permissions; the downstream steps only need
+          # to read workflow files from specific consumer repos.
+          permission-contents: read
 
       - name: Fetch workflow files
         env:
