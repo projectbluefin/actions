@@ -22,9 +22,10 @@ SYSTEM_FILES_SHELLCHECK_SNIPPET='
 set -euo pipefail
 shopt -s globstar nullglob
 files=()
-# shellcheck disable=SC2086
-for pattern in ${SHELLCHECK_GLOB}; do
-  for f in $pattern; do
+read -ra patterns <<< "${SHELLCHECK_GLOB}"
+for pattern in "${patterns[@]}"; do
+  mapfile -t matches < <(compgen -G "$pattern")
+  for f in "${matches[@]}"; do
     [[ -f "$f" ]] && files+=("$f")
   done
 done
@@ -176,28 +177,20 @@ stub_called() {
   [ "$status" -ne 0 ]
 }
 
-# KNOWN GAP (documented, not asserted as desirable): `for pattern in
-# ${SHELLCHECK_GLOB}` is unquoted, so bash performs pathname expansion on
-# SHELLCHECK_GLOB *before* the inner loop and then word-splits the resulting
-# paths. A file under a directory containing a space becomes two bogus words
-# ("system_files/my" and "dir/space.sh"), neither of which globs to anything
-# under nullglob — so the script reports "no scripts found" and lints nothing.
-# The step still exits 0, meaning the lint gate passes while silently skipping
-# every script it was pointed at.
-@test "system_files shellcheck: paths containing spaces are silently skipped (known gap)" {
+# Patterns are split into words with `read -ra patterns <<< "${SHELLCHECK_GLOB}"`
+# so each pattern is expanded by pathname expansion in `for f in $pattern` without
+# word-splitting on spaces in matched directory or file names.
+@test "system_files shellcheck: paths containing spaces are correctly discovered and linted" {
   make_recording_stub shellcheck
   mkdir -p "system_files/my dir"
   touch "system_files/my dir/space.sh"
   export SHELLCHECK_GLOB='system_files/**/*.sh'
   run bash -c "$SYSTEM_FILES_SHELLCHECK_SNIPPET"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"No system_files shell scripts found matching"* ]]
-  ! stub_called shellcheck
+  [[ "$output" == *"Shellchecking 1 system_files scripts..."* ]]
+  [[ "$(stub_args shellcheck)" == *"system_files/my dir/space.sh"* ]]
 }
 
-# Same root cause, seen from the other side: because SHELLCHECK_GLOB is itself
-# glob-expanded by the outer loop, a directory whose name contains a space
-# poisons matches for *unrelated* scripts in that expansion pass too.
 @test "system_files shellcheck: a space-containing sibling path does not stop other scripts being linted" {
   make_recording_stub shellcheck
   mkdir -p "system_files/my dir" system_files/plain
@@ -205,6 +198,8 @@ stub_called() {
   export SHELLCHECK_GLOB='system_files/**/*.sh'
   run bash -c "$SYSTEM_FILES_SHELLCHECK_SNIPPET"
   [ "$status" -eq 0 ]
+  [[ "$output" == *"Shellchecking 2 system_files scripts..."* ]]
+  [[ "$(stub_args shellcheck)" == *"system_files/my dir/space.sh"* ]]
   [[ "$(stub_args shellcheck)" == *"system_files/plain/ok.sh"* ]]
 }
 
@@ -375,7 +370,7 @@ EOF
   ACTION="${BATS_TEST_DIRNAME}/../../bootc-build/validate-pr/action.yml"
   [ -f "$ACTION" ]
   grep -q 'No system_files shell scripts found matching' "$ACTION"
-  grep -q 'for pattern in \${SHELLCHECK_GLOB}' "$ACTION"
+  grep -q 'read -ra patterns <<< "\${SHELLCHECK_GLOB}"' "$ACTION"
 }
 
 @test "action.yml still contains the desktop-file-validate logic under test" {

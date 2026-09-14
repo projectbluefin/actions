@@ -1,6 +1,6 @@
 ---
 name: supply-chain
-description: Secures the bootc image build supply chain. Use when adding build inputs, signing or verifying images, configuring provenance, scanning images, or generating SBOMs. Covers vendoring external build files (Containerfiles, scripts), SLSA Build L2 posture and verification, cosign verify scoping, shift-left CVE scanning with Trivy (including secret scanning), and SBOM attestation patterns.
+description: Secures the bootc image build supply chain. Use when adding build inputs, signing or verifying images, configuring provenance, scanning images, or generating SBOMs. Covers vendoring external build files (Containerfiles, scripts), SLSA Build L2 posture and verification, cosign verify scoping, the cosign install upstream-pinning policy, shift-left CVE scanning with Trivy (including secret scanning), and SBOM attestation patterns.
 metadata:
   type: reference
   context7-sources:
@@ -90,6 +90,7 @@ report-only scan as proof that an image is vulnerability-free.
 - Organization-wide cosign identity regexes or unscoped write permissions.
 - Missing, empty, or stub scan/SBOM output treated as a successful security result.
 - A platform digest used where a multi-architecture manifest index is required.
+- A second cosign-install mechanism (composite action, forked copy) with no executing consumer — or one that skips the integrity checks the first mechanism advertises.
 
 ## Verification
 
@@ -217,6 +218,43 @@ https://github.com/projectbluefin/(bluefin|bluefin-lts|aurora|actions)/.github/w
 ```
 
 Callers outside the `projectbluefin` org must override this input with their own org prefix.
+
+---
+
+## Policy: cosign install is intentionally upstream-pinned
+
+Cosign is installed in this repository with **exactly one mechanism**: the upstream
+`sigstore/cosign-installer`, pinned to a full commit SHA with a released-version comment
+and bumped by Renovate:
+
+```yaml
+uses: sigstore/cosign-installer@<full SHA> # <released version>
+```
+
+In-repo call sites:
+
+- `bootc-build/setup-runner/action.yml`
+- `bootc-build/sign-and-publish/action.yml`
+- `.github/workflows/reusable-release-gate.yml`
+- `.github/workflows/reusable-execute-release.yml`
+
+There is deliberately **no** in-repo composite action for cosign installation.
+
+### Do not reintroduce a second installer
+
+A second install mechanism restates the trust policy for the binary that signs
+every published image in multiple places at multiple strength levels — and unexercised
+installers end up decorative.
+
+If a hardened installer is needed, reintroduce it **with its first consumer in
+the same PR**: migrate at least one call site above in the same commit. An installer
+with no executing consumer is the anti-pattern this policy exists to prevent.
+
+### Out-of-repo divergence rule
+
+If a consuming repository maintains an unverified wrapper around `sigstore/cosign-installer`
+that provides no stronger guarantees, do not copy or replicate that wrapper back into this repo.
+Keep this repository strictly on direct, upstream-pinned `sigstore/cosign-installer` invocations.
 
 ---
 

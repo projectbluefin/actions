@@ -26,7 +26,7 @@ runs:
   using: "composite"
   steps:
     - name: Install just
-      uses: taiki-e/install-action@1938d65511705cfc38a640c66eddcce76384d60e # just
+      uses: taiki-e/install-action@3a2284f7136ae375192b204728209703d406691e # just
       with:
         tool: just
 
@@ -71,9 +71,10 @@ runs:
         set -euo pipefail
         shopt -s globstar nullglob
         files=()
-        # shellcheck disable=SC2086
-        for pattern in ${SHELLCHECK_GLOB}; do
-          for f in $pattern; do
+        read -ra patterns <<< "${SHELLCHECK_GLOB}"
+        for pattern in "${patterns[@]}"; do
+          mapfile -t matches < <(compgen -G "$pattern")
+          for f in "${matches[@]}"; do
             [[ -f "$f" ]] && files+=("$f")
           done
         done
