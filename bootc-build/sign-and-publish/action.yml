@@ -200,7 +200,6 @@ runs:
 
     - name: GitHub SBOM Attestation
       if: inputs.generate-sbom == 'true' && inputs.push-attestation == 'true' && steps.gen-sbom.outputs.attestable == 'true'
-      continue-on-error: true
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
         subject-name: ${{ inputs.image }}
