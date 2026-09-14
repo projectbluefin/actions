@@ -28,6 +28,8 @@ on:
         description: "GitHub App token for bypassing protected-branch push rules. Generate in caller using actions/create-github-app-token and pass here."
         required: false
 
+permissions: {}
+
 jobs:
   sync:
     name: Merge ${{ inputs.source_branch }} → ${{ inputs.target_branch }}

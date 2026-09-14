@@ -7,43 +7,73 @@
 #   TOKEN_NAME        - human-readable name for error messages
 #   REQUIRED_SCOPES   - comma-separated required OAuth scopes (empty = skip check)
 #   MIN_REMAINING     - minimum API requests remaining before warning
+#
+# GitHub App installation tokens (ghs_ prefix) are handled separately:
+#   - /user is not a valid endpoint for App tokens; uses /installation/repositories
+#   - App tokens have permissions, not OAuth scopes; scope check is always skipped
 
 set -euo pipefail
 
-# 1. Basic auth check
-HTTP_CODE=$(curl -s -o /tmp/auth-response.json -w '%{http_code}' \
-  -H "Authorization: Bearer ${GH_TOKEN}" \
-  -H "Accept: application/vnd.github+json" \
-  https://api.github.com/user)
-
-if [ "$HTTP_CODE" = "401" ]; then
-  echo "::error::Token '${TOKEN_NAME}' is invalid or expired (HTTP 401)"
-  echo "valid=false" >> "$GITHUB_OUTPUT"
-  exit 1
-elif [ "$HTTP_CODE" = "403" ]; then
-  echo "::error::Token '${TOKEN_NAME}' is forbidden (HTTP 403) — may be suspended or IP-blocked"
-  echo "valid=false" >> "$GITHUB_OUTPUT"
-  exit 1
-elif [ "$HTTP_CODE" != "200" ]; then
-  echo "::error::Token '${TOKEN_NAME}' auth check returned HTTP ${HTTP_CODE}"
-  echo "valid=false" >> "$GITHUB_OUTPUT"
-  exit 1
+# Detect GitHub App installation tokens by their ghs_ prefix.
+# App tokens cannot call /user and have permissions rather than OAuth scopes.
+IS_APP_TOKEN=false
+if [[ "${GH_TOKEN}" == ghs_* ]]; then
+  IS_APP_TOKEN=true
 fi
 
-# 2. Check scopes (from response headers)
-SCOPES_HEADER=$(curl -s -I \
-  -H "Authorization: Bearer ${GH_TOKEN}" \
-  https://api.github.com/user | grep -i "x-oauth-scopes:" | cut -d: -f2- | tr -d ' \r')
+# 1. Basic auth check
+if [ "$IS_APP_TOKEN" = "true" ]; then
+  # App tokens are not user-scoped; /installation/repositories validates auth.
+  HTTP_CODE=$(curl -s -o /tmp/auth-response.json -w '%{http_code}' \
+    -H "Authorization: Bearer ${GH_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/installation/repositories?per_page=1")
 
-if [ -n "$REQUIRED_SCOPES" ]; then
-  IFS=',' read -ra REQUIRED <<< "$REQUIRED_SCOPES"
-  for scope in "${REQUIRED[@]}"; do
-    if ! echo "$SCOPES_HEADER" | grep -q "$scope"; then
-      echo "::error::Token '${TOKEN_NAME}' missing required scope '${scope}' (has: ${SCOPES_HEADER})"
-      echo "valid=false" >> "$GITHUB_OUTPUT"
-      exit 1
-    fi
-  done
+  if [ "$HTTP_CODE" = "401" ]; then
+    echo "::error::App token '${TOKEN_NAME}' is invalid or expired (HTTP 401)"
+    echo "valid=false" >> "$GITHUB_OUTPUT"
+    exit 1
+  elif [ "$HTTP_CODE" != "200" ]; then
+    echo "::error::App token '${TOKEN_NAME}' auth check returned HTTP ${HTTP_CODE} — token may be revoked or the App may lack installation access"
+    echo "valid=false" >> "$GITHUB_OUTPUT"
+    exit 1
+  fi
+  echo "Token '${TOKEN_NAME}' is a GitHub App installation token — scope check skipped (App tokens use permissions, not OAuth scopes)"
+else
+  HTTP_CODE=$(curl -s -o /tmp/auth-response.json -w '%{http_code}' \
+    -H "Authorization: Bearer ${GH_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    https://api.github.com/user)
+
+  if [ "$HTTP_CODE" = "401" ]; then
+    echo "::error::Token '${TOKEN_NAME}' is invalid or expired (HTTP 401)"
+    echo "valid=false" >> "$GITHUB_OUTPUT"
+    exit 1
+  elif [ "$HTTP_CODE" = "403" ]; then
+    echo "::error::Token '${TOKEN_NAME}' is forbidden (HTTP 403) — may be suspended or IP-blocked"
+    echo "valid=false" >> "$GITHUB_OUTPUT"
+    exit 1
+  elif [ "$HTTP_CODE" != "200" ]; then
+    echo "::error::Token '${TOKEN_NAME}' auth check returned HTTP ${HTTP_CODE}"
+    echo "valid=false" >> "$GITHUB_OUTPUT"
+    exit 1
+  fi
+
+  # 2. Check scopes (from response headers) — only valid for non-App tokens
+  SCOPES_HEADER=$(curl -s -I \
+    -H "Authorization: Bearer ${GH_TOKEN}" \
+    https://api.github.com/user | grep -i "x-oauth-scopes:" | cut -d: -f2- | tr -d ' \r')
+
+  if [ -n "$REQUIRED_SCOPES" ]; then
+    IFS=',' read -ra REQUIRED <<< "$REQUIRED_SCOPES"
+    for scope in "${REQUIRED[@]}"; do
+      if ! echo "$SCOPES_HEADER" | grep -q "$scope"; then
+        echo "::error::Token '${TOKEN_NAME}' missing required scope '${scope}' (has: ${SCOPES_HEADER})"
+        echo "valid=false" >> "$GITHUB_OUTPUT"
+        exit 1
+      fi
+    done
+  fi
 fi
 
 # 3. Check rate limit

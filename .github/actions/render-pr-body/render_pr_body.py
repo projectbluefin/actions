@@ -154,7 +154,7 @@ def _section_footer(repo: str = "") -> str:
     pr_placeholder = "<pr-number>"
     return (
         "---\n\n"
-        "_Requires 2 approvals from `@projectbluefin/maintainers`. "
+        "_Follow this repository's branch-protection requirements before merging. "
         f"Force: `gh pr merge {pr_placeholder}{repo_flag} --merge --admin`_\n"
     )
 

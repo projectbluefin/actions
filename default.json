@@ -17,8 +17,8 @@
   ],
   "packageRules": [
     {
-      "description": "Automerge chore dep updates (digest, pin, patch, minor) when CI passes",
-      "matchUpdateTypes": ["digest", "pin", "patch", "minor"],
+      "description": "Automerge only update types that introduce no new upstream code: 'pin' converts an existing ranged ref to an exact version and 'pinDigest' records the digest of the already-referenced version. digest/patch/minor bring new code and must get a human review even when CI passes (supply-chain gate — see issue #474).",
+      "matchUpdateTypes": ["pin", "pinDigest"],
       "automerge": true,
       "automergeType": "pr",
       "automergeStrategy": "squash"

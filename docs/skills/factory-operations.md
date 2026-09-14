@@ -1,6 +1,6 @@
 ---
 name: factory-operations
-description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge.
+description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge. Use when configuring or verifying the 2-human production environment gate, managing promotion cadence and merge queues across image repos, troubleshooting factory pipeline health monitoring, or verifying Renovate auto-merge configuration.
 metadata:
   type: reference
   context7-sources:
@@ -161,6 +161,11 @@ Use the workflow `github.token` for read-only `gh run list` calls against the pu
 Generate a GitHub App token scoped to `projectbluefin/common` before creating issues there. This keeps
 cross-repo issue writes explicit while avoiding broader write scopes for routine monitoring.
 
+Token generation is best-effort so a GitHub App installation permission mismatch cannot prevent the
+health checks from running. If the cross-repo token is unavailable, use the workflow's repository-scoped
+`github.token` to file alerts in `projectbluefin/actions`. This preserves monitoring and alerting while
+keeping the fallback credential unable to write outside its source repository.
+
 **`MERGERAPTOR_APP_ID` is a `secrets.*` value, not a `vars.*` value** — see the approved-secrets
 table in `docs/skills/supply-chain.md`. Passing `vars.MERGERAPTOR_APP_ID` to
 `actions/create-github-app-token` silently resolves to an empty string (repo/org variables and
@@ -219,7 +224,7 @@ Three gates must all pass before a merge happens:
 
 1. **Author** is `mergeraptor` or `renovate` (in any spelling — see the gotcha below).
 2. **Renovate enabled auto-merge** on the PR (`autoMergeRequest != null`), i.e. `renovate.json` says it qualifies.
-3. **Every check is green *and* nothing is still running.** Any check not in `SUCCESS`/`SKIPPED`/`NEUTRAL` blocks. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics.
+3. **Every check is green *and* nothing is still running.** Nonterminal check states — `PENDING`, `QUEUED`, `IN_PROGRESS`, `WAITING`, `REQUESTED`, `EXPECTED` (the same set `gh pr checks` places in its own `pending` bucket) — are awaited up to `check_timeout_seconds`, never treated as failures. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics. Only terminal failure conclusions (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`, `STARTUP_FAILURE`, `STALE`, `ERROR`) or an unrecognized state block outright.
 
 **Gotcha — an absent check is not a passing check.** `gh pr checks` reports only the check-runs that currently *exist*. A workflow that is queued but has not yet registered a check-run is simply **missing from the rollup**, not `PENDING`; and re-running a workflow removes its check-runs entirely while they re-queue. A naive "nothing is pending, so we're done" gate will happily merge with most checks never having run. Since this workflow is triggered by *one* CI workflow completing while siblings may still be queued, that race is the normal case, not an edge case. Cross-check in-flight runs for the same commit:
 
@@ -429,6 +434,91 @@ REMOTE_TREE=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1 | xargs git ca
 [ "$SQUASH_TREE" = "$REMOTE_TREE" ] && echo "no-op, skipping force-push"
 ```
 
+### Queue-entry guard: avoid branch rewrites when PR is merge-queued
+
+When a promotion PR is enrolled in a merge queue, GitHub locks the head branch and rejects
+any force-push or branch mutation with `GH006: Ref cannot be updated: A pull request using this branch as its head is in the merge queue and cannot be modified.` Subsequent workflow runs (e.g. daily cron, push to testing, or PR review triggers) must not attempt to rebuild or mutate the branch while it is queued.
+
+Before checkout or branch mutation, query GraphQL for an existing `mergeQueueEntry` on the
+open promotion PR. If a queue entry exists, emit an informative notice, set `promoted=false`,
+and exit 0 so the merge queue can progress undisturbed:
+
+```bash
+# shellcheck disable=SC2016  # GraphQL variables, not shell variables
+PR_DATA=$(gh api graphql \
+  -f query='query($owner: String!, $repo: String!, $head: String!, $base: String!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequests(headRefName: $head, baseRefName: $base, states: OPEN, first: 1) {
+        nodes {
+          id
+          number
+          url
+          mergeQueueEntry {
+            id
+            state
+          }
+        }
+      }
+    }
+  }' \
+  -F owner="$REPO_OWNER" \
+  -F repo="$REPO_NAME" \
+  -F head="$PROMOTION_BRANCH" \
+  -F base="$TARGET_BRANCH" \
+  --jq '.data.repository.pullRequests.nodes[0] // empty' 2>/dev/null) || PR_DATA=""
+
+if [ -n "$PR_DATA" ]; then
+  QUEUE_ENTRY_ID=$(echo "$PR_DATA" | jq -r '.mergeQueueEntry.id // empty' 2>/dev/null || echo "")
+  if [ -n "$QUEUE_ENTRY_ID" ]; then
+    echo "::notice::Promotion PR #${PR_NUMBER} has active merge queue entry (${QUEUE_ENTRY_ID}) — skipping branch mutation"
+    echo "promoted=false" >> "$GITHUB_OUTPUT"
+    exit 0
+  fi
+fi
+```
+
+### gh api failure output goes to stdout — capture defensively
+
+`gh api` on a failed request (HTTP 404/500) prints the API error body to **stdout**
+and the human-readable `gh: ...` message to **stderr**, then exits non-zero. A
+capture like this is therefore NOT safe — `2>/dev/null` only drops the stderr
+message, and the error JSON becomes the variable value:
+
+```bash
+# WRONG — SHA becomes '{"message":"Not Found",...}' on a missing ref, because
+# the error body is on stdout and '' only gets appended, never substituted
+SHA=$(gh api repos/$REPO/git/ref/heads/$BRANCH --jq '.object.sha' 2>/dev/null || echo "")
+```
+
+Use the exit status to replace the value instead of `|| echo ""`:
+
+```bash
+# RIGHT — SHA is empty on failure, populated on success
+SHA=$(gh api repos/$REPO/git/ref/heads/$BRANCH --jq '.object.sha' 2>/dev/null) || SHA=""
+```
+
+Apply this pattern to every variable captured from a `gh api` call that can 404.
+A leaked error JSON travels into downstream URLs and produces confusing failures
+like `unsupported protocol scheme ""`.
+
+### Branch-derived names must be defined once at the job level
+
+Any value derived from workflow inputs and used by multiple steps (squash branch
+name, image ref, tag list) belongs in the **job-level `env:`** block as a single
+expression:
+
+```yaml
+env:
+  PROMOTION_BRANCH: ${{ format('auto/promote-{0}-to-{1}', inputs.source_branch, inputs.target_branch) }}
+```
+
+Duplicating the expression in each step's `env:` invites one step to be edited
+and the others to drift. This bit the promote-squash workflow: rebuild/upsert
+hardcoded the squash branch name while the validate-status step derived it from
+the inputs, so any caller with a non-default branch model (main→stable) pushed
+one branch and looked up another — 404-ing before auto-merge could run. With the
+name defined once, all steps stay in lockstep.
+
 ### reusable-sync-branches: optional GH_TOKEN + force-reset for diverged branches
 
 `reusable-sync-branches.yml` merges `source_branch` into `target_branch` after a promotion.
@@ -475,3 +565,54 @@ Renovate keeps pins fresh automatically; the factory health monitor surfaces fai
 |---|---|---|
 | Environment gate never appears | `production` Environment not configured in GitHub UI | Follow the Manual GitHub UI setup steps above |
 | Both reviewers approved but job didn't start | GitHub Environments cache can take ~30s to register approvals | Wait 30s and refresh the Actions run page |
+
+---
+
+## When to Use
+
+Use this skill when:
+- Setting up or auditing the machine-enforced 2-human production approval gate in consumer repositories.
+- Modifying promotion schedules, cadence, or merge-queue integration across bluefin, dakota, or bluefin-lts.
+- Investigating factory health monitoring alerts or failure issue generation in `projectbluefin/common`.
+- Debugging or configuring Renovate dependency updates and automated merge rules for first-party or third-party pins.
+- Verifying the end-to-end promotion PR format (Design C) and checklist markers.
+
+## When NOT to Use
+
+Do not use this skill to:
+- Modify individual composite action implementations (use `composite-actions.md`).
+- Bypass the 2-human approval gate or force promotions directly to stable without verification.
+- Manually edit generated promotion PRs while automation is active.
+
+## Core Process
+
+1. **Production gate enforcement**: Configure GitHub Environment `production` with 2 required maintainer reviewers; ensure promotional workflows declare `environment: production`.
+2. **Promotion workflow orchestration**: Validate that weekly promotions lock the main HEAD SHA, execute full e2e testsuites, and post structured Design C promotion PRs.
+3. **Merge-queue compliance**: Follow the merge-queue contract (`use_merge_queue`), ensuring queue entry guards prevent out-of-order race conditions.
+4. **Health monitoring**: Maintain the 6-hour scheduled health check; confirm automated alerts fire when pipeline success rates drop below 80%.
+5. **Renovate automation**: Configure Renovate presets and package rules; ensure first-party references are ignored and third-party SHA bumps auto-merge upon passing CI.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "Only one maintainer is available, so bypass the environment gate." | The 2-human rule is an intentional safety invariant preventing single-point compromise or accidental releases. |
+| "Promotion can skip e2e tests because testing passed yesterday." | Builds drift constantly with upstream packages; promotional gates require explicit e2e verification of the exact SHA. |
+| "A single failing run isn't worth investigating." | Repeated silent failures degrade pipeline health until mass breakages occur. |
+| "Renovate auto-merge doesn't need verification if actionlint passed." | Auto-merge can fail silently if GitHub App credentials or branch protection rules are misconfigured. |
+
+## Red Flags
+
+- Production promotion jobs executing without an `environment: production` block.
+- Self-approval or single-human approvals pushing images to the `:stable` tag.
+- Disabling `run_e2e` or promotion gates without explicit maintainer sign-off.
+- Renovate creating duplicate PRs to pin first-party `projectbluefin/actions` references.
+- Missing `MERGERAPTOR_APP_ID` or private keys leading to silent auto-merge workflow failures.
+
+## Verification
+
+- [ ] GitHub Environment `production` is configured with 2 required maintainer reviewers.
+- [ ] Weekly promotion workflows specify `environment: production`.
+- [ ] Merge queue configuration matches each repository's promotion contract (`use_merge_queue`).
+- [ ] Factory health monitor scheduled runs complete and create alert issues when failure thresholds are crossed.
+- [ ] Renovate auto-merge workflow runs with valid GitHub App authentication and branch protection bypasses.

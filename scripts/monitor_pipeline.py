@@ -67,10 +67,15 @@ def compute_pipeline_health(
         if _parse_epoch(r.get("createdAt", "")) >= cutoff_epoch
     ]
 
-    # Only completed, non-skipped runs count
+    # Only genuine build outcomes count toward the success rate. Cancelled runs
+    # were preempted (not failed) and action_required runs are pending approval —
+    # neither produced a build result, so counting them deflates the rate and
+    # fires false alerts (projectbluefin/actions#483). success/(success+failure)
+    # is the standard build success rate; skipped/in_progress/queued excluded too.
     completed = [
         r for r in recent
-        if r.get("status") == "completed" and r.get("conclusion") != "skipped"
+        if r.get("status") == "completed"
+        and r.get("conclusion") in ("success", "failure")
     ]
 
     total = len(completed)

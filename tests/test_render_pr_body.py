@@ -368,3 +368,78 @@ class TestMainRender:
         assert "🦕" in body
         assert "<!-- gate-section-start -->" in body
         assert "days" not in body.lower()
+
+
+class TestSectionFooter:
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_contains_separator(self, module):
+        md = module._section_footer()
+        assert "---" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_describes_branch_protection_requirements(self, module):
+        md = module._section_footer()
+        assert "branch-protection requirements" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_does_not_name_a_specific_reviewer(self, module):
+        md = module._section_footer()
+        assert "projectbluefin/maintainers" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_contains_gh_merge_command(self, module):
+        md = module._section_footer()
+        assert "gh pr merge" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_contains_merge_admin_flag(self, module):
+        md = module._section_footer()
+        assert "--admin" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_with_repo_flag_includes_repo(self, module):
+        md = module._section_footer("projectbluefin/bluefin")
+        assert "--repo projectbluefin/bluefin" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_without_repo_omits_repo_flag(self, module):
+        md = module._section_footer("")
+        assert "--repo" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_default_repo_omits_repo_flag(self, module):
+        md = module._section_footer()
+        assert "--repo" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_contains_pr_placeholder(self, module):
+        md = module._section_footer()
+        assert "<pr-number>" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_does_not_require_a_fixed_approval_count(self, module):
+        md = module._section_footer()
+        assert "2 approvals" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES, ids=["action", "script"])
+    def test_main_render_includes_footer_separator(self, module, tmp_path):
+        out = tmp_path / "pr-body.md"
+        old = sys.argv
+        sys.argv = [
+            "render_pr_body.py",
+            "--project-name",  "Bluefin",
+            "--primary-image", "bluefin",
+            "--variants-json", json.dumps(VARIANTS_NO_DIGEST),
+            "--repo",          "projectbluefin/bluefin",
+            "--run-url",       "https://github.com/projectbluefin/bluefin/actions/runs/1",
+            "--date",          "2026-06-11",
+            "--output",        str(out),
+        ]
+        try:
+            module.main()
+        finally:
+            sys.argv = old
+        body = out.read_text()
+        assert "---" in body
+        assert "gh pr merge" in body
+        assert "--repo projectbluefin/bluefin" in body

@@ -12,11 +12,16 @@ on:
       - '.github/workflows/**'
       - 'bootc-build/**'
 
+permissions: {}
+
 jobs:
   actionlint:
     name: Lint GitHub Actions
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: write  # reviewdog github-pr-check reporter
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,7 +30,7 @@ jobs:
         run: python3 scripts/check-self-repository-references.py
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@d63ba7532e0942965320cd8d73cbae4c7b3c5283 # v1.73.1
+        uses: reviewdog/action-actionlint@8b682e1e7e512151d73a6b9449cbff173846226e # v1.74.0
         with:
           reporter: github-pr-check
           fail_on_error: true
