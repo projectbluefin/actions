@@ -180,6 +180,14 @@ payload_field() {
   [[ "$(card_url)" == *"/img/cards/bluefin-dark.png"* ]]
 }
 
+@test "repo suffix match is anchored on the owner separator" {
+  export REPO="projectbluefin/not-bluefin-lts"
+  notify
+  [ "$status" -eq 0 ]
+  [ "$(payload_field .username)" = "Bluefin" ]
+  [[ "$(card_url)" == *"/img/cards/bluefin-dark.png"* ]]
+}
+
 @test "the card is fetched from the docs site with -sfL" {
   notify
   [ "$status" -eq 0 ]
