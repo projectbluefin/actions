@@ -7,18 +7,20 @@ metadata:
 
 # Reusable Workflows
 
-The repo provides three reusable workflows:
+The repo provides these reusable workflows:
 
 | Workflow | Purpose |
 |---|---|
 | `.github/workflows/reusable-build.yml` | Full Fedora bootc image build pipeline (Path 1) |
 | `.github/workflows/reusable-release.yml` | Image stable-release orchestration and Conventional Commits GitHub Release creation |
 | `.github/workflows/reusable-execute-release.yml` | Stable promotion gate: resolve digest → testsuite e2e → re-verify cosign → promote tag |
+| `.github/workflows/server-installer-test.yml` | Bluefin Server raw installer → `systemd-sysinstall` → installed target QEMU smoke test |
 
 **Permissions hardening:** default reusable workflows to `permissions: {}` at the workflow level, then grant the minimum required scopes per job. Do not rely on workflow-level `packages: write`/`contents: write` unless every job in the file truly needs that access.
 
 ## Contents
 - [reusable-build.yml — calling from a consuming repo](#reusable-buildyml--calling-from-a-consuming-repo)
+- [`server-installer-test.yml` — exported installer smoke test](#server-installer-testyml--exported-installer-smoke-test)
 - [How action refs work inside the reusable workflow](#how-action-refs-work-inside-the-reusable-workflow)
 - [Tag generation and manifest scope](#tag-generation-and-manifest-scope)
 - [Digest output shape](#digest-output-shape-multi-arch-safe)
@@ -42,6 +44,36 @@ jobs:
       image_flavors: '["main", "nvidia-open"]'
       architecture: '["x86_64"]'
 ```
+
+---
+
+## `server-installer-test.yml` — exported installer smoke test
+
+This workflow owns only the GitHub-hosted runner setup: artifact download, QEMU/KVM packages, and failure-artifact upload. The consuming repository owns installer semantics through a `test-installer-artifact` Just recipe. Keep local build orchestration in a separate wrapper such as `show-me-the-future`; CI tests artifacts from the existing build job rather than rebuilding them.
+
+The caller uploads one artifact rooted like its `dist/` directory:
+
+```text
+bluefin-server-installer-*.raw.zst
+bluefin-server-pxe-vmlinuz-*
+bluefin-server-pxe-initrd-*.cpio.gz
+sysext/k0s-*.raw.zst
+```
+
+Then call the workflow after the producing job:
+
+```yaml
+installer-test:
+  needs: build
+  uses: projectbluefin/actions/.github/workflows/server-installer-test.yml@v1
+  permissions:
+    actions: read
+    contents: read
+  with:
+    artifact-name: server-installer-test
+```
+
+The reusable workflow checks out the caller at the triggering revision and runs `just test-installer-artifact`. It deliberately does not use Lima: Linux GitHub-hosted runners already expose KVM, and QEMU is the runtime under test.
 
 ---
 

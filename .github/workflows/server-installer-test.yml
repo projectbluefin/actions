@@ -1,0 +1,77 @@
+name: Bluefin Server installer test
+
+on:
+  workflow_call:
+    inputs:
+      artifact-name:
+        description: "Artifact containing the exported installer, PXE inputs, and k0s sysext"
+        type: string
+        required: false
+        default: server-installer-test
+
+permissions: {}
+
+jobs:
+  test:
+    name: Install and boot in QEMU
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install just
+        uses: taiki-e/install-action@3a2284f7136ae375192b204728209703d406691e # just
+        with:
+          tool: just
+
+      - name: Download installer test artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist
+
+      - name: Install QEMU runtime
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            curl \
+            jq \
+            ovmf \
+            qemu-system-x86 \
+            systemd-container \
+            xfsprogs \
+            zstd
+
+      - name: Enable KVM access
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm || {
+            echo "::error::/dev/kvm is unavailable on this runner"
+            exit 1
+          }
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm -a -w /dev/kvm
+
+      - name: Install and boot exported server image
+        env:
+          SHOW_ME_THE_FUTURE_DEADLINE: "900"
+          SHOW_ME_THE_FUTURE_MEM: "8192"
+          SHOW_ME_THE_FUTURE_SMP: "4"
+        run: just test-installer-artifact
+
+      - name: Upload QEMU failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: server-installer-qemu-${{ github.run_id }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 3
+          path: ~/.cache/bluefin-show-future.*/
