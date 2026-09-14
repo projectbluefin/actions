@@ -1,6 +1,6 @@
 ---
 name: composite-actions-reference
-description: Full action-by-action reference for all bootc-build composite actions. Use when implementing, configuring, or debugging any specific action in bootc-build/ (setup-runner, dnf-cache, preflight, push-image, sign-and-publish, chunka, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest). Covers inputs, outputs, environment requirements, quirks, and integration examples.
+description: Full action-by-action reference for all bootc-build composite actions. Use when implementing, configuring, or debugging any specific action in bootc-build/ (setup-runner, dnf-cache, preflight, push-image, sign-and-publish, chunka, rechunk, apply-pkg-intervals, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest). Covers inputs, outputs, environment requirements, quirks, and integration examples.
 metadata:
   type: reference
 ---
@@ -19,6 +19,8 @@ patterns, github-token pattern), see the parent [`composite-actions.md`](../comp
 - [create-manifest](#create-manifest)
 - [sign-and-publish](#sign-and-publish)
 - [chunka](#chunka)
+- [rechunk](#rechunk)
+- [apply-pkg-intervals](#apply-pkg-intervals)
 - [ghcr-cleanup](#ghcr-cleanup)
 - [detect-changes](#detect-changes)
 - [validate-pr](#validate-pr)
@@ -269,6 +271,28 @@ Key design decisions:
 | `sudo podman save "${OUTPUT_TAG}" \| podman load` | Copies image to user (rootless) storage as a convenience; rootful storage (from `sudo buildah build`) is still intact and is what `reusable-build.yml` downstream steps use |
 
 **Root storage prerequisite:** `source-image` must be visible to rootful container storage (i.e., built or imported with `sudo`/buildah). Images built rootless won't be found by `sudo buildah build --from`.
+
+---
+
+## `rechunk`
+
+rpm-ostree rechunking via `rpm-ostree compose build-chunked-oci`, retained for
+consumers that still require the rpm-ostree path. `chunka` is the default for
+all Fedora-based factory images; `rechunk` is **not** wired into
+`reusable-build.yml`.
+
+Inputs: `source-image` (required), `output-image` (default `rechunked`),
+`max-layers` (default `127`), `format-version` (default `2`), `previous-build`
+(optional delta base), `bootc` (default `true`).
+
+Output: `image-ref` — `containers-storage:localhost/<output-image>`.
+
+**Security note:** the action runs `source-image` itself as a `--privileged`
+container with `/var/lib/containers` bind-mounted, i.e. the source image is the
+privileged executor. Only use it with trusted, internally built images.
+
+Contract-frozen in `docs/consumer-contract.yml`; shell logic covered by
+`tests/bats/test_rechunk.bats`.
 
 ---
 

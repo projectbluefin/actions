@@ -246,6 +246,7 @@ Quick reference - for full details see [`composite-actions/action-reference.md`]
 | `sign-and-publish` | Cosign keyless/key + Syft SBOM + SLSA provenance attestation |
 | `apply-pkg-intervals` | Set `user.update-interval` xattrs on RPM files — run before `chunka` |
 | `chunka` | OCI-native chunkah v0.6.0 rechunking - the single rechunk implementation for all Fedora-based images |
+| `rechunk` | rpm-ostree `compose build-chunked-oci` rechunking - retained for consumers that still require the rpm-ostree path |
 | `ghcr-cleanup` | Prune old/untagged GHCR images |
 | `detect-changes` | Detect changed paths, compute image-flavor build matrix |
 | `validate-pr` | Run just check, shellcheck, hadolint, pre-commit |
@@ -255,6 +256,12 @@ Quick reference - for full details see [`composite-actions/action-reference.md`]
 | `generate-release-notes` | git-cliff Conventional Commits changelog |
 | `create-release` | Factory-standard release: SBOM diff + release card + supply chain notes |
 | `validate-pr-title` | Enforce Conventional Commits PR title format |
+| `design-enforcement` | Enforce the seven-label issue and review workflow |
+| `discord-release-notify` | Post a release card to a Discord forum webhook (no-op without a webhook) |
+| `render-pr-body` | Render the testing-to-stable promotion PR body |
+| `render-gate-section` | Replace the gate checklist section of a promotion PR body in place |
+| `check-token-health` | Fail fast when a token is expired, revoked, or missing required scopes |
+| `retry` | Retry a shell command with exponential backoff and optional error-pattern filtering |
 
 ---
 
