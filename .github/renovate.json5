@@ -15,9 +15,12 @@
       "matchUpdateTypes": ["pin", "pinDigest"]
     },
     {
+      // pinDigest only records the digest of an already-referenced version —
+      // no new upstream code. Plain 'digest' updates DO pull new code, so they
+      // require human review even when CI passes (supply-chain gate, #474).
       "automerge": true,
       "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["digest", "pinDigest"]
+      "matchUpdateTypes": ["pinDigest"]
     },
     // First-party self-references must stay on the floating @v1 tag, which this
     // repo's release process advances deliberately. config:best-practices pulls in

@@ -1,8 +1,10 @@
 ---
 name: composite-actions
-description: Authors, modifies, and debugs composite GitHub Actions in projectbluefin/actions. Covers action structure, SHA pinning, shell best practices, rollout strategy, CI-fix-first workflow, and known workarounds. For full action-by-action details see composite-actions/action-reference.md; for reusable workflow details see composite-actions/reusable-workflow.md.
+description: Authors, modifies, and debugs composite GitHub Actions in projectbluefin/actions. Use when writing or modifying composite actions in bootc-build/, updating action inputs or outputs, managing SHA pinning for third-party actions, debugging shell steps in action YAML, or rolling out changes across factory consumers. Covers action structure, SHA pinning, shell best practices, rollout strategy, CI-fix-first workflow, and known workarounds. For full action-by-action details see composite-actions/action-reference.md; for reusable workflow details see composite-actions/reusable-workflow.md.
 metadata:
   type: reference
+  context7-sources:
+    - /renovatebot/renovate
 ---
 
 # Composite Actions - Authoring Skill
@@ -79,8 +81,10 @@ SHA pinning is a third-party supply-chain defence (prevents tag hijacking on ext
 
 ### Renovate must be told to leave first-party refs alone
 
-`config:best-practices` pulls in `helpers:pinGitHubActionDigests`, which pins **every**
-`uses:` it finds — including this repo's references to itself. Once pinned, Renovate keeps
+`config:best-practices` pulls in `helpers:pinGitHubActionDigests`, whose entire body is
+`{ matchDepTypes: ["action"], pinDigests: true }`. **Reusable workflow refs are also
+`depType: action`**, so this pins every `uses:` it finds — including this repo's
+references to itself. Once pinned, Renovate keeps
 opening "update projectbluefin/actions digest to …" PRs forever. Blocking an individual PR
 only treats the symptom; the next Renovate run regenerates it, and eventually someone merges
 it without noticing.
@@ -113,6 +117,14 @@ workflows.
 does not control their tags and does not advance them, so their refs stay SHA-pinned and
 Renovate must keep updating them. `docs/skills/consumer-validation.md` applies the same
 narrow scope to the `no-floating-action-tags` pre-commit hook.
+
+**Why the rule must be last:** Renovate's `applyPackageRules()` iterates `packageRules` in
+order and merges every matching rule with `mergeChildConfig()`. The last matching rule wins
+on any given property, so an `enabled: false` placed above the automerge rules would be
+silently overridden by them.
+
+Verified against Context7 `/renovatebot/renovate`
+(`lib/config/presets/internal/helpers.preset.ts`, `lib/util/package-rules/index.ts`).
 
 ---
 
@@ -478,6 +490,24 @@ do not attempt a full rebase of the branch. Instead:
 
 This avoids pulling obsolete intermediate state into main and produces a clean single commit.
 
+### Design enforcement
+
+Use `.github/workflows/reusable-design-enforcement.yml` from consumer repositories on
+`issues: [opened, edited, labeled, unlabeled, reopened]` and
+`pull_request_target: [opened, reopened, synchronize, edited, labeled, unlabeled]`. The caller must grant
+`issues: write`, `pull-requests: read`, and `contents: read`; the reusable workflow
+preserves human review and merge gates and updates the PR plus linked issue
+labels/comments.
+
+The action owns exactly one primary label (`1-triage`, `2-discussing`,
+`3-human-queue`, `3-clanker-queue`, or `4-review`) plus optional `blocked`/`hold`.
+Clanker opt-in requires a checked checkbox mentioning Clanker/community army and all
+configured required heading groups. Announcement and repair comments use hidden
+markers so reruns remain idempotent. Label replacement is strict: every
+non-canonical metadata label is removed. Normal PR transitions become
+`4-review`; an explicit `3-clanker-queue` added during a `labeled` event is
+preserved as a request for Clanker review.
+
 ## Self-repository composition
 
 When implementation code in this repository invokes another action or reusable workflow owned by this repository, use the self-repository prefix `$/` rather than a qualified `projectbluefin/actions/...@ref` or workspace-relative `./` reference:
@@ -523,3 +553,57 @@ still reported.
 Do not pass a bare `-ignore` flag to the actionlint pre-commit hook. `-ignore`
 takes a pattern argument and will otherwise consume the next value on the
 command line. Repository-wide ignores belong in `.github/actionlint.yaml`.
+
+---
+
+## When to Use
+
+Use this skill when:
+- Authoring a new composite action or modifying an existing one under `bootc-build/` or `.github/actions/`.
+- Adding or renaming inputs, outputs, or shell steps in an action.
+- Updating SHA pins for third-party actions or configuring Renovate behavior for action refs.
+- Debugging CI failures or runtime quirks (such as actionlint errors, multi-line output parsing, or `GITHUB_ACTION_PATH` resolution) in composite actions.
+- Planning rollouts of action changes across consuming repos via `@v1`.
+
+## When NOT to Use
+
+Do not use this skill to:
+- Modify factory-wide release policies or promotion schedules without coordination (use `factory-operations.md`).
+- Bypass the required consumer validation protocol before merging (use `consumer-validation.md`).
+- Implement consumer repo build logic or Justfile recipes (use `consumer-guide.md`).
+
+## Core Process
+
+1. **Check existing patterns**: Review the [Action catalog](#action-catalog) and `composite-actions/action-reference.md` for similar actions and reusable patterns.
+2. **Follow action structure**: Create or edit `bootc-build/<name>/action.yml` with required keys (`name`, `description`, `author`, `runs.using: "composite"`).
+3. **Enforce SHA pinning rules**: Full commit SHA + release version comment for third-party actions; `@v1` for first-party actions (`projectbluefin/actions`). Never SHA-pin internal actions.
+4. **Harden shell steps**: Set `shell: bash` on every run step, quote shell variables, use `set -euo pipefail` (default for composite bash), and avoid single-bracket `[` tests or `eval`.
+5. **Run local validation**: Validate YAML with actionlint (`pre-commit run actionlint --all-files`) and execute unit/bats tests if scripts or helpers are touched.
+6. **Execute consumer validation**: Follow the CI-fix-first workflow and consumer validation protocol before merging.
+
+## Common Rationalizations
+
+| Rationalization | Reality |
+|---|---|
+| "Floating `@v4` is fine for popular actions like `actions/checkout`." | Floating tags can be compromised or deleted. SHA pinning is an org-wide security requirement enforced by pre-commit. |
+| "I'll SHA-pin our own repo reference to be extra safe." | SHA-pinning first-party refs breaks Renovate and stalls consumers; first-party actions MUST use `@v1`. |
+| "It's just an internal action, so we don't need consumer validation." | All consuming repos consume `projectbluefin/actions` at `@v1`; any breaking change immediately breaks downstream builds. |
+| "A subshell or inline script doesn't need quotes." | Unquoted variables cause word splitting and silent failures in filenames with spaces or empty strings. |
+
+## Red Flags
+
+- Floating action tags (`@main`, `@v3`, `@latest`) on third-party actions.
+- SHA-pinned first-party actions (`projectbluefin/actions@<sha>`) instead of `@v1`.
+- Steps missing `shell: bash`.
+- Writing new scripts inside composite `run:` blocks when they exceed ~20 lines (extract to `scripts/` or a helper).
+- Using `github-token: ${{ secrets.GITHUB_TOKEN }}` without providing a default or supporting the caller's token.
+- Modifying action inputs or outputs without checking downstream compatibility in `docs/consumer-contract.yml`.
+
+## Verification
+
+- [ ] Every third-party `uses:` is pinned to a 40-character commit SHA with a version comment.
+- [ ] Every first-party `uses:` in workflows or composites uses `@v1` (or self-repository `$/` syntax).
+- [ ] Every composite step has explicit `shell: bash`.
+- [ ] `actionlint` passes locally with zero errors or warnings.
+- [ ] Consumer validation protocol is satisfied if any consumer-facing action or workflow changed.
+- [ ] `docs/consumer-contract.yml` is updated if action inputs/outputs were added or modified.

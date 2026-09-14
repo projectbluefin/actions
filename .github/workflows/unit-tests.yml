@@ -5,11 +5,7 @@ on:
     branches: [main]
     paths:
       - "actions/**"
-      - "bootc-build/create-release/scripts/**"
-      - "bootc-build/chunka/**"
-      - "bootc-build/detect-changes/**"
-      - "bootc-build/generate-tags/**"
-      - "bootc-build/setup-runner/**"
+      - "bootc-build/**"
       - "scripts/**"
       - ".github/actions/**"
       - "tests/**"
@@ -18,11 +14,7 @@ on:
   pull_request:
     paths:
       - "actions/**"
-      - "bootc-build/chunka/**"
-      - "bootc-build/create-release/scripts/**"
-      - "bootc-build/detect-changes/**"
-      - "bootc-build/generate-tags/**"
-      - "bootc-build/setup-runner/**"
+      - "bootc-build/**"
       - "scripts/**"
       - ".github/actions/**"
       - "tests/**"
@@ -62,6 +54,18 @@ jobs:
             --cov=.github/actions/render-gate-section \
             --cov-report=term-missing \
             --cov-fail-under=75
+
+  node:
+    name: node
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run Node tests
+        run: node --test tests/node/*.test.mjs
 
   bats:
     name: bats

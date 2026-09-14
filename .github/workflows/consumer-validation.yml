@@ -5,6 +5,8 @@ on:
     branches: [main]
     types: [opened, edited, reopened, synchronize, ready_for_review]
 
+permissions: {}
+
 jobs:
   consumer-validation:
     name: Check consumer validation evidence
