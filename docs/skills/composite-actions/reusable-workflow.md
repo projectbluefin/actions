@@ -75,6 +75,8 @@ installer-test:
 
 The reusable workflow checks out the caller at the triggering revision and runs `just test-installer-artifact`. It deliberately does not use Lima: Linux GitHub-hosted runners already expose KVM, and QEMU is the runtime under test.
 
+GitHub-hosted Ubuntu runners create `/dev/kvm` before workflow udev rules are installed, and retriggering the device does not reliably update its ownership. On the ephemeral runner, assign the device to `$USER` before invoking caller-owned, rootless QEMU commands; do not rely on a late udev rule.
+
 ---
 
 ## How action refs work inside the reusable workflow
