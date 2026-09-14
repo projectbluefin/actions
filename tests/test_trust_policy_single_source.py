@@ -62,7 +62,9 @@ IDENTITY_FLAG = re.compile(r"--certificate-identity-regexp[=\s]+(\S+)")
 # A pinned identity literal, e.g. 'https://github.com/org/repo/.github/...'.
 # Identities must arrive through an env var, a workflow input or a format
 # placeholder so a single caller-supplied value drives every verification.
-IDENTITY_INDIRECTION = re.compile(r"[$}{]")
+IDENTITY_INDIRECTION = re.compile(
+    r"(\$[A-Za-z0-9_]|\$\{[A-Za-z0-9_]+|\$\{\{|\{[a-z0-9_]+\})"
+)
 
 
 def _source_files() -> list[Path]:
@@ -70,7 +72,9 @@ def _source_files() -> list[Path]:
         path
         for root in SEARCH_ROOTS
         for path in (REPO_ROOT / root).rglob("*")
-        if path.is_file() and path.suffix in SEARCH_SUFFIXES
+        if path.is_file()
+        and path.suffix in SEARCH_SUFFIXES
+        and not any(part.endswith(("-work", "-worktree")) for part in path.parts)
     )
 
 
