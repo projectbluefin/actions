@@ -57,7 +57,6 @@ The caller uploads one artifact rooted like its `dist/` directory:
 bluefin-server-installer-*.raw.zst
 bluefin-server-pxe-vmlinuz-*
 bluefin-server-pxe-initrd-*.cpio.gz
-sysext/k0s-*.raw.zst
 ```
 
 Then call the workflow after the producing job:

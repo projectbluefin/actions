@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       artifact-name:
-        description: "Artifact containing the exported installer, PXE inputs, and k0s sysext"
+        description: "Artifact containing the exported installer and PXE boot inputs"
         type: string
         required: false
         default: server-installer-test
@@ -42,8 +42,6 @@ jobs:
             jq \
             ovmf \
             qemu-system-x86 \
-            systemd-container \
-            xfsprogs \
             zstd
 
       - name: Enable KVM access
