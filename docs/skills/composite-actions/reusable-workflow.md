@@ -79,6 +79,8 @@ GitHub-hosted Ubuntu runners create `/dev/kvm` before workflow udev rules are in
 
 Set `XDG_CACHE_HOME` to a non-hidden workspace directory before invoking the caller recipe. `upload-artifact` does not reliably expand `~` in path globs, and its hidden-file filtering can silently discard `~/.cache` evidence.
 
+Upload only `serial.log` from the retained work directory. The directory also contains multi-gigabyte raw disk images; uploading the directory wastes storage and can consume the job timeout while reporting a failure.
+
 ---
 
 ## How action refs work inside the reusable workflow

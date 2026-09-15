@@ -72,4 +72,4 @@ jobs:
           name: server-installer-qemu-${{ github.run_id }}
           if-no-files-found: ignore
           retention-days: 3
-          path: qemu-evidence/bluefin-show-future.*/
+          path: qemu-evidence/bluefin-show-future.*/serial.log
