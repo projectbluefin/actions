@@ -77,6 +77,8 @@ The reusable workflow checks out the caller at the triggering revision and runs 
 
 GitHub-hosted Ubuntu runners create `/dev/kvm` before workflow udev rules are installed, and retriggering the device does not reliably update its ownership. On the ephemeral runner, assign the device to `$USER` before invoking caller-owned, rootless QEMU commands; do not rely on a late udev rule.
 
+Set `XDG_CACHE_HOME` to a non-hidden workspace directory before invoking the caller recipe. `upload-artifact` does not reliably expand `~` in path globs, and its hidden-file filtering can silently discard `~/.cache` evidence.
+
 ---
 
 ## How action refs work inside the reusable workflow

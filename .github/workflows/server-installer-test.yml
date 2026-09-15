@@ -59,6 +59,7 @@ jobs:
 
       - name: Install and boot exported server image
         env:
+          XDG_CACHE_HOME: ${{ github.workspace }}/qemu-evidence
           SHOW_ME_THE_FUTURE_DEADLINE: "900"
           SHOW_ME_THE_FUTURE_MEM: "8192"
           SHOW_ME_THE_FUTURE_SMP: "4"
@@ -69,7 +70,6 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: server-installer-qemu-${{ github.run_id }}
-          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 3
-          path: ~/.cache/bluefin-show-future.*/
+          path: qemu-evidence/bluefin-show-future.*/
