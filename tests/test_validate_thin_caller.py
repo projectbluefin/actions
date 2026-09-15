@@ -39,6 +39,18 @@ def test_file_uses_projectbluefin(tmp_path):
     assert file_uses_projectbluefin(f2) is False
 
 
+def test_file_uses_projectbluefin_ignores_comments(tmp_path):
+    # A commented-out reference is documentation, not a caller.
+    f = tmp_path / "doc.yml"
+    f.write_text("# uses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1\nname: Doc\n")
+    assert file_uses_projectbluefin(f) is False
+
+    # Active reference after a comment line counts as a caller.
+    f2 = tmp_path / "caller.yml"
+    f2.write_text("# pinned-ref example\nuses: projectbluefin/actions/.github/workflows/reusable-build.yml@v1\n")
+    assert file_uses_projectbluefin(f2) is True
+
+
 def test_find_workflows(tmp_path):
     wf_dir = tmp_path / ".github" / "workflows"
     wf_dir.mkdir(parents=True)

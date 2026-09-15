@@ -30,6 +30,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Understand when to use `generate-tags` vs `just generate-build-tags` | `docs/skills/composite-actions/action-reference.md` → "generate-tags" + `docs/skills/composite-actions/reusable-workflow.md` → "Tag generation" |
 | Wire a consuming repo to the shared reusable workflow | `docs/skills/consumer-guide.md` |
 | Validate action changes against consumers before merge | `docs/skills/consumer-validation.md` |
+| Enforce the thin-caller size contract on caller workflows | `docs/skills/thin-caller-gate.md` |
 | Understand the consumer-validation PR check | `docs/skills/consumer-validation.md` |
 | Add upgrade/rollback testing to a bootc image repo | `docs/skills/consumer-guide/upgrade-and-migration.md` → "Upgrade test" |
 | Use these actions in a new or external bootc image repo | `docs/skills/consumer-guide.md` |
@@ -76,4 +77,5 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
 | [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), factory health monitor, Renovate auto-merge, promotion PR format (Design C) |
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |
+| [`thin-caller-gate.md`](skills/thin-caller-gate.md) | Machine-enforced caller-workflow size gate (`validate_thin_caller.py` + CI) |
 | [`session-hygiene.md`](skills/session-hygiene.md) | Review-target disambiguation, read-only reviews, clean working tree at session end, answer-first communication |
