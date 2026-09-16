@@ -56,6 +56,11 @@ on:
         required: false
         type: string
         default: ''
+      e2e_status_context:
+        description: 'Commit status context published by the producer E2E workflow'
+        required: false
+        type: string
+        default: 'e2e/post-testing'
       source_branch:
         description: >
           Branch to promote FROM. Compared against target_branch; if trees
@@ -531,6 +536,7 @@ jobs:
       run_e2e: ${{ inputs.run_e2e }}
       e2e_suites: ${{ inputs.e2e_suites }}
       e2e_image: ${{ inputs.e2e_image }}
+      e2e_status_context: ${{ inputs.e2e_status_context }}
     secrets: inherit
 
   enqueue:

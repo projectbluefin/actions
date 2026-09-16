@@ -29,3 +29,11 @@ def test_queue_enrollment_runs_only_after_release_gate_succeeds():
         "enqueuePullRequest" in step.get("run", "")
         for step in jobs["promote"]["steps"]
     )
+
+
+def test_e2e_status_context_is_forwarded_to_release_gate():
+    gate_inputs = _jobs()["gate"]["with"]
+    assert gate_inputs["e2e_status_context"] == "${{ inputs.e2e_status_context }}"
+
+    workflow = WORKFLOW.read_text()
+    assert "      e2e_status_context:\n" in workflow
