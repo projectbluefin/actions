@@ -1,6 +1,6 @@
 ---
 name: factory-operations
-description: Production gate (2-human approval), promotion cadence and merge-queue contract, factory health monitor, and Renovate auto-merge. Use when configuring or verifying the 2-human production environment gate, managing promotion cadence and merge queues across image repos, troubleshooting factory pipeline health monitoring, or verifying Renovate auto-merge configuration.
+description: Use when configuring production approval or automated verification gates, promotion cadence, merge queues, factory health monitoring, or Renovate auto-merge.
 metadata:
   type: reference
   context7-sources:
@@ -11,8 +11,8 @@ metadata:
 
 Covers systems that keep the projectbluefin factory safe:
 
-1. **Production gate** - machine-enforced 2-human approval before any build reaches `:stable`
-2. **Promotion cadence** - per-repo schedule, `use_merge_queue` contract, and `run_e2e` rationale
+1. **Production gate** - repository-specific human approval or automated verification before a build reaches `:stable`
+2. **Promotion cadence** - per-repo schedule, explicit enrollment, merge-queue selection, and E2E policy
 3. **Factory health monitor** - scheduled pipeline health monitoring with automatic issue creation
 4. **Renovate auto-merge** - automated dependency bump management
 
@@ -22,15 +22,18 @@ Covers systems that keep the projectbluefin factory safe:
 
 ### What it is
 
-A GitHub Environment named `production` added to the promotion job in each image repo's release workflow. GitHub blocks the job until the required number of distinct human approvers click Approve in the Environments UI.
+Production authorization is repository-specific. Repositories using a GitHub
+Environment can require distinct human approvers. Bluefin instead uses an
+automated chain: exact-source-SHA E2E success, cosign verification, Tuesday UTC
+release-window approval, and merge-queue enrollment after the gate succeeds.
 
 ### Where it lives
 
-| Repo | Workflow | Job |
+| Repo | Workflow | Gate |
 |---|---|---|
-| `projectbluefin/bluefin` | `weekly-testing-promotion.yml` | `promote` |
-| `projectbluefin/dakota` | `weekly-testing-promotion.yml` | `promote` |
-| `projectbluefin/bluefin-lts` | `scheduled-lts-release.yml` | `trigger-lts-builds` |
+| `projectbluefin/bluefin` | `promote-testing-to-main.yml` | E2E + cosign + Tuesday window |
+| `projectbluefin/dakota` | `weekly-testing-promotion.yml` | `production` environment |
+| `projectbluefin/bluefin-lts` | `scheduled-lts-release.yml` | `production` environment |
 
 ### Workflow snippet
 
@@ -40,27 +43,28 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://ghcr.io/projectbluefin/bluefin:stable
+      url: https://ghcr.io/projectbluefin/dakota:stable
     steps:
       - # ... SHA-lock + verify-e2e + skopeo copy ...
 ```
 
-### Manual GitHub UI setup (one-time per repo)
+### Manual GitHub UI setup (environment-gated repos only)
 
-After the workflow change is merged:
+For Dakota and Bluefin LTS, after the workflow change is merged:
+
 1. Go to the repo → **Settings → Environments → New environment**
 2. Name: `production`
-3. Set **Required reviewers** - list the 4 maintainers (`castrojo`, `p5`, `m2Giles`, `tulilirockz`)
-4. Set the **required count to 2** (two distinct approvals)
-5. Restrict to the `main` branch
+3. Set **Required reviewers** - list the maintainers.
+4. Set the **required count to 2** (two distinct approvals).
+5. Restrict to the release branch.
 
-### Verification
+### Verification for environment-gated repos
 
-- Trigger the promotion workflow via `workflow_dispatch`
-- Confirm the job pauses with a yellow "Waiting for approval" status
-- One reviewer approves → job stays paused
-- Second reviewer approves → job runs
-- Author approving their own dispatch is blocked (GitHub prevents self-approval when ≥1 review required)
+- Trigger the promotion workflow via `workflow_dispatch`.
+- Confirm the job pauses with a yellow "Waiting for approval" status.
+- One reviewer approves → job stays paused.
+- Second reviewer approves → job runs.
+- Author approving their own dispatch is blocked when approval is required.
 
 ### What it does NOT prevent
 
@@ -75,47 +79,45 @@ The protection is friction-ful for accidental/casual bypasses, not cryptographic
 ## 2. Promotion Cadence and Merge Queue Contract
 
 Each consumer repo promotes `:testing` → `:stable` (or `:lts`) via a thin caller to
-`reusable-promote-squash.yml@v1`. The cadence and merge-queue behavior differ per repo — this
-section is the canonical reference so edits to consumer `promote-testing-to-main.yml` preserve
-the contract.
+`reusable-promote-squash.yml@v1`. The caller owns cadence through
+`enqueue_promotion`; `use_merge_queue` selects the target branch's merge mechanism
+and must not be overloaded as an on/off switch.
 
 ### Per-repo schedule and inputs
 
-| Repo | Cron (UTC) | `use_merge_queue` | `run_e2e` | Notes |
-|---|---|---|---|---|
-| `projectbluefin/bluefin` | daily `0 23 * * *` | `true` (always) | `false` | also triggers on push to `testing`, `workflow_run` (Post-Testing E2E), and `pull_request_review` |
-| `projectbluefin/bluefin-lts` | Tuesday `0 4 * * 2` | `false` | `false` | direct branch builds; no squash promotion PR |
-| `projectbluefin/dakota` | Tuesday `0 4 * * 2` | conditional (see below) | `false` | e2e gate is at the environment approval level, not the PR gate |
+| Repo | Cron (UTC) | `enqueue_promotion` | `use_merge_queue` | `run_e2e` | Notes |
+|---|---|---|---|---|---|
+| `projectbluefin/bluefin` | daily `0 4 * * *` | Tuesday schedule or manual dispatch | `true` | `true` | push and non-Tuesday runs refresh the PR without enqueueing |
+| `projectbluefin/bluefin-lts` | Tuesday `0 4 * * 2` | default `true` | `false` | `false` | direct branch builds; no squash promotion PR |
+| `projectbluefin/dakota` | Tuesday `0 4 * * 2` | schedule or manual dispatch | repository policy | repository policy | weekly release path only |
 
-### Conditional merge-queue enrollment (dakota pattern)
+### Release-window enrollment
 
-Dakota passes `use_merge_queue` as an expression rather than a constant:
+Callers that refresh a promotion PR outside the release window must pass an
+explicit boolean:
 
 ```yaml
-use_merge_queue: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+enqueue_promotion: ${{ needs.release_window.outputs.should_enqueue == 'true' }}
+use_merge_queue: true
 ```
 
-This enrolls the PR in the merge queue **only when triggered by a scheduled run or manual dispatch**
-(the weekly release path), not when triggered by a push to the source branch (routine refresh).
-Enqueue on every push would cause the merge queue to process unnecessary entries.
+The reusable workflow first builds the squash PR and runs the release gate. Its
+`enqueue` job depends on both jobs and requires `needs.gate.result == 'success'`.
+Cosign or E2E failure therefore cannot race with queue enrollment. Do not move
+enrollment back into the PR-construction job.
 
-### Why `use_merge_queue` matters
+`enablePullRequestAutoMerge` is blocked when the target branch has a merge queue
+ruleset. `use_merge_queue: true` selects `enqueuePullRequest`; it does not decide
+whether a release window is open.
 
-`enablePullRequestAutoMerge` (the GraphQL mutation for standard auto-merge) is blocked by GitHub
-when the target branch has a merge queue ruleset enabled. Calling it silently fails.
-`enqueuePullRequest` (the alternative used when `use_merge_queue: true`) places the PR directly
-in the queue, where the queue runner merges it once all required checks pass.
+### E2E policy
 
-**If you add a merge queue ruleset to a repo's target branch, set `use_merge_queue: true`
-(or the conditional expression above if you want queue-only on weekly runs).**
-
-### Why `run_e2e: false`
-
-E2E evidence is gathered out-of-band by `post-testing-e2e.yml` (bluefin) or at the
-`environment: production` approval gate level (dakota). The promotion PR gate runs cosign
-signature verification only — it does not re-trigger E2E. Setting `run_e2e: true` at the
-promotion step would duplicate the gate and create a dependency on testsuite availability
-during the promotion window.
+Set `run_e2e: true` when the consumer's post-build E2E workflow is the release
+qualification signal. The gate looks up the completed run for the exact source
+branch SHA and refuses enrollment unless it succeeded. `e2e_image` must be
+non-empty to activate that lookup. Consumers that run an equivalent production
+environment gate may leave this false, but must document the alternate trust
+boundary.
 
 ---
 

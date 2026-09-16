@@ -81,6 +81,13 @@ on:
         required: false
         type: boolean
         default: false
+      enqueue_promotion:
+        description: >
+          Whether to enroll the verified promotion PR for merge. Set false on
+          refresh-only events and true only in the repository's release window.
+        required: false
+        type: boolean
+        default: true
       request_reviewer:
         description: >
           Request a reviewer for the promotion PR. When true and reviewer is empty,
@@ -496,35 +503,6 @@ jobs:
             --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           echo "✅ Posted validate=success on ${SHA}"
 
-      - name: Enable auto-merge or enqueue promotion PR
-        if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.upsert.outputs.pr_number }}
-        run: |
-          set -euo pipefail
-          # Enable auto-merge or enqueue in the merge queue.
-          # For repos with a merge queue ruleset on the target branch, --auto calls
-          # enablePullRequestAutoMerge which is blocked — use enqueuePullRequest instead.
-          # The PR will sit in the queue and merge automatically once required approvals
-          # and status checks pass.
-          if [ "${{ inputs.use_merge_queue }}" = "true" ]; then
-            NODE_ID=$(gh pr view "$PR_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --json id --jq '.id')
-            # shellcheck disable=SC2016  # $id is a GraphQL variable, not a shell variable
-            gh api graphql \
-              -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' \
-              -f id="$NODE_ID" 2>/dev/null \
-              && echo "✅ PR #${PR_NUMBER} enqueued in merge queue" \
-              || echo "⚠️  Could not enqueue PR #${PR_NUMBER} (may already be queued, or approvals not yet met)"
-          else
-            gh pr merge "$PR_NUMBER" \
-              --repo "${{ github.repository }}" \
-              --auto 2>/dev/null \
-              && echo "✅ Auto-merge enabled on PR #${PR_NUMBER}" \
-              || echo "⚠️  Auto-merge not available — maintainer merges when checks pass"
-          fi
 
       - name: Report do-not-merge label block
         if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'true'
@@ -556,6 +534,54 @@ jobs:
       e2e_suites: ${{ inputs.e2e_suites }}
       e2e_image: ${{ inputs.e2e_image }}
     secrets: inherit
+
+  enqueue:
+    name: Enqueue verified promotion
+    needs: [promote, gate]
+    if: >-
+      inputs.enqueue_promotion &&
+      needs.gate.result == 'success' &&
+      needs.promote.outputs.sync_needed == 'true' &&
+      needs.promote.outputs.pr_number != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ needs.promote.outputs.pr_number }}
+    steps:
+      - name: Enable auto-merge or enqueue verified promotion PR
+        run: |
+          set -euo pipefail
+
+          labels=$(gh pr view "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --json labels \
+            --jq '[.labels[].name] | join(",")')
+          if grep -qw 'do-not-merge' <<<"$labels"; then
+            echo "::notice::PR #${PR_NUMBER} has the do-not-merge label; queue enrollment skipped."
+            exit 0
+          fi
+
+          # This job cannot start until the release gate succeeds. A failed
+          # cosign or E2E check therefore never reaches either merge path.
+          if [ "${{ inputs.use_merge_queue }}" = "true" ]; then
+            node_id=$(gh pr view "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --json id --jq '.id')
+            # shellcheck disable=SC2016  # $id is a GraphQL variable, not a shell variable
+            gh api graphql \
+              -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' \
+              -f id="$node_id"
+            echo "PR #${PR_NUMBER} enqueued after release-gate success"
+          else
+            gh pr merge "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --auto
+            echo "Auto-merge enabled on PR #${PR_NUMBER} after release-gate success"
+          fi
 
   close-failure-issue:
     needs: [promote]
