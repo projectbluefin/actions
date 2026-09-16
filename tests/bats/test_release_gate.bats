@@ -6,6 +6,7 @@
 setup() {
   RESOLVE_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/resolve_digests.sh"
   VERIFY_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/verify_signatures.sh"
+  E2E_SCRIPT="${BATS_TEST_DIRNAME}/../../scripts/check_e2e_status.sh"
   TEST_TMP=$(mktemp -d)
   export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   touch "$GITHUB_OUTPUT"
@@ -204,4 +205,63 @@ COSIGN
   grep -q "^ok=false" "$GITHUB_OUTPUT"
   results=$(grep "^results=" "$GITHUB_OUTPUT" | cut -d= -f2-)
   echo "$results" | jq -e '.["bluefin-nvidia"] == "failed"' >/dev/null
+}
+
+# ── Commit-bound E2E status ──────────────────────────────────────────────────
+
+make_gh_status_mock() {
+  cat > "${MOCK_DIR}/gh" <<'GH'
+#!/usr/bin/env bash
+printf '%s\n' "$STATUS_RESPONSE"
+GH
+  chmod +x "${MOCK_DIR}/gh"
+}
+
+prepare_e2e_check() {
+  make_gh_status_mock
+  export RUN_E2E="true"
+  export E2E_IMAGE="ghcr.io/projectbluefin/bluefin:testing"
+  export E2E_STATUS_CONTEXT="e2e/post-testing"
+  export E2E_SUITES="smoke,common"
+  export HEAD_SHA="0123456789abcdef0123456789abcdef01234567"
+  export REPO="projectbluefin/bluefin"
+  export GITHUB_OUTPUT="${TEST_TMP}/e2e_output"
+  touch "$GITHUB_OUTPUT"
+}
+
+@test "e2e: matching successful commit status passes" {
+  prepare_e2e_check
+  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"success","updated_at":"2026-09-16T12:00:00Z","target_url":"https://example.test/run/1"}]}'
+  run bash "$E2E_SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q '^ok=true' "$GITHUB_OUTPUT"
+  grep -q '^last_status=success' "$GITHUB_OUTPUT"
+}
+
+@test "e2e: status for a different context does not qualify" {
+  prepare_e2e_check
+  export STATUS_RESPONSE='{"statuses":[{"context":"ci/build","state":"success","updated_at":"2026-09-16T12:00:00Z"}]}'
+  run bash "$E2E_SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q '^ok=false' "$GITHUB_OUTPUT"
+  grep -q '^last_status=missing' "$GITHUB_OUTPUT"
+}
+
+@test "e2e: matching failed commit status blocks promotion" {
+  prepare_e2e_check
+  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"failure","updated_at":"2026-09-16T12:00:00Z","target_url":"https://example.test/run/2"}]}'
+  run bash "$E2E_SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q '^ok=false' "$GITHUB_OUTPUT"
+  grep -q '^last_status=failure' "$GITHUB_OUTPUT"
+}
+
+@test "e2e: disabled gate skips without querying GitHub" {
+  prepare_e2e_check
+  export RUN_E2E="false"
+  rm "${MOCK_DIR}/gh"
+  run bash "$E2E_SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q '^ok=true' "$GITHUB_OUTPUT"
+  grep -q '^state=skipped' "$GITHUB_OUTPUT"
 }

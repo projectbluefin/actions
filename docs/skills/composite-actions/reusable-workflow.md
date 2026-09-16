@@ -104,7 +104,7 @@ Use `$/` only for same-repository implementation references. Keep third-party ac
 
 Do not migrate references in comments, documentation examples, or shell commands that inspect consumer-facing `projectbluefin/actions/...@v1` calls. A focused regression test (`tests/test_self_repository_references.py`) scans active implementation YAML under `.github/`, `actions/`, and `bootc-build/`; run it after changing composition refs. Validate both the focused test and YAML/actionlint checks; the repository's pinned actionlint 1.7.7 needs the scoped `.github/actionlint.yaml` compatibility ignores until native `$/` parsing support lands.
 
-**Retry GitHub API polling in reusable workflows:** wrap `gh api` polling for other workflow runs (for example, `post-testing-e2e` release-gate lookups) with `projectbluefin/actions/actions/retry@<SHA>` and write the API response to `${{ runner.temp }}`. The retry action executes `with.command` via `eval`, so keep the command free of unescaped double quotes — prefer single-quoted headers plus escaped `?` / `&` separators when redirecting API output to a file. If the retried helper lives in another reusable workflow such as `reusable-release-gate.yml`, bump every caller's pinned `projectbluefin/actions/.github/workflows/...@<SHA>` ref in the same PR so consumers execute the retried helper instead of the previous commit.
+**Commit-bound E2E evidence:** `reusable-release-gate.yml` reads the latest status whose context matches `e2e_status_context` from the source commit named by `head_sha`. A producer workflow triggered through `workflow_run` must publish that status explicitly on `github.event.workflow_run.head_sha`; the producer run's own `head_sha` belongs to the default-branch workflow definition and does not identify the tested source commit.
 
 Pin GitHub-hosted Linux jobs to explicit runner labels (`ubuntu-24.04` / `ubuntu-24.04-arm`) instead of `ubuntu-latest`, and set `timeout-minutes` on every lightweight helper job (`preflight`, `check`, `collect-digests`, release/validation/report jobs). The build matrix itself gets the longer explicit timeout because it can otherwise hold a runner indefinitely when podman or registry operations hang.
 
@@ -170,14 +170,20 @@ SBOM generation and upload should run for every non-PR build, including the `tes
 
 ---
 
-## Promotion gate retries and stale-e2e recovery
+## Promotion gate E2E contract
 
-`reusable-release-gate.yml` treats the e2e lookup as a two-layer retry boundary:
+`reusable-release-gate.yml` requires producer-published, commit-bound evidence
+rather than inferring provenance from a `workflow_run` record. The caller must:
 
-- short GitHub API hiccups (`502/503/504`, rate limits, timeouts) retry up to 3 times with a 30 second backoff
-- stale or still-pending e2e coverage re-checks the gate up to 4 times total with 10m / 20m / 30m waits between checks
+- pass the exact promotion source SHA as `head_sha`
+- configure a non-empty `e2e_image` and keep `run_e2e: true`
+- publish `success` or `failure` on that SHA under `e2e_status_context`
+- publish success only after every required E2E suite passes and the tested
+  digest becomes the mutable source tag consumed by the release gate
 
-When the latest relevant `post-testing-e2e` / `post-merge-e2e` run is older than the stale threshold (default 120 minutes), the gate attempts a `workflow_dispatch` re-run before waiting again. If the gate still cannot clear after the final check, it auto-files or updates a `priority/p1` issue titled `promotion blocked for >2h on <branch>` in the caller repo and keeps the workflow failed.
+The gate fails closed when the context is absent or not `success`. Because the
+status is attached to an immutable commit, it remains valid for that commit and
+does not need time-based revalidation.
 
 ---
 

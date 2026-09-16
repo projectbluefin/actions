@@ -13,7 +13,7 @@ on:
         default: ''
         type: string
       head_sha:
-        description: PR head SHA for e2e lookup (overrides event context; required for workflow_dispatch callers)
+        description: Source commit SHA whose E2E status qualifies the promotion
         required: false
         default: ''
         type: string
@@ -36,7 +36,7 @@ on:
         default: testing
         type: string
       run_e2e:
-        description: Whether to require a recent post-testing-e2e result for the PR head SHA
+        description: Whether to require a successful commit-bound E2E status
         required: false
         default: true
         type: boolean
@@ -50,11 +50,11 @@ on:
         required: false
         default: ''
         type: string
-      e2e_stale_after_minutes:
-        description: How old the latest relevant e2e run can be before the gate re-dispatches it
+      e2e_status_context:
+        description: Commit status context published by the caller's E2E workflow
         required: false
-        default: 120
-        type: number
+        default: e2e/post-testing
+        type: string
     outputs:
       ready:
         description: Whether all gate checks passed
@@ -229,18 +229,22 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Determine whether E2E lookup is required
-        id: e2e-precheck
+      - name: Check commit-bound E2E status
+        id: e2e
         shell: bash
         env:
           E2E_IMAGE: ${{ inputs.e2e_image }}
+          E2E_STATUS_CONTEXT: ${{ inputs.e2e_status_context }}
+          E2E_SUITES: ${{ inputs.e2e_suites }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
+          REPO: ${{ inputs.repo }}
           RUN_E2E: ${{ inputs.run_e2e }}
         run: |
           set -euo pipefail
 
           if [ "$RUN_E2E" != 'true' ]; then
             {
-              echo 'should_check=false'
               echo 'ok=true'
               echo 'state=skipped'
               echo 'summary=E2E check disabled by caller.'
@@ -255,7 +259,6 @@ jobs:
 
           if [ -z "$E2E_IMAGE" ]; then
             {
-              echo 'should_check=false'
               echo 'ok=true'
               echo 'state=skipped'
               echo 'summary=E2E image not set; E2E gate skipped.'
@@ -268,111 +271,64 @@ jobs:
             exit 0
           fi
 
-          echo 'should_check=true' >> "$GITHUB_OUTPUT"
-
-      - name: Check post-testing-e2e status for PR head SHA
-        id: e2e
-        shell: bash
-        env:
-          E2E_SUITES: ${{ inputs.e2e_suites }}
-          GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ inputs.head_sha || github.event.pull_request.head.sha }}
-          REPO: ${{ inputs.repo }}
-        run: |
-          set -euo pipefail
-
-          if [ '${{ inputs.run_e2e }}' != 'true' ]; then
-            {
-              echo 'ok=true'
-              echo 'state=skipped'
-              echo 'summary=E2E check disabled by caller.'
-              echo 'details=Caller disabled the E2E gate.'
-              echo 'last_status=skipped'
-              echo 'last_age_minutes='
-              echo 'last_run_url='
-              echo 'workflow_path='
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ -z '${{ inputs.e2e_image }}' ]; then
-            {
-              echo 'ok=true'
-              echo 'state=skipped'
-              echo 'summary=E2E image not set; E2E gate skipped.'
-              echo 'details=Caller left e2e_image empty.'
-              echo 'last_status=skipped'
-              echo 'last_age_minutes='
-              echo 'last_run_url='
-              echo 'workflow_path='
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          runs=$(gh api \
+          statuses=$(gh api \
             -H 'Accept: application/vnd.github+json' \
-            "/repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed&per_page=100")
+            "/repos/${REPO}/commits/${HEAD_SHA}/status")
 
-          selected=$(jq -c '
+          selected=$(jq -c --arg context "$E2E_STATUS_CONTEXT" '
             [
-              .workflow_runs[]
-              | select(
-                  ((.path // "") | endswith("post-testing-e2e.yml"))
-                  or ((.path // "") | endswith("post-merge-e2e.yml"))
-                  or (((.name // "") | ascii_downcase) | contains("post-testing-e2e"))
-                  or (((.name // "") | ascii_downcase) | contains("post-merge e2e"))
-                )
+              .statuses[]
+              | select(.context == $context)
             ]
-            | sort_by(.created_at)
+            | sort_by(.updated_at)
             | reverse
             | .[0] // empty
-          ' <<<"$runs")
+          ' <<<"$statuses")
 
           if [ -z "$selected" ]; then
             {
               echo 'ok=false'
               echo 'state=failed'
-              echo "summary=No completed post-testing-e2e run found for suites ${E2E_SUITES} on this PR head SHA."
-              echo 'details=Expected a successful post-testing-e2e run for the promotion commit.'
+              echo "summary=No ${E2E_STATUS_CONTEXT} status found for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
+              echo 'details=Expected the producer E2E workflow to publish a commit status after testing this exact source commit.'
               echo 'last_status=missing'
               echo 'last_age_minutes='
               echo 'last_run_url='
-              echo 'workflow_path=.github/workflows/post-testing-e2e.yml'
+              echo 'workflow_path='
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          conclusion=$(jq -r '.conclusion // "unknown"' <<<"$selected")
-          run_url=$(jq -r '.html_url // empty' <<<"$selected")
-          run_name=$(jq -r '.name // .display_title // "post-testing-e2e"' <<<"$selected")
-          run_path=$(jq -r '.path // ".github/workflows/post-testing-e2e.yml"' <<<"$selected")
-          created_at=$(jq -r '.created_at // empty' <<<"$selected")
+          status=$(jq -r '.state // "unknown"' <<<"$selected")
+          target_url=$(jq -r '.target_url // empty' <<<"$selected")
+          description=$(jq -r '.description // empty' <<<"$selected")
+          updated_at=$(jq -r '.updated_at // empty' <<<"$selected")
           age_minutes=""
-          if [ -n "$created_at" ]; then
-            age_minutes=$(( ( $(date -u +%s) - $(date -d "$created_at" +%s) ) / 60 ))
+          if [ -n "$updated_at" ]; then
+            age_minutes=$(( ( $(date -u +%s) - $(date -d "$updated_at" +%s) ) / 60 ))
           fi
 
-          if [ "$conclusion" = 'success' ]; then
+          if [ "$status" = 'success' ]; then
             {
               echo 'ok=true'
               echo 'state=passed'
-              echo "summary=Recent ${run_name} run passed for suites ${E2E_SUITES} on this PR head SHA."
-              echo "details=${run_url}"
-              echo "last_status=success"
+              echo "summary=${E2E_STATUS_CONTEXT} passed for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
+              echo "details=${target_url:-$description}"
+              echo 'last_status=success'
               echo "last_age_minutes=${age_minutes}"
-              echo "last_run_url=${run_url}"
-              echo "workflow_path=${run_path}"
+              echo "last_run_url=${target_url}"
+              echo 'workflow_path='
             } >> "$GITHUB_OUTPUT"
           else
             {
               echo 'ok=false'
               echo 'state=failed'
-              echo "summary=Recent ${run_name} run did not pass for suites ${E2E_SUITES} on this PR head SHA."
-              echo "details=${run_url}"
-              echo "last_status=${conclusion}"
+              echo "summary=${E2E_STATUS_CONTEXT} is ${status} for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
+              echo "details=${target_url:-$description}"
+              echo "last_status=${status}"
               echo "last_age_minutes=${age_minutes}"
-              echo "last_run_url=${run_url}"
-              echo "workflow_path=${run_path}"
+              echo "last_run_url=${target_url}"
+              echo 'workflow_path='
             } >> "$GITHUB_OUTPUT"
           fi
 

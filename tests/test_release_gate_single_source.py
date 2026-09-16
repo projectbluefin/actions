@@ -23,6 +23,7 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "reusable-release-gate.yml"
 
 # step id in reusable-release-gate.yml -> script holding the extracted copy
 STEP_TO_SCRIPT = {
+    "e2e": REPO_ROOT / "scripts" / "check_e2e_status.sh",
     "resolve": REPO_ROOT / "scripts" / "resolve_digests.sh",
     "verify": REPO_ROOT / "scripts" / "verify_signatures.sh",
 }

@@ -162,11 +162,9 @@ jobs:
         if: inputs.run_e2e
         env:
           GH_TOKEN: ${{ github.token }}
-          # E2E workflows run on builds to source_branch:
-          #   bluefin:     source_branch=testing → post-testing-e2e runs carry testing HEAD SHA
-          #   bluefin-lts: source_branch=testing → post-testing-e2e runs carry testing HEAD SHA
-          #   finpilot:    source_branch=main    → post-merge-e2e runs carry main HEAD SHA
-          # Gate queries Actions API by head_sha — must match the branch where e2e actually ran.
+          # The producer E2E workflow publishes its result as a commit status
+          # on this source-branch SHA. The workflow_run itself executes from the
+          # default branch and therefore cannot be matched by its run head_sha.
           E2E_HEAD_BRANCH: ${{ inputs.source_branch }}
         run: |
           sha=$(gh api "repos/${{ github.repository }}/git/ref/heads/${E2E_HEAD_BRANCH}" --jq '.object.sha') \
