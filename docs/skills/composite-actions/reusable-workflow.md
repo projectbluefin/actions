@@ -173,7 +173,10 @@ SBOM generation and upload should run for every non-PR build, including the `tes
 ## Promotion gate E2E contract
 
 `reusable-release-gate.yml` requires producer-published, commit-bound evidence
-rather than inferring provenance from a `workflow_run` record. The caller must:
+rather than inferring provenance from a `workflow_run` record. It accepts only
+statuses created by the GitHub Actions integration (app ID `15368`), so a user-
+authored status with the same context cannot authorize promotion. The caller
+must:
 
 - pass the exact promotion source SHA as `head_sha`
 - configure a non-empty `e2e_image` and keep `run_e2e: true`

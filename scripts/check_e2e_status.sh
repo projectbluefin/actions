@@ -39,6 +39,7 @@ selected=$(jq -c --arg context "$E2E_STATUS_CONTEXT" '
   [
     .statuses[]
     | select(.context == $context)
+    | select((.avatar_url // "") | contains("/in/15368"))
   ]
   | sort_by(.updated_at)
   | reverse
@@ -49,8 +50,8 @@ if [ -z "$selected" ]; then
   {
     echo 'ok=false'
     echo 'state=failed'
-    echo "summary=No ${E2E_STATUS_CONTEXT} status found for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
-    echo 'details=Expected the producer E2E workflow to publish a commit status after testing this exact source commit.'
+    echo "summary=No trusted ${E2E_STATUS_CONTEXT} status found for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
+    echo 'details=Expected the GitHub Actions producer workflow to publish a commit status after testing this exact source commit.'
     echo 'last_status=missing'
     echo 'last_age_minutes='
     echo 'last_run_url='

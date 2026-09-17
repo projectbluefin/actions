@@ -231,7 +231,7 @@ prepare_e2e_check() {
 
 @test "e2e: matching successful commit status passes" {
   prepare_e2e_check
-  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"success","updated_at":"2026-09-16T12:00:00Z","target_url":"https://example.test/run/1"}]}'
+  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"success","updated_at":"2026-09-16T12:00:00Z","target_url":"https://example.test/run/1","avatar_url":"https://avatars.githubusercontent.com/in/15368?v=4"}]}'
   run bash "$E2E_SCRIPT"
   [ "$status" -eq 0 ]
   grep -q '^ok=true' "$GITHUB_OUTPUT"
@@ -240,7 +240,7 @@ prepare_e2e_check() {
 
 @test "e2e: status for a different context does not qualify" {
   prepare_e2e_check
-  export STATUS_RESPONSE='{"statuses":[{"context":"ci/build","state":"success","updated_at":"2026-09-16T12:00:00Z"}]}'
+  export STATUS_RESPONSE='{"statuses":[{"context":"ci/build","state":"success","updated_at":"2026-09-16T12:00:00Z","avatar_url":"https://avatars.githubusercontent.com/in/15368?v=4"}]}'
   run bash "$E2E_SCRIPT"
   [ "$status" -eq 0 ]
   grep -q '^ok=false' "$GITHUB_OUTPUT"
@@ -249,11 +249,20 @@ prepare_e2e_check() {
 
 @test "e2e: matching failed commit status blocks promotion" {
   prepare_e2e_check
-  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"failure","updated_at":"2026-09-16T12:00:00Z","target_url":"https://example.test/run/2"}]}'
+  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"failure","updated_at":"2026-09-16T12:00:00Z","target_url":"https://example.test/run/2","avatar_url":"https://avatars.githubusercontent.com/in/15368?v=4"}]}'
   run bash "$E2E_SCRIPT"
   [ "$status" -eq 0 ]
   grep -q '^ok=false' "$GITHUB_OUTPUT"
   grep -q '^last_status=failure' "$GITHUB_OUTPUT"
+}
+
+@test "e2e: matching user-authored status does not qualify" {
+  prepare_e2e_check
+  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"success","updated_at":"2026-09-16T12:00:00Z","avatar_url":"https://avatars.githubusercontent.com/u/123?v=4"}]}'
+  run bash "$E2E_SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q '^ok=false' "$GITHUB_OUTPUT"
+  grep -q '^last_status=missing' "$GITHUB_OUTPUT"
 }
 
 @test "e2e: disabled gate skips without querying GitHub" {
