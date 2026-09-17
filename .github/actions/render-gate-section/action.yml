@@ -26,7 +26,7 @@ inputs:
     description: 'Cosign verification summary text'
     required: true
   e2e_state:
-    description: 'E2E gate state (pass/fail/skip)'
+    description: 'E2E gate state (passed/failed/skipped/waiting)'
     required: true
   e2e_summary:
     description: 'E2E gate summary text'
@@ -79,4 +79,3 @@ runs:
 
         gh pr edit "${PR_NUMBER}" --repo "${REPO}" --body-file /tmp/updated-pr-body.md
         echo "PR body gate section updated."
-

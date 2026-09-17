@@ -184,15 +184,18 @@ must:
 - publish success only after every required E2E suite passes and the tested
   digest becomes the mutable source tag consumed by the release gate
 
-The gate fails closed when the context is absent or not `success`. Because the
-status is attached to an immutable commit, it remains valid for that commit and
-does not need time-based revalidation.
+An absent status is a neutral waiting state: digest and signature checks still
+run, the PR receives `release/pending`, but the workflow stays green and does
+not enqueue. An explicit producer failure, digest failure, or signature failure
+fails closed, marks `release/blocked`, and opens or updates a `priority/p1`
+issue. A later passing gate closes that issue. Because status is attached to an
+immutable commit, it remains valid for that commit and needs no age-based
+revalidation.
 
 `reusable-promote-squash.yml` runs the release gate only when
-`enqueue_promotion` is true. Refresh-only events maintain the PR without
-reporting a false failure while producer E2E is still running; they remove
-stale release labels and do not post the required `validate` status. After the
-release gate passes, the enqueue job posts `validate` and enrolls the PR. Queue
+`enqueue_promotion` is true. Refresh-only events maintain the PR, remove stale
+release labels, and do not post the required `validate` status. After the gate
+reports `ready=true`, the enqueue job posts `validate` and enrolls the PR. Queue
 and auto-merge enrollment are idempotent, and the single exact `do-not-merge`
 decision is shared by validation and enrollment.
 

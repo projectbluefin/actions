@@ -34,6 +34,7 @@ def test_queue_enrollment_runs_only_after_release_gate_succeeds():
 def test_release_gate_runs_only_for_enqueuing_events():
     jobs = _jobs()
     assert "inputs.enqueue_promotion" in jobs["gate"]["if"]
+    assert "needs.gate.outputs.ready == 'true'" in jobs["enqueue"]["if"]
 
 
 def test_do_not_merge_decision_is_shared_with_enqueue_job():
@@ -62,6 +63,14 @@ def test_validate_status_is_posted_only_after_release_gate():
         step.get("name") == "Clear stale release labels on refresh"
         for step in jobs["promote"]["steps"]
     )
+
+
+def test_explicit_gate_failure_opens_actionable_issue():
+    jobs = _jobs()
+    assert "report-gate-failure" in jobs
+    assert "needs.gate.result == 'failure'" in jobs["report-gate-failure"]["if"]
+    script = jobs["report-gate-failure"]["steps"][0]["with"]["script"]
+    assert "priority/p1" in script
 
 
 def test_e2e_status_context_is_forwarded_to_release_gate():

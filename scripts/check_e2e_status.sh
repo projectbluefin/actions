@@ -49,7 +49,7 @@ selected=$(jq -c --arg context "$E2E_STATUS_CONTEXT" '
 if [ -z "$selected" ]; then
   {
     echo 'ok=false'
-    echo 'state=failed'
+    echo 'state=waiting'
     echo "summary=No trusted ${E2E_STATUS_CONTEXT} status found for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
     echo 'details=Expected the GitHub Actions producer workflow to publish a commit status after testing this exact source commit.'
     echo 'last_status=missing'

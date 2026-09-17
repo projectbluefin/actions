@@ -73,7 +73,12 @@ def build_gate_section(
         f"| E2E               | {e2e_icon} {e2e_state} | {e2e_cell} |",
     ])
 
-    overall = "✅ All checks passed" if ready == "true" else "❌ Gate blocked"
+    if ready == "true":
+        overall = "✅ All checks passed"
+    elif e2e_state == "waiting" and resolve_ok == "true" and verify_ok == "true":
+        overall = "⏳ Awaiting E2E evidence"
+    else:
+        overall = "❌ Gate blocked"
 
     return (
         f"{GATE_START}\n"

@@ -519,6 +519,7 @@ jobs:
     if: >-
       inputs.enqueue_promotion &&
       needs.gate.result == 'success' &&
+      needs.gate.outputs.ready == 'true' &&
       needs.promote.outputs.sync_needed == 'true' &&
       needs.promote.outputs.pr_number != '' &&
       needs.promote.outputs.do_not_merge_blocked != 'true'
@@ -656,5 +657,74 @@ jobs:
                 title,
                 body,
                 labels: ['area/ci', 'kind/bug', 'priority/p1'],
+              });
+            }
+
+  report-gate-failure:
+    needs: [promote, gate]
+    if: always() && inputs.enqueue_promotion && needs.gate.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update release gate issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = 'ci: testing→main release gate blocked';
+            const body = `## Release Gate Blocked\n\n**Run:** ${runUrl}\n**Source SHA:** \`${{ needs.promote.outputs.source_sha }}\`\n**PR:** ${{ needs.promote.outputs.pr_url }}\n\n_Automatically opened by promote-testing-to-main.yml_`;
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'area/ci,kind/bug',
+              state: 'open',
+            });
+            const existing = issues.data.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['area/ci', 'kind/bug', 'priority/p1'],
+              });
+            }
+
+  close-gate-failure:
+    needs: [gate]
+    if: always() && needs.gate.result == 'success' && needs.gate.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Close stale release gate issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const title = 'ci: testing→main release gate blocked';
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: 'area/ci,kind/bug',
+              state: 'open',
+            });
+            const existing = issues.data.find((issue) => issue.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed',
               });
             }

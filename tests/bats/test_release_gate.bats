@@ -62,6 +62,7 @@ SKOPEO
   run bash "$RESOLVE_SCRIPT"
   [ "$status" -eq 0 ]
   grep -q "^ok=true" "$GITHUB_OUTPUT"
+
   grep -q "^summary=Resolved 2" "$GITHUB_OUTPUT"
 }
 
@@ -245,7 +246,9 @@ prepare_e2e_check() {
   [ "$status" -eq 0 ]
   grep -q '^ok=false' "$GITHUB_OUTPUT"
   grep -q '^last_status=missing' "$GITHUB_OUTPUT"
+  grep -q '^state=waiting' "$GITHUB_OUTPUT"
 }
+
 
 @test "e2e: matching failed commit status blocks promotion" {
   prepare_e2e_check

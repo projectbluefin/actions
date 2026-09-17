@@ -59,6 +59,14 @@ ARGS_E2E_SKIPPED = dict(
     ready="true",
 )
 
+ARGS_WAITING = dict(
+    resolve_ok="true", resolve_summary="2 variants resolved.",
+    verify_ok="true", verify_summary="All signatures verified.",
+    e2e_state="waiting", e2e_summary="Producer E2E has not finished.",
+    e2e_details="",
+    ready="false",
+)
+
 
 class TestBuildGateSection:
     def test_contains_start_marker(self):
@@ -108,6 +116,11 @@ class TestBuildGateSection:
     def test_overall_blocked_label(self):
         section = render_gate_section.build_gate_section(**ARGS_BLOCKED)
         assert "Gate blocked" in section
+
+    def test_waiting_e2e_is_not_rendered_as_blocked(self):
+        section = render_gate_section.build_gate_section(**ARGS_WAITING)
+        assert "Awaiting E2E evidence" in section
+        assert "Gate blocked" not in section
 
     def test_e2e_no_details_no_crash(self):
         render_gate_section.build_gate_section(**ARGS_E2E_SKIPPED)  # must not raise

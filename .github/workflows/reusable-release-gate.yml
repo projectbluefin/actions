@@ -289,7 +289,7 @@ jobs:
           if [ -z "$selected" ]; then
             {
               echo 'ok=false'
-              echo 'state=failed'
+              echo 'state=waiting'
               echo "summary=No trusted ${E2E_STATUS_CONTEXT} status found for suites ${E2E_SUITES} on source commit ${HEAD_SHA}."
               echo 'details=Expected the GitHub Actions producer workflow to publish a commit status after testing this exact source commit.'
               echo 'last_status=missing'
@@ -366,14 +366,16 @@ jobs:
       - name: Set release readiness label
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
+          E2E_LAST_STATUS: ${{ steps.e2e.outputs.last_status }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           READY: ${{ steps.aggregate.outputs.ready }}
         with:
           script: |
             const prNumber = parseInt(process.env.INPUT_PR_NUMBER) || context.payload.pull_request?.number;
             const ready = process.env.READY === 'true';
-            const desired = ready ? 'release/ready' : 'release/blocked';
-            const undesired = ready ? 'release/blocked' : 'release/ready';
+            const waiting = !ready && process.env.E2E_LAST_STATUS === 'missing';
+            const desired = ready ? 'release/ready' : waiting ? 'release/pending' : 'release/blocked';
+            const undesired = ['release/ready', 'release/pending', 'release/blocked'].filter((name) => name !== desired);
 
             const repoLabels = await github.paginate(github.rest.issues.listLabelsForRepo, {
               owner: context.repo.owner,
@@ -381,11 +383,14 @@ jobs:
               per_page: 100,
             });
 
-            for (const [name, color, description] of [
-              [desired, ready ? '0e8a16' : 'b60205', ready ? 'Release gate checks passed' : 'Release gate checks failed'],
-              [undesired, ready ? 'b60205' : '0e8a16', ready ? 'Release gate checks failed' : 'Release gate checks passed'],
-            ]) {
+            const labelDefinitions = {
+              'release/ready': ['0e8a16', 'Release gate checks passed'],
+              'release/pending': ['fbca04', 'Release gate is waiting for producer evidence'],
+              'release/blocked': ['b60205', 'Release gate checks failed'],
+            };
+            for (const name of [desired, ...undesired]) {
               if (!repoLabels.some((label) => label.name === name)) {
+                const [color, description] = labelDefinitions[name];
                 await github.rest.issues.createLabel({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
@@ -412,13 +417,15 @@ jobs:
               });
             }
 
-            if (currentLabels.includes(undesired)) {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                name: undesired,
-              }).catch(() => {});
+            for (const name of undesired) {
+              if (currentLabels.includes(name)) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  name,
+                }).catch(() => {});
+              }
             }
 
       - name: Fail gate when checks are blocked
@@ -427,6 +434,12 @@ jobs:
         run: |
           set -euo pipefail
           if [ '${{ steps.aggregate.outputs.ready }}' != 'true' ]; then
+            if [ '${{ steps.e2e.outputs.last_status }}' = 'missing' ] \
+              && [ '${{ steps.resolve.outputs.ok }}' = 'true' ] \
+              && [ '${{ steps.verify.outputs.ok }}' = 'true' ]; then
+              echo '::notice::Release gate is waiting for producer E2E evidence.'
+              exit 0
+            fi
             echo '::error::Release gate is blocked. Review the promotion PR gate section for the failing check.'
             exit 1
           fi
