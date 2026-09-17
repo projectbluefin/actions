@@ -190,14 +190,17 @@ does not need time-based revalidation.
 
 `reusable-promote-squash.yml` runs the release gate only when
 `enqueue_promotion` is true. Refresh-only events maintain the PR without
-reporting a false failure while producer E2E is still running. Queue and
-auto-merge enrollment are idempotent, and the single exact `do-not-merge`
+reporting a false failure while producer E2E is still running; they remove
+stale release labels and do not post the required `validate` status. After the
+release gate passes, the enqueue job posts `validate` and enrolls the PR. Queue
+and auto-merge enrollment are idempotent, and the single exact `do-not-merge`
 decision is shared by validation and enrollment.
 
-Release callers that resolve mutable source tags should pass `source_branch` to
+Release callers that resolve mutable source tags may pass `source_branch` to
 `reusable-execute-release.yml`. Before resolving tags, it requires that branch's
 current tree to match `fast_forward_sha`; a concurrent source advance fails
-closed.
+closed. Recovery callers can omit `source_branch` after independently selecting
+and verifying the intended source digest.
 
 ---
 

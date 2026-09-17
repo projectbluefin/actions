@@ -147,8 +147,8 @@ jobs:
       PROMOTION_REVIEWER: ${{ inputs.request_reviewer && (inputs.reviewer || format('{0}/maintainers', github.repository_owner)) || '' }}
     permissions:
       contents: write
+      issues: write
       pull-requests: write
-      statuses: write
     outputs:
       sync_needed: ${{ steps.compare.outputs.sync_needed }}
       testing_sha: ${{ steps.compare.outputs.testing_sha }}
@@ -467,49 +467,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # GITHUB_TOKEN pushes do not trigger workflow runs, so pr-validation.yml
-      # never fires on the squash branch HEAD. Post validate=success here,
-      # after the push and before enqueuePullRequest, so the merge queue
-      # accepts the PR in the same run with no re-trigger required.
-      # The squash contains only code already validated by constituent PR checks.
-      - name: Post validate status on squash branch head
-        if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # On a failed ref lookup, gh api prints the API error body to stdout and
-          # exits non-zero. Capture defensively so the error JSON can never become
-          # SHA (regression of #422 — 2>/dev/null || echo "" only swallowed stderr
-          # and leaked the body into the statuses/ URL). Job-level PROMOTION_BRANCH
-          # matches the name pushed by the rebuild/upsert steps.
-          SHA=$(gh api "repos/${{ github.repository }}/git/ref/heads/${PROMOTION_BRANCH}" \
-            --jq '.object.sha' 2>/dev/null) || SHA=""
-          if [[ -z "$SHA" ]]; then
-            echo "Squash branch not found — skipping validate post"
-            exit 0
-          fi
-          EXISTING=$(gh api "repos/${{ github.repository }}/commits/${SHA}/statuses" \
-            --jq '[.[] | select(.context == "validate")] | first | .state // ""' 2>/dev/null) || EXISTING=""
-          if [[ "$EXISTING" == "success" || "$EXISTING" == "failure" ]]; then
-            echo "validate already ${EXISTING} on ${SHA} — skipping"
-            exit 0
-          fi
-          gh api "repos/${{ github.repository }}/statuses/${SHA}" \
-            -X POST \
-            --field state=success \
-            --field context=validate \
-            --field description="Validated by promotion workflow (constituent PRs already checked)" \
-            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          echo "✅ Posted validate=success on ${SHA}"
-
-
       - name: Report do-not-merge label block
         if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'true'
         env:
           PR_NUMBER: ${{ steps.upsert.outputs.pr_number }}
         run: |
           echo "::notice::PR #${PR_NUMBER} has the do-not-merge label; auto-merge/queue enrollment skipped."
+
+      - name: Clear stale release labels on refresh
+        if: ${{ !inputs.enqueue_promotion && steps.upsert.outputs.pr_number != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.upsert.outputs.pr_number }}
+        run: |
+          labels=$(gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
+            --json labels --jq '.labels[].name')
+          for label in release/ready release/blocked; do
+            if grep -Fxq "$label" <<<"$labels"; then
+              gh pr edit "$PR_NUMBER" --repo "${{ github.repository }}" --remove-label "$label"
+            fi
+          done
 
   gate:
     name: Release gate checks
@@ -550,10 +527,24 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      statuses: write
     env:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ needs.promote.outputs.pr_number }}
+      PROMOTION_BRANCH: ${{ format('auto/promote-{0}-to-{1}', inputs.source_branch, inputs.target_branch) }}
     steps:
+      - name: Post validate status after release gate
+        run: |
+          set -euo pipefail
+          SHA=$(gh api "repos/${{ github.repository }}/git/ref/heads/${PROMOTION_BRANCH}" \
+            --jq '.object.sha')
+          gh api "repos/${{ github.repository }}/statuses/${SHA}" \
+            -X POST \
+            --field state=success \
+            --field context=validate \
+            --field description="Release gate passed" \
+            --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - name: Enable auto-merge or enqueue verified promotion PR
         run: |
           set -euo pipefail

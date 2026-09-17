@@ -45,11 +45,23 @@ def test_do_not_merge_decision_is_shared_with_enqueue_job():
 
 
 def test_queue_and_auto_merge_enrollment_are_idempotent():
-    script = _jobs()["enqueue"]["steps"][0]["run"]
+    scripts = [step.get("run", "") for step in _jobs()["enqueue"]["steps"]]
+    script = next(script for script in scripts if "enqueuePullRequest" in script)
     assert "mergeQueueEntry" in script
     assert "is already queued" in script
     assert "autoMergeRequest" in script
     assert "already enabled" in script
+
+def test_validate_status_is_posted_only_after_release_gate():
+    jobs = _jobs()
+    enqueue_scripts = [step.get("run", "") for step in jobs["enqueue"]["steps"]]
+    promote_scripts = [step.get("run", "") for step in jobs["promote"]["steps"]]
+    assert any("--field context=validate" in script for script in enqueue_scripts)
+    assert not any("--field context=validate" in script for script in promote_scripts)
+    assert any(
+        step.get("name") == "Clear stale release labels on refresh"
+        for step in jobs["promote"]["steps"]
+    )
 
 
 def test_e2e_status_context_is_forwarded_to_release_gate():
