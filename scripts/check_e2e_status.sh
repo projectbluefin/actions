@@ -39,7 +39,7 @@ selected=$(jq -c --arg context "$E2E_STATUS_CONTEXT" '
   [
     .statuses[]
     | select(.context == $context)
-    | select((.avatar_url // "") | contains("/in/15368"))
+    | select((.avatar_url // "") | test("/in/15368([?]|$)"))
   ]
   | sort_by(.updated_at)
   | reverse

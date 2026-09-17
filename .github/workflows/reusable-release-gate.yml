@@ -279,7 +279,7 @@ jobs:
             [
               .statuses[]
               | select(.context == $context)
-              | select((.avatar_url // "") | contains("/in/15368"))
+              | select((.avatar_url // "") | test("/in/15368([?]|$)"))
             ]
             | sort_by(.updated_at)
             | reverse
@@ -427,6 +427,6 @@ jobs:
         run: |
           set -euo pipefail
           if [ '${{ steps.aggregate.outputs.ready }}' != 'true' ]; then
-            echo '::error::Release gate is blocked after retry/recovery. Review the sticky PR comment and the auto-filed issue for details.'
+            echo '::error::Release gate is blocked. Review the promotion PR gate section for the failing check.'
             exit 1
           fi

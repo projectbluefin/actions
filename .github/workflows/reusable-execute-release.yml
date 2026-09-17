@@ -26,6 +26,11 @@ on:
         required: false
         type: string
         default: ""
+      source_branch:
+        description: Branch whose tree must match fast_forward_sha before source tags are resolved
+        required: false
+        type: string
+        default: ''
       tag_name:
         description: Release tag for Discord notification (e.g. bluefin-stable-20250624.0). Leave empty to skip notification.
         required: false
@@ -83,16 +88,29 @@ jobs:
         id: resolve-sha
         shell: bash
         env:
-          INPUT_SHA: ${{ inputs.fast_forward_sha }}
+          GH_TOKEN: ${{ github.token }}
           GITHUB_SHA: ${{ github.sha }}
+          INPUT_SHA: ${{ inputs.fast_forward_sha }}
+          REPO: ${{ github.repository }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           set -euo pipefail
+          candidate_sha="${INPUT_SHA:-$GITHUB_SHA}"
           if [ -z "${INPUT_SHA}" ]; then
             echo "::warning::fast_forward_sha not provided by caller; falling back to github.sha=${GITHUB_SHA}. This fallback will be removed in v2 — update your caller to pass needs.<job>.outputs.build_sha."
-            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          else
-            echo "sha=${INPUT_SHA}" >> "$GITHUB_OUTPUT"
           fi
+
+          if [ -n "$SOURCE_BRANCH" ]; then
+            source_sha=$(gh api "repos/${REPO}/git/ref/heads/${SOURCE_BRANCH}" --jq '.object.sha')
+            candidate_tree=$(gh api "repos/${REPO}/git/commits/${candidate_sha}" --jq '.tree.sha')
+            source_tree=$(gh api "repos/${REPO}/git/commits/${source_sha}" --jq '.tree.sha')
+            if [ "$candidate_tree" != "$source_tree" ]; then
+              echo "::error::${SOURCE_BRANCH} advanced beyond release commit ${candidate_sha}; refusing to resolve mutable source tags"
+              exit 1
+            fi
+          fi
+
+          echo "sha=${candidate_sha}" >> "$GITHUB_OUTPUT"
 
       - name: Authenticate to GHCR
         shell: bash

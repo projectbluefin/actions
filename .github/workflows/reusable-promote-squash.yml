@@ -156,6 +156,7 @@ jobs:
       pr_number: ${{ steps.upsert.outputs.pr_number || steps.rebuild.outputs.pr_number }}
       pr_url: ${{ steps.upsert.outputs.pr_url || steps.rebuild.outputs.pr_url }}
       promoted: ${{ steps.rebuild.outputs.promoted }}
+      do_not_merge_blocked: ${{ steps.check-dnm.outputs.blocked }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -458,15 +459,11 @@ jobs:
         if: steps.upsert.outputs.pr_number != ''
         id: check-dnm
         run: |
-          LABELS=$(gh pr view "${{ steps.upsert.outputs.pr_number }}" \
+          blocked=$(gh pr view "${{ steps.upsert.outputs.pr_number }}" \
             --repo "${{ github.repository }}" \
             --json labels \
-            --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")
-          if echo "$LABELS" | grep -q "do-not-merge"; then
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "blocked=false" >> "$GITHUB_OUTPUT"
-          fi
+            --jq 'any(.labels[].name; . == "do-not-merge")' 2>/dev/null || echo false)
+          echo "blocked=${blocked}" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -517,7 +514,7 @@ jobs:
   gate:
     name: Release gate checks
     needs: [normalize-registry, promote]
-    if: needs.promote.outputs.sync_needed == 'true' && needs.promote.outputs.promoted != 'false'
+    if: inputs.enqueue_promotion && needs.promote.outputs.sync_needed == 'true' && needs.promote.outputs.promoted != 'false'
     permissions:
       actions: read
       contents: read
@@ -546,7 +543,8 @@ jobs:
       inputs.enqueue_promotion &&
       needs.gate.result == 'success' &&
       needs.promote.outputs.sync_needed == 'true' &&
-      needs.promote.outputs.pr_number != ''
+      needs.promote.outputs.pr_number != '' &&
+      needs.promote.outputs.do_not_merge_blocked != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -560,15 +558,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          labels=$(gh pr view "$PR_NUMBER" \
-            --repo "${{ github.repository }}" \
-            --json labels \
-            --jq '[.labels[].name] | join(",")')
-          if grep -qw 'do-not-merge' <<<"$labels"; then
-            echo "::notice::PR #${PR_NUMBER} has the do-not-merge label; queue enrollment skipped."
-            exit 0
-          fi
-
           # This job cannot start until the release gate succeeds. A failed
           # cosign or E2E check therefore never reaches either merge path.
           if [ "${{ inputs.use_merge_queue }}" = "true" ]; then
@@ -576,16 +565,35 @@ jobs:
               --repo "${{ github.repository }}" \
               --json id --jq '.id')
             # shellcheck disable=SC2016  # $id is a GraphQL variable, not a shell variable
+            queue_entry=$(gh api graphql \
+              -f query='query($id:ID!){node(id:$id){... on PullRequest{mergeQueueEntry{id}}}}' \
+              -f id="$node_id" \
+              --jq '.data.node.mergeQueueEntry.id // empty')
+            if [ -n "$queue_entry" ]; then
+              echo "PR #${PR_NUMBER} is already queued"
+              exit 0
+            fi
+            # shellcheck disable=SC2016  # $id is a GraphQL variable, not a shell variable
             gh api graphql \
               -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' \
               -f id="$node_id"
             echo "PR #${PR_NUMBER} enqueued after release-gate success"
           else
+            auto_merge=$(gh pr view "$PR_NUMBER" \
+              --repo "${{ github.repository }}" \
+              --json autoMergeRequest \
+              --jq '.autoMergeRequest != null')
+            if [ "$auto_merge" = "true" ]; then
+              echo "Auto-merge is already enabled on PR #${PR_NUMBER}"
+              exit 0
+            fi
+
             gh pr merge "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
               --auto
             echo "Auto-merge enabled on PR #${PR_NUMBER} after release-gate success"
           fi
+
 
   close-failure-issue:
     needs: [promote]

@@ -188,6 +188,17 @@ The gate fails closed when the context is absent or not `success`. Because the
 status is attached to an immutable commit, it remains valid for that commit and
 does not need time-based revalidation.
 
+`reusable-promote-squash.yml` runs the release gate only when
+`enqueue_promotion` is true. Refresh-only events maintain the PR without
+reporting a false failure while producer E2E is still running. Queue and
+auto-merge enrollment are idempotent, and the single exact `do-not-merge`
+decision is shared by validation and enrollment.
+
+Release callers that resolve mutable source tags should pass `source_branch` to
+`reusable-execute-release.yml`. Before resolving tags, it requires that branch's
+current tree to match `fast_forward_sha`; a concurrent source advance fails
+closed.
+
 ---
 
 ## `reusable-release.yml` — calling from a consuming repo

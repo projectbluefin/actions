@@ -265,6 +265,15 @@ prepare_e2e_check() {
   grep -q '^last_status=missing' "$GITHUB_OUTPUT"
 }
 
+@test "e2e: app ID prefix collision does not qualify" {
+  prepare_e2e_check
+  export STATUS_RESPONSE='{"statuses":[{"context":"e2e/post-testing","state":"success","updated_at":"2026-09-16T12:00:00Z","avatar_url":"https://avatars.githubusercontent.com/in/153680?v=4"}]}'
+  run bash "$E2E_SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q '^ok=false' "$GITHUB_OUTPUT"
+  grep -q '^last_status=missing' "$GITHUB_OUTPUT"
+}
+
 @test "e2e: disabled gate skips without querying GitHub" {
   prepare_e2e_check
   export RUN_E2E="false"
