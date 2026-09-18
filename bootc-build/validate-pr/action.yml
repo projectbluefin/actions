@@ -26,7 +26,7 @@ runs:
   using: "composite"
   steps:
     - name: Install just
-      uses: taiki-e/install-action@3a2284f7136ae375192b204728209703d406691e # just
+      uses: taiki-e/install-action@6012bba2f8e3e666a2b212f8823c06831704ce92 # just
       with:
         tool: just
 
