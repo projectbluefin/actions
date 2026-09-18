@@ -126,7 +126,7 @@ permissions: {}
 jobs:
   validate:
     name: Validate release mode
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       mode: ${{ steps.validate.outputs.mode }}
     steps:
@@ -190,7 +190,7 @@ jobs:
     name: Create ${{ inputs.stream_name }} image release
     needs: [validate]
     if: needs.validate.outputs.mode == 'image'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: write
@@ -382,7 +382,7 @@ jobs:
     name: Create release ${{ inputs.tag }}
     needs: [validate]
     if: needs.validate.outputs.mode == 'semver'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: write

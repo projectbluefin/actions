@@ -68,7 +68,7 @@ permissions: {}
 jobs:
   preflight:
     name: Preflight checks
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -592,7 +592,7 @@ jobs:
   check:
     name: Check all ${{ inputs.stream_name }} builds successful
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     needs: [build_container]
     steps:
@@ -613,7 +613,7 @@ jobs:
 
   collect-digests:
     name: Collect image digests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     needs: [check]
     outputs:
