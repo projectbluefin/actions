@@ -32,13 +32,21 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 | [`bootc-build/scan-image`](bootc-build/scan-image/) | Trivy CVE scan before push; uploads SARIF and can auto-file CVE issues on projectbluefin main builds |
 | [`bootc-build/rechunk`](bootc-build/rechunk/) | rpm-ostree rechunking for OTA deltas |
 | [`bootc-build/chunka`](bootc-build/chunka/) | chunkah rechunking (OCI-native, no rpm-ostree) |
+| [`bootc-build/apply-pkg-intervals`](bootc-build/apply-pkg-intervals/) | Set `user.update-interval` xattrs on RPM-owned files before `chunka` |
 | [`bootc-build/generate-release-notes`](bootc-build/generate-release-notes/) | git-cliff Conventional Commits changelog |
+| [`bootc-build/create-release`](bootc-build/create-release/) | SBOM diff, release card, supply-chain notes, GitHub Release creation |
 
 ### Utility actions
 
 | Action | Purpose |
 |--------|---------|
 | [`.github/actions/validate-pr-title`](.github/actions/validate-pr-title/) | Enforce Conventional Commits PR title format |
+| [`.github/actions/design-enforcement`](.github/actions/design-enforcement/) | Enforce the seven-label issue and review workflow |
+| [`.github/actions/discord-release-notify`](.github/actions/discord-release-notify/) | Post a release card to a Discord forum webhook (no-op without a webhook) |
+| [`.github/actions/render-pr-body`](.github/actions/render-pr-body/) | Render the testing-to-stable promotion PR body |
+| [`.github/actions/render-gate-section`](.github/actions/render-gate-section/) | Replace the gate checklist section of a promotion PR body in place |
+| [`actions/check-token-health`](actions/check-token-health/) | Fail fast when a token is expired, revoked, or missing required scopes |
+| [`actions/retry`](actions/retry/) | Retry a shell command with exponential backoff and optional error-pattern filtering |
 
 ## Reusable Workflows
 
