@@ -275,6 +275,45 @@ pyyaml>=6.0
 
 `pytest-cov` ships as a pytest plugin — no extra import needed in test files.
 
+## Required checks must be reachable
+
+A required status check on `main` must be able to report on **every** ref the
+ruleset evaluates, or it does not gate — it deadlocks.
+
+Two ways a path-filtered workflow breaks this:
+
+1. **`pull_request` with a `paths:` filter.** A PR outside those paths never
+   schedules the workflow, the required context never reports, and the PR sits
+   at `mergeStateStatus: BLOCKED` no matter how many approvals it has.
+   `gh pr merge` will not even enqueue it — it silently arms auto-merge
+   (`autoMergeRequest` set, `mergeQueueEntry: null`) and waits forever.
+2. **No `merge_group:` trigger.** A merge queue using the `ALLGREEN` strategy
+   waits for required checks on the *merge-group* ref. If no workflow listens
+   for `merge_group`, entries sit in `AWAITING_CHECKS` until the queue timeout
+   and never merge.
+
+Filter the *work*, not the *trigger*. Let the workflow start on every PR and
+skip expensive internals with a step-level `if:`; a job that runs and reports
+success in seconds is what satisfies the ruleset.
+
+When a reporter needs a PR context it will not have on `merge_group`, select it
+by event rather than dropping the trigger:
+
+```yaml
+reporter: ${{ github.event_name == 'merge_group' && 'github-check' || 'github-pr-check' }}
+```
+
+Diagnosing it: compare `mergeStateStatus` between an affected PR and one that
+touches the filtered paths. Both `SUCCESS` on `statusCheckRollup` while only one
+is `CLEAN` means a required context is absent, not failing.
+
+```bash
+gh pr view <n> --json reviewDecision,mergeStateStatus
+gh api graphql -f query='{repository(owner:"projectbluefin",name:"actions"){
+  pullRequest(number:<n>){ mergeQueueEntry{state} autoMergeRequest{mergeMethod} }}}'
+grep -rl merge_group .github/workflows/   # zero matches is the tell
+```
+
 ## When to Use
 
 Use this skill when changing Python scripts, shell logic in actions, unit-test workflows, test
