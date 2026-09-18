@@ -153,6 +153,15 @@ falls below the success-rate threshold.
 - Success rate = `successful completed runs / completed non-skipped runs`
 - Window = last 24 hours
 - Threshold = 80%
+- **Success rate measures the production pipeline, not pre-merge validation.** The
+  historical rate recipe excluded only `skipped`/`in_progress`/`cancelled`/
+  `action_required` conclusions. That still counted pre-merge `pull_request` and
+  `merge_group` runs as pipeline outcomes — but those validate *in-flight* work and
+  routinely fail transiently (a failed PR run or a merge-queue collision gets fixed
+  and re-run before the branch lands), deflating the real pipeline rate and firing
+  false alerts (e.g. projectbluefin/actions#503). The recipe therefore also drops
+  `pull_request` and `merge_group` events, counting only production pipeline events
+  such as `push`, `schedule`, `workflow_dispatch`, and `workflow_run`.
 - Open issues are deduplicated by repo + pipeline title prefix
 - Issues are filed in `projectbluefin/common` with the labels that currently exist from:
   `priority/p0`, `area/ci`, `kind/bug`
