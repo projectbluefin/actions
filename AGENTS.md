@@ -136,10 +136,14 @@ Agents implement autonomously **except** at these gates. Stop and request human 
 | **Design Gate** | Architecture changes, new subsystem design, behavioral changes visible to consumers |
 | **Security Gate** | Auth, signing, supply chain, secrets handling, SHA pinning for security-critical actions |
 | **Breakage Gate** | Cross-repo breaking changes — removing/renaming inputs, changing defaults that affect consuming repos |
-| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge unless they carry the `clanker-queue` label. An agent may merge a `clanker-queue` PR once all required checks pass and the PR is mergeable. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
+| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge unless they carry the `3-clanker-queue` label. An agent may merge a `3-clanker-queue` PR once all required checks pass and the PR is mergeable. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
 
 **`main` is governed by a merge queue — never trust `gh pr merge`'s exit code.** Every
-merge path in this repo hits it, agents and humans alike:
+**sanctioned** merge path must go through the queue, agents and humans alike. Other paths
+exist and will succeed — a direct REST merge skips the queue entirely, and `--admin`
+overrides protection — which is exactly why using the queue has to be deliberate rather
+than assumed. See `docs/skills/merge-governance.md` for the full procedure and for the
+bypasses that look legitimate but are not:
 
 - `gh pr merge --squash` prints `! The merge strategy for main is set by the merge queue`
   and **exits 0**, having enqueued the PR rather than merged it.
@@ -150,7 +154,15 @@ merge path in this repo hits it, agents and humans alike:
 Never infer the outcome from exit status or stderr text. Confirm it:
 
 ```bash
-gh pr view <n> --json state --jq .state   # MERGED, or still OPEN (= queued)
+gh pr view <n> --json state --jq .state   # MERGED is conclusive; OPEN only means "not merged"
+```
+
+`OPEN` does **not** by itself mean the PR is queued — a blocked PR gets auto-merge armed
+instead of a queue entry. Check `mergeQueueEntry` before claiming it is queued:
+
+```bash
+gh api graphql -f query='{repository(owner:"projectbluefin",name:"actions"){
+  pullRequest(number:<n>){ mergeQueueEntry{position state} autoMergeRequest{mergeMethod} }}}'
 ```
 
 The same rule is encoded in `reusable-renovate-automerge.yml`; see
@@ -162,7 +174,7 @@ When in doubt, open a draft PR with your implementation and ask explicitly.
 
 ## Verification — Agents Implement and Verify; Humans Approve Unless Authorized
 
-`clanker-queue` is explicit authorization for an agent to merge a queued PR. Before merging, confirm the label is still present, the PR is not a draft or blocked, it is mergeable, and every required CI check is green. Do not merge a PR with failing, pending, or missing required checks. PRs without `clanker-queue` still require maintainer approval and merging.
+`3-clanker-queue` is explicit authorization for an agent to merge a queued PR. Before merging, confirm the label is still present, the PR is not a draft or blocked, it is mergeable, and every required CI check is green. Do not merge a PR with failing, pending, or missing required checks — a **missing** required check disqualifies a merge exactly as a failing one does. PRs without `3-clanker-queue` still require maintainer approval and merging.
 
 Do not request review without evidence. Before opening a PR for review:
 

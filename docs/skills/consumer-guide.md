@@ -3,6 +3,8 @@ name: consumer-guide
 description: Onboards a new bootc image repo to use projectbluefin/actions. Use when integrating, upgrading, or validating a consumer build. Covers Path 1 (full reusable-build.yml workflow with Justfile contract) and Path 2 (à la carte composite actions), SHA pinning strategy, known constraints, and pre-live checklist. For upgrade/migration test gates and live consumer examples, see consumer-guide/upgrade-and-migration.md.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
 ---
 
 # Consumer Guide — Using These Actions in Your Own bootc Image

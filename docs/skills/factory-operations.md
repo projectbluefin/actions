@@ -5,6 +5,7 @@ metadata:
   type: reference
   context7-sources:
     - /renovatebot/renovate
+    - /websites/github_en_rest
 ---
 
 # Factory Operations Skill
@@ -202,7 +203,7 @@ eligibility signal. `renovate.json` is therefore the single source of truth for
 
 **What auto-merges:** whatever `renovate.json` marks auto-mergeable (SHA digest bumps and pin updates), once every check on the PR has completed successfully. These carry no behavior change.
 
-**What never auto-merges:** major version bumps, anything Renovate did not mark auto-mergeable, drafts, conflicting PRs, and any PR with a failing, pending, cancelled, or empty check rollup. Those still require a human approval and merge, or the `clanker-queue` label authorizing an agent to merge after confirming every required check is green.
+**What never auto-merges:** major version bumps, anything Renovate did not mark auto-mergeable, drafts, conflicting PRs, and any PR with a failing, pending, cancelled, or empty check rollup. Those still require a human approval and merge, or the `3-clanker-queue` label authorizing an agent to merge after confirming every required check is green.
 
 ### CI-gated review bypass
 

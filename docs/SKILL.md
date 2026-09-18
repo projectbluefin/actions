@@ -16,7 +16,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
 | Configure or understand Renovate auto-merge | `docs/skills/factory-operations.md` → "Renovate" |
 | Verify the Renovate auto-merge path is actually wired up (not inert) | `docs/skills/factory-operations.md` → "Verification — is auto-merge actually wired up?" |
-| Merge a PR in this repo (`main` uses a merge queue — exit codes lie) | AGENTS.md → "Merge Gate" |
+| Merge a PR in this repo (`main` uses a merge queue — exit codes lie) | `docs/skills/merge-governance.md` |
 | Stop Renovate from pinning this repo's own first-party refs | `docs/skills/composite-actions.md` → "Renovate must be told to leave first-party refs alone" |
 | Update a third-party SHA pin | `docs/skills/composite-actions.md` → "SHA Pinning" |
 | Understand `@v1` tag and how to advance it | AGENTS.md → "@v1 tag" section |
@@ -47,6 +47,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
 | Review a PR the user pointed at (ambiguous target, read-only rule) | `docs/skills/session-hygiene.md` |
 | End a session (working-tree cleanliness, no stranded changes) | `docs/skills/session-hygiene.md` |
+| Decide whether an admin merge or direct REST merge is justified | `docs/skills/merge-governance.md` → "Common Rationalizations" |
+| Handle a Hive agent PR carrying the `hold` label | `docs/skills/merge-governance.md` → "Hive `hold` on agent PRs" |
 | Understand or debug the promotion PR body or gate checklist | `docs/skills/factory-operations.md` → "Promotion PR Format" |
 | Understand the promotion merge queue guard (GH006 prevention) | `docs/skills/factory-operations.md` → "Queue-entry guard" |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
@@ -77,3 +79,70 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), factory health monitor, Renovate auto-merge, promotion PR format (Design C) |
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |
 | [`session-hygiene.md`](skills/session-hygiene.md) | Review-target disambiguation, read-only reviews, clean working tree at session end, answer-first communication |
+| [`merge-governance.md`](skills/merge-governance.md) | Merge queue vs direct merge, reading real PR state, bypasses that are not authorized, Hive `hold` handling |
+
+## Skill file format
+
+The format authority is the org-wide
+[`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md),
+which requires at least this front matter:
+
+```yaml
+---
+name: <skill-name>
+description: "<what this covers and when to load it — must contain a 'Use when' trigger>"
+metadata:
+  type: procedure | reference
+  context7-sources:
+    - /upstream-org/repo-name   # one entry per tool this skill covers
+---
+```
+
+`context7-sources` is not optional. Without it the next agent has nowhere to
+look up the tool and guesses instead. Resolve every ID through Context7 before
+adding it — an invented library ID is worse than none, because it sends the
+next agent somewhere that does not exist.
+
+**This repo adds one requirement on top:** six canonical sections — `When to
+Use`, `When NOT to Use`, `Core Process`, `Common Rationalizations`, `Red
+Flags`, `Verification`. Both the sections and the `Use when` trigger phrase in
+`description` are asserted by `tests/test_skill_spec_conformance.py`.
+
+**That assertion is not reachable from a docs-only change.** `unit-tests.yml`
+filters on `paths:` covering `scripts/**` and `tests/**` but not `docs/**`, so
+editing a skill file on its own schedules no pytest run — the check only fires
+when something else in the same PR drags the suite in. A non-conforming skill
+can therefore merge quietly today. Until that trigger gap is closed, run it
+yourself before opening a skill change:
+
+```bash
+python3 -m pytest tests/test_skill_spec_conformance.py
+```
+
+### Why this repo does not use common's catalog front matter
+
+`projectbluefin/common` carries additional front-matter fields (`id`,
+`one_line_purpose`, `entry_point`, `category`, `status`, `tags`, `version`,
+`last_updated`) validated by `docs/skills/index.schema.json`. Those exist to
+feed `scripts/generate_skill_index.py`, which projects them into a generated
+`index.json` catalog. They are the input to that generator, not a general skill
+format.
+
+This repo has no generator and no catalog, so adopting those fields would
+create metadata with no consumer — dead weight that drifts out of date because
+nothing reads it.
+
+Two genuine incompatibilities exist beyond that, and both point the same way:
+
+- common's schema caps `description` at 256 characters. Descriptions here are
+  deliberately longer, because they are the routing triggers that this file and
+  the conformance test depend on. Truncating them deletes routing information.
+- the conformance test here reads `description:` as a single line, so the
+  folded (`>-`) style common's skills use would not satisfy it. This is a local
+  parser constraint, not something common's schema imposes — its generator
+  flattens whitespace before validating.
+
+Alignment with `common` is therefore on **content and cross-links**, not front
+matter: skills here defer to `common/docs/skills/{human-gates,governance,hive}.md`
+for org-wide gate, role and Hive-label conventions, and keep repo-specific
+mechanics local.

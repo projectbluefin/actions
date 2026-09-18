@@ -5,6 +5,7 @@ metadata:
   type: reference
   context7-sources:
     - /renovatebot/renovate
+    - /websites/github_en_actions
 ---
 
 # Composite Actions - Authoring Skill
