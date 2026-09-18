@@ -28,6 +28,31 @@ Org-wide conventions that this repo consumes rather than defines:
 Implementation of the reusable lifecycle — including this repo's own merge
 mechanics — is owned here.
 
+### Where this repo differs from common's Merge Gate
+
+`common/docs/skills/human-gates.md` states the org default plainly: the Merge
+Gate **is always human**, CI plus an approving human review is required, and
+*"agents never self-merge, never bypass branch protection, and never force-push
+to a protected branch."*
+
+This repo carries one narrower, explicit exception, defined in its own
+`AGENTS.md`: a PR labelled **`3-clanker-queue`** authorizes an agent to merge
+it once every required check is green and the PR is mergeable. That label is
+the authorization; without it the org default applies unchanged and a
+maintainer merges.
+
+The exception is about *who may press merge*, and nothing more. It does not
+relax any of the rest:
+
+- branch protection is still not bypassed — no `--admin`, no direct REST merge
+- the merge still goes through the queue
+- a failing, pending, or **missing** required check still blocks
+- an agent still never merges its own unreviewed work
+
+Read the two together as: common sets the floor, `3-clanker-queue` names the
+single case where this repo lets an agent do the pressing. Anything that looks
+like a broader exemption is a misreading.
+
 ## When to Use
 
 - Merging any PR to `main`

@@ -80,3 +80,63 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |
 | [`session-hygiene.md`](skills/session-hygiene.md) | Review-target disambiguation, read-only reviews, clean working tree at session end, answer-first communication |
 | [`merge-governance.md`](skills/merge-governance.md) | Merge queue vs direct merge, reading real PR state, bypasses that are not authorized, Hive `hold` handling |
+
+## Skill file format
+
+The format authority is the org-wide
+[`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md),
+which requires exactly this front matter:
+
+```yaml
+---
+name: <skill-name>
+description: "<what this covers and when to load it — must contain a 'Use when' trigger>"
+metadata:
+  type: procedure | reference
+  context7-sources:
+    - /upstream-org/repo-name   # one entry per tool this skill covers
+---
+```
+
+`context7-sources` is not optional. Without it the next agent has nowhere to
+look up the tool and guesses instead. Every skill in this repo declares at
+least one, and every ID listed has been resolved via Context7 rather than
+written from memory.
+
+**This repo adds one requirement on top:** six canonical sections — `When to
+Use`, `When NOT to Use`, `Core Process`, `Common Rationalizations`, `Red
+Flags`, `Verification`. Both the sections and the `Use when` trigger phrase are
+enforced by `tests/test_skill_spec_conformance.py`, so a non-conforming skill
+fails CI rather than merging quietly.
+
+### Deliberate delta from `projectbluefin/common`
+
+`common` additionally validates its skills against
+`docs/skills/index.schema.json`, which feeds its generated `index.json`
+catalog. **This repo does not adopt that schema**, and the divergence is
+intentional rather than neglect:
+
+| Constraint in common's catalog schema | Why it does not fit here |
+|---|---|
+| `description` `maxLength: 256` | 10 of 12 skills here exceed it. These descriptions are the routing triggers this file and the conformance test depend on; truncating them deletes routing information. |
+| `additionalProperties: false` | Would reject the `metadata:` block the org format mandates. The schema governs *generated catalog entries*, not raw front matter. |
+| folded `description: >-` | The conformance test matches `description:` on a single line. |
+| no section requirements | This repo requires the six sections above; common's skills use `## Contents` plus topical headings. |
+
+Copying those fields here without common's generator and index would create
+metadata with no consumer — dead weight that drifts. Alignment with `common` is
+therefore on **content and cross-links**: skills here defer to
+`common/docs/skills/{human-gates,governance,hive}.md` for org-wide gate, role
+and Hive-label conventions, and keep repo-specific mechanics local. Tracked in
+projectbluefin/common#1145.
+
+### Known gap
+
+The org doc routes learnings for this repo to `docs/skills/` **and**
+`.github/skills/`, and points at
+`projectbluefin/actions/.github/skills/skill-improvement/SKILL.md` as the full
+format reference. **Neither exists in this repo** — `.github/skills/` has never
+been created, so the dual-write instruction cannot be followed and that link is
+broken. `docs/skills/` is the only live location. Do not create the second tree
+on a whim: decide deliberately whether this repo wants it, or get the org doc
+corrected.

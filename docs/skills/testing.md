@@ -3,6 +3,8 @@ name: testing
 description: pytest setup, coverage baseline, and regression gate for the Python scripts in this repo. Use when modifying the unit-tests workflow, adding tests, changing the coverage threshold, or testing shell logic embedded in actions.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/pytest_en_stable
 ---
 
 # Testing — Python Unit Tests

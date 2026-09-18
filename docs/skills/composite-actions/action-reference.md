@@ -3,6 +3,8 @@ name: composite-actions-reference
 description: Full action-by-action reference for all bootc-build composite actions. Use when implementing, configuring, or debugging any specific action in bootc-build/ (setup-runner, dnf-cache, preflight, push-image, sign-and-publish, chunka, ghcr-cleanup, detect-changes, validate-pr, scan-image, generate-release-notes, create-release, validate-pr-title, generate-tags, create-manifest). Covers inputs, outputs, environment requirements, quirks, and integration examples.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
 ---
 
 # Action-by-Action Reference

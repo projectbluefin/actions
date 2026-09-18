@@ -3,6 +3,8 @@ name: determinism
 description: Non-deterministic surfaces in the projectbluefin factory — classification, mitigations, and open investigations. Use when auditing build reproducibility, verifying SHA pins are accurate, or investigating why two builds from the same source produce different artifacts.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
 ---
 
 # Determinism in the projectbluefin Actions Factory

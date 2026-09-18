@@ -3,6 +3,8 @@ name: session-hygiene
 description: Working-session discipline. Use when asked to "review this PR" (especially with a generic /pulls link), when a review request might tempt file edits, when ending or handing off a session, or when you find a dirty working tree you did not create. Prevents reviewing the wrong target, unprompted edits, and stranded uncommitted debris.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_rest
 ---
 
 # Session Hygiene

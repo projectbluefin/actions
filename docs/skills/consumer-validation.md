@@ -3,6 +3,9 @@ name: consumer-validation
 description: Enforces the required consumer validation protocol before merging any action change. Use when modifying any action under bootc-build/ or reusable workflow under .github/workflows/, preparing a PR for review, running downstream integration tests in projectbluefin/bluefin, or resolving consumer validation CI check failures. Covers blast radius table, consumer PR procedure (and why drafts produce no CI), automated CI check behavior, N/A rules, bot and docs-only path exemptions, and cross-fork approval flow.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
+    - /websites/github_en_rest
 ---
 
 # Consumer Validation Protocol — projectbluefin/actions

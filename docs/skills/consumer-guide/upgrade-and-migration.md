@@ -3,6 +3,8 @@ name: upgrade-and-migration-tests
 description: Upgrade test and migration test reusable workflows for bootc image repos. Use when wiring post-build test gates, troubleshooting QEMU lifecycle testsuite failures, validating registry transitions with bootc switch, or referencing Dakota and Bluefin-LTS Path 2 integration examples. Covers lifecycle test suites, inputs, outputs, permissions, and consumer adaptations.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
 ---
 
 # Upgrade and Migration Tests

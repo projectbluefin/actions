@@ -13,6 +13,7 @@ metadata:
     - /aquasecurity/trivy
     - /renovatebot/renovate
     - /rhysd/actionlint
+    - /sigstore/docs
 ---
 
 # Supply Chain Security

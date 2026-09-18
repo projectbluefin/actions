@@ -3,6 +3,8 @@ name: reusable-workflow
 description: Reference for reusable workflows in projectbluefin/actions (reusable-build.yml, reusable-release.yml, reusable-execute-release.yml). Use when authoring or debugging shared reusable workflows, wiring consuming repos, configuring multi-arch matrix builds, managing promotion gates, or auditing job permissions. Covers cross-repo action ref resolution, digest output shape, JSON array inputs, SBOM artifact naming, release modes, and permissions hardening.
 metadata:
   type: reference
+  context7-sources:
+    - /websites/github_en_actions
 ---
 
 # Reusable Workflows

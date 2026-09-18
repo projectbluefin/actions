@@ -5,6 +5,7 @@ metadata:
   type: reference
   context7-sources:
     - /renovatebot/renovate
+    - /websites/github_en_rest
 ---
 
 # Factory Operations Skill
