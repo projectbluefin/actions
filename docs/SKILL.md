@@ -85,7 +85,7 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 
 The format authority is the org-wide
 [`projectbluefin/.github/AGENTS.md`](https://github.com/projectbluefin/.github/blob/main/AGENTS.md),
-which requires exactly this front matter:
+which requires at least this front matter:
 
 ```yaml
 ---
@@ -99,44 +99,40 @@ metadata:
 ```
 
 `context7-sources` is not optional. Without it the next agent has nowhere to
-look up the tool and guesses instead. Every skill in this repo declares at
-least one, and every ID listed has been resolved via Context7 rather than
-written from memory.
+look up the tool and guesses instead. Resolve every ID through Context7 before
+adding it — an invented library ID is worse than none, because it sends the
+next agent somewhere that does not exist.
 
 **This repo adds one requirement on top:** six canonical sections — `When to
 Use`, `When NOT to Use`, `Core Process`, `Common Rationalizations`, `Red
-Flags`, `Verification`. Both the sections and the `Use when` trigger phrase are
-enforced by `tests/test_skill_spec_conformance.py`, so a non-conforming skill
-fails CI rather than merging quietly.
+Flags`, `Verification`. Both the sections and the `Use when` trigger phrase in
+`description` are enforced by `tests/test_skill_spec_conformance.py`, so a
+non-conforming skill fails CI rather than merging quietly.
 
-### Deliberate delta from `projectbluefin/common`
+### Why this repo does not use common's catalog front matter
 
-`common` additionally validates its skills against
-`docs/skills/index.schema.json`, which feeds its generated `index.json`
-catalog. **This repo does not adopt that schema**, and the divergence is
-intentional rather than neglect:
+`projectbluefin/common` carries additional front-matter fields (`id`,
+`one_line_purpose`, `entry_point`, `category`, `status`, `tags`, `version`,
+`last_updated`) validated by `docs/skills/index.schema.json`. Those exist to
+feed `scripts/generate_skill_index.py`, which projects them into a generated
+`index.json` catalog. They are the input to that generator, not a general skill
+format.
 
-| Constraint in common's catalog schema | Why it does not fit here |
-|---|---|
-| `description` `maxLength: 256` | 10 of 12 skills here exceed it. These descriptions are the routing triggers this file and the conformance test depend on; truncating them deletes routing information. |
-| `additionalProperties: false` | Would reject the `metadata:` block the org format mandates. The schema governs *generated catalog entries*, not raw front matter. |
-| folded `description: >-` | The conformance test matches `description:` on a single line. |
-| no section requirements | This repo requires the six sections above; common's skills use `## Contents` plus topical headings. |
+This repo has no generator and no catalog, so adopting those fields would
+create metadata with no consumer — dead weight that drifts out of date because
+nothing reads it.
 
-Copying those fields here without common's generator and index would create
-metadata with no consumer — dead weight that drifts. Alignment with `common` is
-therefore on **content and cross-links**: skills here defer to
-`common/docs/skills/{human-gates,governance,hive}.md` for org-wide gate, role
-and Hive-label conventions, and keep repo-specific mechanics local. Tracked in
-projectbluefin/common#1145.
+Two genuine incompatibilities exist beyond that, and both point the same way:
 
-### Known gap
+- common's schema caps `description` at 256 characters. Descriptions here are
+  deliberately longer, because they are the routing triggers that this file and
+  the conformance test depend on. Truncating them deletes routing information.
+- the conformance test here reads `description:` as a single line, so the
+  folded (`>-`) style common's skills use would not satisfy it. This is a local
+  parser constraint, not something common's schema imposes — its generator
+  flattens whitespace before validating.
 
-The org doc routes learnings for this repo to `docs/skills/` **and**
-`.github/skills/`, and points at
-`projectbluefin/actions/.github/skills/skill-improvement/SKILL.md` as the full
-format reference. **Neither exists in this repo** — `.github/skills/` has never
-been created, so the dual-write instruction cannot be followed and that link is
-broken. `docs/skills/` is the only live location. Do not create the second tree
-on a whim: decide deliberately whether this repo wants it, or get the org doc
-corrected.
+Alignment with `common` is therefore on **content and cross-links**, not front
+matter: skills here defer to `common/docs/skills/{human-gates,governance,hive}.md`
+for org-wide gate, role and Hive-label conventions, and keep repo-specific
+mechanics local.
