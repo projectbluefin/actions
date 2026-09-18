@@ -1,0 +1,32 @@
+name: Thin-Caller Gate
+
+# Machine-enforced thin-caller contract (issue #411). Caller workflows that
+# delegate to projectbluefin/actions reusables must stay small; this fails the
+# build instead of surfacing the violation only in the weekly drift check.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/validate_thin_caller.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/validate_thin_caller.py"
+
+permissions: {}
+
+jobs:
+  thin-caller:
+    name: Thin-caller size gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run thin-caller size gate
+        run: python3 scripts/validate_thin_caller.py --max-lines 50 --root .

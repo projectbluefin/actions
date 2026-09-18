@@ -32,10 +32,16 @@ def count_effective_lines(path):
 
 
 def file_uses_projectbluefin(path):
-    """Return True if file contains a uses: reference to projectbluefin/actions."""
+    """Return True if file has an active (non-comment) uses: reference to projectbluefin/actions.
+
+    Commented-out `uses:` lines (documentation/pinned-ref examples) are not
+    callers, so they must not trip the thin-caller gate.
+    """
     pattern = re.compile(r"uses:\s*projectbluefin/actions(?:/|@|$)")
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
+            if line.lstrip().startswith("#"):
+                continue
             if pattern.search(line):
                 return True
     return False
