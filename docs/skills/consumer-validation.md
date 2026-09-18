@@ -41,6 +41,33 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
    >
    > Say in the PR body that it exists solely for consumer validation and is not
    > for merge on its own. Close it once the actions PR has landed.
+
+   > **An empty commit is a legitimate consumer PR.** Because the PR "only needs
+   > to exist and pass CI", it does not need a diff at all:
+   >
+   > ```bash
+   > git checkout -b consumer-validation/actions-<n> origin/testing
+   > git commit --allow-empty -m "ci: consumer validation for projectbluefin/actions#<n>"
+   > ```
+   >
+   > This still triggers `PR Validation — testsuite` and yields a citable run,
+   > while leaving no junk change for a maintainer to review or revert. Prefer it
+   > over inventing a token whitespace edit. Open it **non-draft** — the draft
+   > rule above still applies, so do not open it as a draft and then wonder why
+   > there is no run.
+   >
+   > Be precise about what this proves when you cite it: the run exercised the
+   > consumer's workflows against the `@v1` refs it already pins. It did **not**
+   > build your branch. That is what the protocol asks for, but it is not a test
+   > of your diff — the suite in this repo is.
+
+   > **Who may supply the evidence.** It does not have to be the PR author. A
+   > maintainer clearing a backlog may open the consumer PR and fill in the
+   > fields on the author's behalf; the gate is about a real run existing, not
+   > about who clicked the button. Two limits: never cite an unrelated existing
+   > run to satisfy the regex (see "evidence collection, not a substitute" below),
+   > and supplying evidence is not itself a code review — it does not license
+   > approving a PR you have not read.
 3. **Fill the PR template evidence fields** in this repo:
    - `Consumer PR: https://github.com/projectbluefin/<consumer>/pull/<number>`
    - `Consumer CI run: https://github.com/projectbluefin/<consumer>/actions/runs/<id>`

@@ -47,6 +47,9 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Debug why unit-tests CI fails (coverage or test failures) | `docs/skills/testing.md` |
 | Review a PR the user pointed at (ambiguous target, read-only rule) | `docs/skills/session-hygiene.md` |
 | End a session (working-tree cleanliness, no stranded changes) | `docs/skills/session-hygiene.md` |
+| Merge a PR, or work out why an APPROVED PR will not merge | `docs/skills/merge-governance.md` |
+| Decide whether an admin merge or direct REST merge is justified | `docs/skills/merge-governance.md` → "Common Rationalizations" |
+| Handle a Hive agent PR carrying the `hold` label | `docs/skills/merge-governance.md` → "Hive `hold` on agent PRs" |
 | Understand or debug the promotion PR body or gate checklist | `docs/skills/factory-operations.md` → "Promotion PR Format" |
 | Understand the promotion merge queue guard (GH006 prevention) | `docs/skills/factory-operations.md` → "Queue-entry guard" |
 | Create a release with SBOM diff, release card, and supply chain verification instructions | `docs/skills/composite-actions/action-reference.md` → "create-release" |
@@ -77,3 +80,4 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), factory health monitor, Renovate auto-merge, promotion PR format (Design C) |
 | [`supply-chain.md`](skills/supply-chain.md) | SLSA Build L2 posture, SBOM attestation, cosign verify scoping, Trivy CVE scanning, vendoring external build files |
 | [`session-hygiene.md`](skills/session-hygiene.md) | Review-target disambiguation, read-only reviews, clean working tree at session end, answer-first communication |
+| [`merge-governance.md`](skills/merge-governance.md) | Merge queue vs direct merge, reading real PR state, bypasses that are not authorized, Hive `hold` handling |
