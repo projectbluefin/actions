@@ -236,7 +236,7 @@ jobs:
         ]
 ```
 
-This mode finds the latest successful build run for the requested stream, downloads the uploaded SBOM artifact, resolves the current image digest, and calls `bootc-build/create-release` to publish the GitHub Release. The reusable workflow owns the `production` environment gate and grants only `contents: write` plus `actions: read` to the image release job.
+This mode finds the latest successful build run for the requested stream, downloads the uploaded SBOM artifact, resolves the current image digest, and calls `bootc-build/create-release` to publish the GitHub Release. The reusable workflow owns the `production` environment gate and grants only `contents: write` plus `actions: read` to the image release job. Both image modes canonicalize the `image` input (strip a `docker://` prefix, lowercase) before any `skopeo` or Syft call, because OCI repository names must be lowercase and `github.repository_owner` preserves an owner's display case.
 
 Image release notes also embed the latest testsuite desktop screenshot at:
 `https://projectbluefin.github.io/testsuite/screenshots/<slug>-smoke-latest.png`
@@ -245,7 +245,7 @@ where `<slug>` is the image ref with the registry/org prefix removed and `:` rep
 
 ### Image inline-SBOM mode (promote-from-testing path)
 
-Use `generate_sbom_inline: true` when promotion retags a testing image directly (no intermediate build run with a SBOM artifact to download). The workflow pulls the promoted image via `skopeo copy` to a local OCI archive, then scans it with Syft using all catalogers. The job fails hard if Syft fails — no silent stub.
+Use `generate_sbom_inline: true` when promotion retags a testing image directly (no intermediate build run with a SBOM artifact to download). The workflow scans the promoted image straight from the registry with Syft (`registry:<image>:<stream>`, `--scope squashed`, `--parallelism 1`, `--override-default-catalogers rpm-db-cataloger`). It does not `skopeo copy` to a local OCI archive — that path OOM-killed standard runners on large desktop images. The Syft step is `continue-on-error: true` and falls back to a minimal valid SPDX document, so a scan failure never blocks the release. The digest used in release instructions comes from `skopeo inspect`, not from the SBOM.
 
 ```yaml
     with:

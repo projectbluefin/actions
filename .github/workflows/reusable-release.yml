@@ -186,9 +186,25 @@ jobs:
 
           echo "mode=semver" >> "$GITHUB_OUTPUT"
 
+  normalize-image:
+    name: Normalize image reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.normalize.outputs.image }}
+    steps:
+      - id: normalize
+        shell: bash
+        env:
+          INPUT_IMAGE: ${{ inputs.image }}
+        run: |
+          set -euo pipefail
+          image="${INPUT_IMAGE#docker://}"
+          echo "image=${image,,}" >> "$GITHUB_OUTPUT"
+
   image-release:
     name: Create ${{ inputs.stream_name }} image release
-    needs: [validate]
+    needs: [validate, normalize-image]
     if: needs.validate.outputs.mode == 'image'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -197,7 +213,7 @@ jobs:
       actions: read
     environment:
       name: production
-      url: ${{ inputs.image }}:${{ inputs.stream_name }}
+      url: ${{ needs.normalize-image.outputs.image }}:${{ inputs.stream_name }}
     steps:
       - name: Find latest successful build run
         id: build_run
@@ -255,7 +271,7 @@ jobs:
       - name: Resolve image basename
         id: image_name
         env:
-          IMAGE: ${{ inputs.image }}
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
         run: |
           set -euo pipefail
           IMAGE_NAME="$(basename "${IMAGE}")"
@@ -264,7 +280,7 @@ jobs:
       - name: Get image digest
         id: digest
         env:
-          IMAGE: ${{ inputs.image }}
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
           STREAM_NAME: ${{ inputs.stream_name }}
         run: |
           set -euo pipefail
@@ -293,7 +309,7 @@ jobs:
         timeout-minutes: 8  # Ensures graceful step failure (and fallback) instead of OOM-killing the runner VM
         id: generate-sbom
         env:
-          IMAGE: ${{ inputs.image }}
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
           STREAM_NAME: ${{ inputs.stream_name }}
           IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
           SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
@@ -322,7 +338,7 @@ jobs:
         if: inputs.generate_sbom_inline == true && steps.generate-sbom.outcome == 'failure'
         env:
           IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
-          IMAGE: ${{ inputs.image }}
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
           STREAM_NAME: ${{ inputs.stream_name }}
         run: |
           mkdir -p sbom-current
@@ -348,7 +364,7 @@ jobs:
         if: inputs.generate_sbom_inline == false && steps.download-sbom-artifact.outcome == 'failure'
         env:
           IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
-          IMAGE: ${{ inputs.image }}
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
           STREAM_NAME: ${{ inputs.stream_name }}
         run: |
           mkdir -p sbom-current
@@ -364,7 +380,7 @@ jobs:
           sbom-path: sbom-current/${{ steps.image_name.outputs.image_name }}.sbom.json
           tag: ${{ steps.meta.outputs.tag }}
           title: ${{ steps.meta.outputs.title }}
-          image: ${{ inputs.image }}
+          image: ${{ needs.normalize-image.outputs.image }}
           digest: ${{ steps.digest.outputs.digest }}
           repo: ${{ github.repository }}
           project-name: ${{ inputs.project_name }}
@@ -380,7 +396,7 @@ jobs:
 
   semver-release:
     name: Create release ${{ inputs.tag }}
-    needs: [validate]
+    needs: [validate, normalize-image]
     if: needs.validate.outputs.mode == 'semver'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -402,9 +418,9 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Append desktop screenshot to release notes
-        if: inputs.image != ''
+        if: needs.normalize-image.outputs.image != ''
         env:
-          IMAGE: ${{ inputs.image }}
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail

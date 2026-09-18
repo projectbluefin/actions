@@ -8,15 +8,25 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).parent.parent
+
+# Siblings that canonicalize a caller-supplied `registry` prefix.
 WORKFLOWS = {
     "promote": REPO_ROOT / ".github/workflows/reusable-promote-squash.yml",
     "gate": REPO_ROOT / ".github/workflows/reusable-release-gate.yml",
     "execute": REPO_ROOT / ".github/workflows/reusable-execute-release.yml",
 }
 
+# `reusable-release.yml` takes a full `image` reference instead of a `registry`
+# prefix, so it carries its own normalization job under a different output name.
+IMAGE_WORKFLOWS = {
+    "release": REPO_ROOT / ".github/workflows/reusable-release.yml",
+}
+
+ALL_WORKFLOWS = {**WORKFLOWS, **IMAGE_WORKFLOWS}
+
 
 def _workflow(name):
-    return yaml.safe_load(WORKFLOWS[name].read_text())
+    return yaml.safe_load(ALL_WORKFLOWS[name].read_text())
 
 
 def _step(workflow, job, identifier):
@@ -27,21 +37,33 @@ def _step(workflow, job, identifier):
     )
 
 
-def _normalized_registry(workflow, input_registry, tmp_path):
-    output = tmp_path / f"{workflow}-output"
+def _normalize_output(workflow, job, input_env, value, output_key, tmp_path):
+    output = tmp_path / f"{workflow}-{output_key}"
     completed = subprocess.run(
-        ["bash", "-c", _step(workflow, "normalize-registry", "normalize")["run"]],
+        ["bash", "-c", _step(workflow, job, "normalize")["run"]],
         check=True,
         capture_output=True,
         text=True,
         env={
             **os.environ,
             "GITHUB_OUTPUT": str(output),
-            "INPUT_REGISTRY": input_registry,
+            input_env: value,
         },
     )
     assert completed.stderr == ""
-    return output.read_text().strip().removeprefix("registry=")
+    return output.read_text().strip().removeprefix(f"{output_key}=")
+
+
+def _normalized_registry(workflow, input_registry, tmp_path):
+    return _normalize_output(
+        workflow, "normalize-registry", "INPUT_REGISTRY", input_registry, "registry", tmp_path
+    )
+
+
+def _normalized_image(workflow, input_image, tmp_path):
+    return _normalize_output(
+        workflow, "normalize-image", "INPUT_IMAGE", input_image, "image", tmp_path
+    )
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS)
@@ -58,6 +80,19 @@ def test_normalize_registry_canonicalizes_public_input(
 ):
     """Each reusable owns a lowercase, plain OCI registry prefix."""
     assert _normalized_registry(workflow, input_registry, tmp_path) == expected
+
+
+@pytest.mark.parametrize(
+    ("input_image", "expected"),
+    [
+        ("ghcr.io/ExampleOwner/sample-image", "ghcr.io/exampleowner/sample-image"),
+        ("ghcr.io/projectbluefin/bluefin", "ghcr.io/projectbluefin/bluefin"),
+        ("docker://ghcr.io/ExampleOwner/sample-image", "ghcr.io/exampleowner/sample-image"),
+    ],
+)
+def test_release_normalizes_full_image_reference(input_image, expected, tmp_path):
+    """`image` (a full reference) is canonicalized at the same boundary as `registry`."""
+    assert _normalized_image("release", input_image, tmp_path) == expected
 
 
 def _write_skopeo_mock(tmp_path):
@@ -128,6 +163,51 @@ def test_execute_release_promotes_exact_digest_from_normalized_registry(tmp_path
     )
 
 
+def _write_syft_mock(tmp_path):
+    calls = tmp_path / "syft-calls"
+    mock_dir = tmp_path / "bin"
+    mock_dir.mkdir()
+    syft = mock_dir / "syft"
+    syft.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s\\n" "$*" >> "$SYFT_CALLS"\n'
+        'for arg in "$@"; do\n'
+        '  case "${arg}" in spdx-json=*) printf "{}" > "${arg#spdx-json=}" ;;\n'
+        "  esac\n"
+        "done\n"
+    )
+    syft.chmod(0o755)
+    return mock_dir, calls
+
+
+def test_release_inline_sbom_scans_normalized_image(tmp_path):
+    """Inline Syft is handed the canonicalized reference, never a mixed-case path."""
+    image = _normalized_image("release", "ghcr.io/ExampleOwner/sample-image", tmp_path)
+    mock_dir, calls = _write_syft_mock(tmp_path)
+
+    subprocess.run(
+        ["bash", "-c", _step("release", "image-release", "generate-sbom")["run"]],
+        check=True,
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{mock_dir}:{os.environ['PATH']}",
+            "SYFT_CALLS": str(calls),
+            "IMAGE": image,
+            "STREAM_NAME": "stable",
+            "IMAGE_NAME": "sample-image",
+            "SYFT_CMD": str(mock_dir / "syft"),
+        },
+    )
+
+    assert calls.read_text() == (
+        "registry:ghcr.io/exampleowner/sample-image:stable "
+        "--scope squashed --parallelism 1 "
+        "--override-default-catalogers rpm-db-cataloger "
+        "-o spdx-json=sbom-current/sample-image.sbom.json\n"
+    )
+
+
 def test_execute_release_testsuite_receives_normalized_exact_digest_reference():
     release_gate = _workflow("execute")["jobs"]["release-gate"]
     assert "needs.normalize-registry.outputs.registry" in release_gate["with"]["image"]
@@ -157,3 +237,38 @@ def test_oci_consumers_use_the_normalized_registry_output():
 
     for workflow in WORKFLOWS:
         assert WORKFLOWS[workflow].read_text().count("inputs.registry") == 1
+
+
+def test_release_consumers_use_the_normalized_image_output():
+    """The image reusable routes every OCI consumer through its normalization job."""
+    normalized = "${{ needs.normalize-image.outputs.image }}"
+    release = _workflow("release")["jobs"]
+
+    assert release["normalize-image"]["outputs"]["image"] == (
+        "${{ steps.normalize.outputs.image }}"
+    )
+    assert "normalize-image" in release["image-release"]["needs"]
+    assert "normalize-image" in release["semver-release"]["needs"]
+
+    assert _step("release", "image-release", "image_name")["env"]["IMAGE"] == normalized
+    assert _step("release", "image-release", "digest")["env"]["IMAGE"] == normalized
+    assert _step("release", "image-release", "generate-sbom")["env"]["IMAGE"] == normalized
+    assert _step("release", "image-release", "Create release")["with"]["image"] == normalized
+    assert (
+        _step("release", "semver-release", "Append desktop screenshot to release notes")["env"][
+            "IMAGE"
+        ]
+        == normalized
+    )
+
+
+def test_release_confines_raw_image_input_to_preparation_jobs():
+    """Raw caller input reaches only mode detection and the normalization job."""
+    release = _workflow("release")["jobs"]
+    assert IMAGE_WORKFLOWS["release"].read_text().count("${{ inputs.image }}") == 2
+
+    for job_name, job in release.items():
+        if job_name in {"validate", "normalize-image"}:
+            assert "${{ inputs.image }}" in yaml.safe_dump(job)
+        else:
+            assert "${{ inputs.image }}" not in yaml.safe_dump(job)
