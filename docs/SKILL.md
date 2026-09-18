@@ -106,8 +106,18 @@ next agent somewhere that does not exist.
 **This repo adds one requirement on top:** six canonical sections — `When to
 Use`, `When NOT to Use`, `Core Process`, `Common Rationalizations`, `Red
 Flags`, `Verification`. Both the sections and the `Use when` trigger phrase in
-`description` are enforced by `tests/test_skill_spec_conformance.py`, so a
-non-conforming skill fails CI rather than merging quietly.
+`description` are asserted by `tests/test_skill_spec_conformance.py`.
+
+**That assertion is not reachable from a docs-only change.** `unit-tests.yml`
+filters on `paths:` covering `scripts/**` and `tests/**` but not `docs/**`, so
+editing a skill file on its own schedules no pytest run — the check only fires
+when something else in the same PR drags the suite in. A non-conforming skill
+can therefore merge quietly today. Until that trigger gap is closed, run it
+yourself before opening a skill change:
+
+```bash
+python3 -m pytest tests/test_skill_spec_conformance.py
+```
 
 ### Why this repo does not use common's catalog front matter
 
