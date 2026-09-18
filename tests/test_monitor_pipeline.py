@@ -33,6 +33,7 @@ def _make_run(
     status: str = "completed",
     minutes_ago: int = 60,
     url: str = "https://github.com/org/repo/actions/runs/1",
+    event: str = "push",
 ) -> dict:
     """Build a minimal run dict for testing."""
     ts = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
@@ -41,6 +42,7 @@ def _make_run(
         "status": status,
         "conclusion": conclusion,
         "url": url,
+        "event": event,
     }
 
 
@@ -307,6 +309,62 @@ class TestConsecutiveFailures:
         ]
         assert _consecutive_failures(runs) == 2
 
+# ── pre-merge event exclusion (projectbluefin/actions#503) ────────────────────
+
+class TestPreMergeEventExclusion:
+    def test_pull_request_failures_do_not_deflate_the_rate(self):
+        # The bug: a green production pipeline reported as unhealthy because
+        # in-flight PR runs were counted as build outcomes.
+        runs = [
+            _make_run("success", minutes_ago=30, event="push"),
+            _make_run("failure", minutes_ago=30, event="pull_request"),
+            _make_run("failure", minutes_ago=30, event="pull_request"),
+        ]
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO)
+        assert result["total"] == 1
+        assert result["success"] == 1
+        assert result["rate_value"] == 100
+        assert result["status"] == "healthy"
+
+    def test_merge_group_failures_are_excluded(self):
+        runs = [
+            _make_run("success", minutes_ago=30, event="push"),
+            _make_run("failure", minutes_ago=30, event="merge_group"),
+        ]
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO)
+        assert result["total"] == 1
+        assert result["rate_value"] == 100
+
+    def test_excluded_events_never_appear_as_failing_runs(self):
+        runs = [
+            _make_run("failure", minutes_ago=30, event="pull_request",
+                      url="https://github.com/runs/pr1"),
+            _make_run("failure", minutes_ago=30, event="merge_group",
+                      url="https://github.com/runs/mg1"),
+        ]
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO)
+        assert result["failures_md"] == ""
+        assert result["status"] == "no-runs"
+
+    @pytest.mark.parametrize(
+        "event", ["push", "schedule", "workflow_dispatch", "workflow_run"]
+    )
+    def test_production_events_are_counted(self, event):
+        runs = [_make_run("failure", minutes_ago=30, event=event)]
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO)
+        assert result["total"] == 1
+        assert result["success"] == 0
+
+    def test_run_without_an_event_field_is_counted(self):
+        # Mirrors the workflow's jq: a missing `.event` is null, and
+        # `null != "pull_request"` is true, so the run still counts. Keeping
+        # the Python core bug-compatible here is deliberate — the two must not
+        # disagree about the same input.
+        run = _make_run("failure", minutes_ago=30)
+        del run["event"]
+        result = compute_pipeline_health([run], CUTOFF_1H_AGO)
+        assert result["total"] == 1
+        assert result["success"] == 0
 
 # ── should_open_issue ─────────────────────────────────────────────────────────
 
