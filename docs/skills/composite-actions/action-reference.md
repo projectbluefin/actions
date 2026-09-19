@@ -36,7 +36,7 @@ Sets up a GitHub Actions runner for bootc image building. Two storage backends:
 - `btrfs` (default): mounts a BTRFS volume at `/var/lib/containers` via `ublue-os/container-storage-action`
 - `remove-software`: frees disk by nuking Android/Haskell/dotnet toolchains
 
-Upgrades podman from Ubuntu **resolute** (25.04) because older Ubuntu 24.04 runner images ship a version too old to support layer annotations (`ostree.components`) and `zstd:chunked` push.
+Upgrades podman from Ubuntu **resolute** (26.04) on `ubuntu-24.04` runner images because stock noble ships Podman 4.9.x, which is too old to support layer annotations (`ostree.components`) and `zstd:chunked` push. On `ubuntu-26.04` runner images, setup-runner verifies the runner already ships Podman 5.x or newer and skips the resolute apt source. Any other runner image fails fast with an actionable error.
 
 Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` JSON array input.
 
@@ -65,11 +65,12 @@ Native-overlay mode is opt-in and destructive to existing **rootful** Podman sta
 
 Combine it with `update-podman: "true"` when the consumer requires Podman 5 on every hosted
 runner. Runner images that predate the static Podman bundle ship apt Podman 4.9.3, which fails
-the version gate unless Resolute packages are installed. Images that include the bundle keep
-`/usr/local/bin/podman` ahead of the Resolute packages on `PATH` (including sudo's
-`secure_path`); normalizing that mixed stack is a separate concern from this mode. Use
+the version gate unless Resolute packages are installed. On `ubuntu-26.04` runners, `update-podman: "true"`
+verifies the runner's Podman is already version 5 or newer and skips the Resolute apt source as a no-op.
+Images that include the bundle keep `/usr/local/bin/podman` ahead of the Resolute packages on `PATH`
+(including sudo's `secure_path`); normalizing that mixed stack is a separate concern from this mode. Use
 `update-podman: "false"` only when the caller can rely on the runner-provided Podman already
-being version 5 or newer.
+being version 5 or newer on any runner image.
 
 Do not merely delete `mount_program` from the runner configuration: the FUSE-only `fsync=0` mount
 option and containers/storage's persistent mount-program marker must be removed too.
