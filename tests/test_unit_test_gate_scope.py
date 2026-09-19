@@ -32,6 +32,15 @@ UNIT_TESTS_WORKFLOW = WORKFLOW_DIR / "unit-tests.yml"
 
 _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 
+# Workflow files this gate found blind at the time it was written, and which it
+# cannot itself repair: the fix is an edit to `.github/workflows/unit-tests.yml`.
+# Each entry is a live gap, not an acceptance. `test_no_stale_known_blind_spots`
+# fails once an entry is covered, forcing it back out of this list, so the set
+# only ever shrinks and no *new* blind spot can be introduced silently.
+#
+#   .github/workflows/ghcr-cleanup.yml — guarded by tests/test_ghcr_cleanup_action.py
+KNOWN_BLIND = frozenset({".github/workflows/ghcr-cleanup.yml"})
+
 
 def _workflow_basenames() -> set[str]:
     return {path.name for path in WORKFLOW_DIR.glob("*.y*ml")}
@@ -80,12 +89,34 @@ def test_guarded_workflows_are_discovered():
 def test_every_guarded_workflow_triggers_the_unit_test_suite(event):
     patterns = _trigger_paths(event)
     blind = sorted(
-        path for path in guarded_workflows() if not _covered(path, patterns)
+        path
+        for path in guarded_workflows()
+        if not _covered(path, patterns) and path not in KNOWN_BLIND
     )
     assert not blind, (
         f"unit-tests.yml `on.{event}.paths` does not match these workflow files, "
         f"so editing one of them alone never runs the test that guards it: "
         f"{blind}. Add each path to both the push and pull_request `paths:` lists."
+    )
+
+
+@pytest.mark.parametrize("event", ["push", "pull_request"])
+def test_no_stale_known_blind_spots(event):
+    """KNOWN_BLIND is a shrinking ratchet, never a permanent exemption."""
+    patterns = _trigger_paths(event)
+    fixed = sorted(path for path in KNOWN_BLIND if _covered(path, patterns))
+    assert not fixed, (
+        f"these paths are now matched by unit-tests.yml `on.{event}.paths`: "
+        f"{fixed}. Remove them from KNOWN_BLIND so the gate protects them."
+    )
+
+
+def test_known_blind_spots_are_still_guarded():
+    """An entry whose guarding test disappeared must not linger here."""
+    stale = sorted(KNOWN_BLIND - guarded_workflows())
+    assert not stale, (
+        f"KNOWN_BLIND lists workflow files no test guards any more: {stale}. "
+        f"Remove them."
     )
 
 
