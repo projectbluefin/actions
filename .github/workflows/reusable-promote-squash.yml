@@ -23,6 +23,7 @@ name: reusable-promote-squash
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       variants:
         description: >

@@ -4,6 +4,7 @@ name: reusable-validate-renovate
 
 on:
   workflow_call:
+    # requires: any
 
 permissions: {}
 

@@ -9,6 +9,7 @@ name: Reusable Release
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       stream_name:
         description: "Stream tag to release (for image-release mode, e.g. stable)"

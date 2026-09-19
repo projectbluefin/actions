@@ -2,6 +2,7 @@ name: Reusable Release Gate
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       repo:
         description: Repository name in owner/repo format for concurrency and API calls

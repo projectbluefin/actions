@@ -6,7 +6,9 @@ import pytest
 from scripts.validate_thin_caller import (
     count_effective_lines,
     file_uses_projectbluefin,
+    find_reusable_workflows,
     find_workflows,
+    get_reusable_requires_annotation,
     main,
 )
 
@@ -73,3 +75,107 @@ def test_main_passes_within_limit(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sys, "argv", ["validate_thin_caller.py", "--root", str(tmp_path), "--max-lines", "50"])
     assert main() == 0
+
+
+def test_get_reusable_requires_annotation(tmp_path):
+    f_any = tmp_path / "reusable-test.yml"
+    f_any.write_text("""name: Test
+on:
+  workflow_call:
+    # requires: any
+    inputs:
+      test:
+        type: string
+""")
+    assert get_reusable_requires_annotation(f_any) == "any"
+
+    f_app = tmp_path / "reusable-app.yml"
+    f_app.write_text("""name: App
+on:
+  workflow_call:
+    # requires: App-token
+""")
+    assert get_reusable_requires_annotation(f_app) == "App-token"
+
+    f_combo = tmp_path / "reusable-combo.yml"
+    f_combo.write_text("""name: Combo
+on:
+  workflow_call:
+    # requires: PAT|App-token
+""")
+    assert get_reusable_requires_annotation(f_combo) == "PAT|App-token"
+
+    f_all = tmp_path / "reusable-all.yml"
+    f_all.write_text("""name: All
+on:
+  workflow_call:
+    # requires: PAT|App-token|any
+""")
+    assert get_reusable_requires_annotation(f_all) == "PAT|App-token|any"
+
+    f_invalid = tmp_path / "reusable-invalid.yml"
+    f_invalid.write_text("""name: Invalid
+on:
+  workflow_call:
+    # requires: invalid-token-type
+""")
+    assert get_reusable_requires_annotation(f_invalid) is None
+
+    f_missing = tmp_path / "reusable-missing.yml"
+    f_missing.write_text("""name: Missing
+on:
+  workflow_call:
+    inputs:
+      foo:
+        type: string
+""")
+    assert get_reusable_requires_annotation(f_missing) is None
+
+
+def test_find_reusable_workflows(tmp_path):
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "reusable-build.yml").write_text("name: Build\n")
+    (wf_dir / "reusable-release.yaml").write_text("name: Release\n")
+    (wf_dir / "caller.yml").write_text("name: Caller\n")
+
+    reusables = find_reusable_workflows(tmp_path)
+    assert len(reusables) == 2
+    assert str(wf_dir / "reusable-build.yml") in reusables
+    assert str(wf_dir / "reusable-release.yaml") in reusables
+
+
+def test_main_check_reusable_requires_flag(tmp_path, monkeypatch):
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+
+    # Empty
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["validate_thin_caller.py", "--root", str(tmp_path), "--check-reusable-requires"],
+    )
+    assert main() == 0
+
+    # Valid reusable workflow
+    reusable = wf_dir / "reusable-valid.yml"
+    reusable.write_text("on:\n  workflow_call:\n    # requires: any\n")
+    assert main() == 0
+
+    # Missing annotation
+    reusable_bad = wf_dir / "reusable-bad.yml"
+    reusable_bad.write_text("on:\n  workflow_call:\n    inputs:\n")
+    assert main() == 1
+
+
+def test_live_reusable_workflows_have_valid_token_annotations():
+    repo_root = Path(__file__).resolve().parent.parent
+    reusables = find_reusable_workflows(repo_root)
+    assert len(reusables) == 13
+
+    for wf in reusables:
+        annotation = get_reusable_requires_annotation(wf)
+        assert annotation is not None, (
+            f"{Path(wf).name} is missing a valid '# requires: PAT|App-token|any' annotation under workflow_call:"
+        )
+

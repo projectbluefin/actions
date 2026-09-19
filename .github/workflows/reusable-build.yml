@@ -10,6 +10,7 @@ name: Reusable Build and Push
 
 on:
   workflow_call:
+    # requires: any
     outputs:
       digests:
         description: "JSON map of image_name to platform-digest map, e.g. {\"bluefin-main\": {\"amd64\": \"sha256:...\"}}"

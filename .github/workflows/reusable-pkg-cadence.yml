@@ -42,6 +42,7 @@ name: Reusable — Update package cadence intervals
 
 on:
   workflow_call:
+    # requires: App-token
     inputs:
       image:
         description: "Stable image ref to measure churn from (e.g. ghcr.io/yourorg/yourimage:stable)"

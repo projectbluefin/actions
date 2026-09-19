@@ -18,6 +18,12 @@ The repo provides these reusable workflows:
 
 **Permissions hardening:** default reusable workflows to `permissions: {}` at the workflow level, then grant the minimum required scopes per job. Do not rely on workflow-level `packages: write`/`contents: write` unless every job in the file truly needs that access.
 
+**Token requirements (`# requires:` annotation):** Every reusable workflow annotates its `on: workflow_call` block with `# requires: PAT|App-token|any` to give callers a static contract signal:
+- `# requires: any` — standard `github.token` is sufficient; caller does not need custom tokens or secrets.
+- `# requires: App-token` — caller must provide GitHub App credentials (e.g. `app_id` + `private_key`).
+- `# requires: PAT|App-token` — caller must provide a personal access token or GitHub App installation token (e.g. for Renovate where `github.token` cannot trigger CI on created PRs).
+- `# requires: App-token|any` or `# requires: PAT|App-token|any` — `github.token` suffices for standard runs, but an App token or PAT is required when operating against protected branches or requiring review bypass.
+
 ## Contents
 - [reusable-build.yml — calling from a consuming repo](#reusable-buildyml--calling-from-a-consuming-repo)
 - [`server-installer-test.yml` — exported installer smoke test](#server-installer-testyml--exported-installer-smoke-test)

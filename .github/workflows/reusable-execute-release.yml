@@ -2,6 +2,7 @@ name: Reusable Execute Release
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       registry:
         description: GHCR registry prefix

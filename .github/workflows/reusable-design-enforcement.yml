@@ -2,6 +2,7 @@ name: Reusable design enforcement
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       hive-contribute-url:
         description: URL shown in the Clanker queue announcement.

@@ -31,6 +31,7 @@ name: Reusable Renovate Auto-merge
 
 on:
   workflow_call:
+    # requires: PAT|App-token|any
     inputs:
       head_sha:
         description: "Head SHA of the completed workflow run"

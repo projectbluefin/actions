@@ -2,6 +2,7 @@ name: Reusable Release Reminder
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       days_warn:
         description: Post a reminder after this many days without a release
