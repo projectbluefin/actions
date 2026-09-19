@@ -36,7 +36,7 @@ Sets up a GitHub Actions runner for bootc image building. Two storage backends:
 - `btrfs` (default): mounts a BTRFS volume at `/var/lib/containers` via `ublue-os/container-storage-action`
 - `remove-software`: frees disk by nuking Android/Haskell/dotnet toolchains
 
-Upgrades podman from Ubuntu **resolute** (25.04) because older Ubuntu 24.04 runner images ship a version too old to support layer annotations (`ostree.components`) and `zstd:chunked` push.
+Upgrades podman from Ubuntu **resolute** (25.04) on Ubuntu 24.04 runner images because older Ubuntu 24.04 runner images ship a version (4.9.3) too old to support layer annotations (`ostree.components`) and `zstd:chunked` push. On Ubuntu 26.04 runner images, the resolute apt source and package installation are skipped because the runner natively ships Podman 5.x.
 
 Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` JSON array input.
 

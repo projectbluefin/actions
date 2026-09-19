@@ -4,6 +4,33 @@
 # The shell logic lives inline in bootc-build/setup-runner/action.yml. Keep these
 # snippets verbatim so action changes must update their regression tests.
 
+RESOLUTE_APT_LOGIC=$(cat <<'EOF'
+set -eux
+# Old podman (Ubuntu 24.04) does not push layer annotations (ostree.components)
+# needed by the rpm-ostree rechunker and does not support zstd:chunked push.
+# Ubuntu 26.04 ships Podman 5.x natively, so the resolute backport is not needed.
+IDV=$(. "${OS_RELEASE:-/usr/lib/os-release}" && echo ${ID}-${VERSION_ID})
+case "${IDV}" in
+  ubuntu-24.04)
+    if [ "$(dpkg --print-architecture)" = "amd64" ]; then
+      mirror="http://azure.archive.ubuntu.com/ubuntu"
+    else
+      mirror="http://ports.ubuntu.com/ubuntu-ports"
+    fi
+    echo "deb ${mirror} resolute universe main" | sudo tee /etc/apt/sources.list.d/resolute.list
+    echo "enabled=true" >> "$GITHUB_OUTPUT"
+    ;;
+  ubuntu-26.04)
+    echo "enabled=false" >> "$GITHUB_OUTPUT"
+    ;;
+  *)
+    echo "::error::Unsupported runner OS: '${IDV}'. setup-runner requires ubuntu-24.04 or ubuntu-26.04."
+    exit 1
+    ;;
+esac
+EOF
+)
+
 VALIDATION_LOGIC=$(cat <<'EOF'
 set -euo pipefail
 case "${NATIVE_OVERLAY}" in
@@ -92,8 +119,9 @@ setup() {
   export MOCK_DIR="${TEST_TMP}/bin"
   export CALL_LOG="${TEST_TMP}/calls.log"
   export MOCK_STORAGE_CONF="${TEST_TMP}/storage.conf"
+  export GITHUB_OUTPUT="${TEST_TMP}/github_output"
   mkdir -p "${MOCK_DIR}"
-  touch "${CALL_LOG}"
+  touch "${CALL_LOG}" "${GITHUB_OUTPUT}"
   export PATH="${MOCK_DIR}:${PATH}"
 
   cat > "${MOCK_DIR}/sudo" <<'EOF'
@@ -114,7 +142,7 @@ case "${1:-}" in
     exit 0
     ;;
   tee)
-    cat > "${MOCK_STORAGE_CONF}"
+    cat > "${MOCK_TEE_OUTPUT:-${MOCK_STORAGE_CONF}}"
     ;;
   *)
     exec "$@"
@@ -238,4 +266,62 @@ teardown() {
 
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"still reports a mount_program"* ]]
+}
+
+@test "resolute apt source adds repository and enables update on ubuntu-24.04" {
+  cat > "${TEST_TMP}/os-release" <<'EOF'
+ID=ubuntu
+VERSION_ID=24.04
+EOF
+  export OS_RELEASE="${TEST_TMP}/os-release"
+  export MOCK_TEE_OUTPUT="${TEST_TMP}/resolute.list"
+
+  run bash -c "${RESOLUTE_APT_LOGIC}"
+
+  [ "${status}" -eq 0 ]
+  grep -q "^enabled=true$" "${GITHUB_OUTPUT}"
+  grep -q "deb http.* resolute universe main" "${TEST_TMP}/resolute.list"
+  grep -q "tee /etc/apt/sources.list.d/resolute.list" "${CALL_LOG}"
+}
+
+@test "resolute apt source disables update and skips repository on ubuntu-26.04" {
+  cat > "${TEST_TMP}/os-release" <<'EOF'
+ID=ubuntu
+VERSION_ID=26.04
+EOF
+  export OS_RELEASE="${TEST_TMP}/os-release"
+  export MOCK_TEE_OUTPUT="${TEST_TMP}/resolute.list"
+
+  run bash -c "${RESOLUTE_APT_LOGIC}"
+
+  [ "${status}" -eq 0 ]
+  grep -q "^enabled=false$" "${GITHUB_OUTPUT}"
+  [ ! -f "${TEST_TMP}/resolute.list" ]
+  ! grep -q "resolute.list" "${CALL_LOG}"
+}
+
+@test "resolute apt source rejects unsupported ubuntu release" {
+  cat > "${TEST_TMP}/os-release" <<'EOF'
+ID=ubuntu
+VERSION_ID=22.04
+EOF
+  export OS_RELEASE="${TEST_TMP}/os-release"
+
+  run bash -c "${RESOLUTE_APT_LOGIC}"
+
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Unsupported runner OS: 'ubuntu-22.04'"* ]]
+}
+
+@test "resolute apt source rejects non-ubuntu distribution" {
+  cat > "${TEST_TMP}/os-release" <<'EOF'
+ID=debian
+VERSION_ID=12
+EOF
+  export OS_RELEASE="${TEST_TMP}/os-release"
+
+  run bash -c "${RESOLUTE_APT_LOGIC}"
+
+  [ "${status}" -ne 0 ]
+  [[ "${output}" == *"Unsupported runner OS: 'debian-12'"* ]]
 }
