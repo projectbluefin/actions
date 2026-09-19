@@ -43,9 +43,15 @@ make_curl_mock() {
 args=("\$@")
 url="\${args[-1]}"
 
-if [[ "\$*" == *"-o /tmp/auth-response.json"* ]]; then
-  # Auth check request — write auth response and return HTTP code
-  cp "${AUTH_RESPONSE_FILE}" /tmp/auth-response.json
+if [[ "\$*" == *" -o "* ]]; then
+  # Auth check request — write auth response to the path after -o, return HTTP code
+  out=""
+  prev=""
+  for arg in "\${args[@]}"; do
+    if [[ "\$prev" == "-o" ]]; then out="\$arg"; fi
+    prev="\$arg"
+  done
+  cp "${AUTH_RESPONSE_FILE}" "\$out"
   printf '%s' "${http_code}"
 elif [[ "\$*" == *"-I"* ]] && [[ "\$url" == *"api.github.com/user"* ]]; then
   # Headers request for scope check
@@ -128,6 +134,24 @@ teardown() {
   [ "$status" -eq 1 ]
   grep -q "valid=false" "$GITHUB_OUTPUT"
   [[ "$output" == *"missing required scope"* ]]
+}
+
+@test "required scope that is a substring of a granted scope fails" {
+  # Regression: 'repo' must NOT be satisfied by 'public_repo' via substring match
+  make_curl_mock 200 "public_repo, gist"
+  export REQUIRED_SCOPES="repo"
+  run bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  grep -q "valid=false" "$GITHUB_OUTPUT"
+  [[ "$output" == *"missing required scope 'repo'"* ]]
+}
+
+@test "required scope passes when granted alongside its superstring scope" {
+  make_curl_mock 200 "public_repo, repo"
+  export REQUIRED_SCOPES="repo"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -q "valid=true" "$GITHUB_OUTPUT"
 }
 
 @test "fine-grained PAT with no scopes header and no required scopes passes" {
