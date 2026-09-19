@@ -14,6 +14,10 @@
 
 set -euo pipefail
 
+# Auth responses land in a private temp file, not a fixed predictable /tmp path.
+AUTH_RESPONSE=$(mktemp)
+trap 'rm -f "$AUTH_RESPONSE"' EXIT
+
 # Detect GitHub App installation tokens by their ghs_ prefix.
 # App tokens cannot call /user and have permissions rather than OAuth scopes.
 IS_APP_TOKEN=false
@@ -24,7 +28,7 @@ fi
 # 1. Basic auth check
 if [ "$IS_APP_TOKEN" = "true" ]; then
   # App tokens are not user-scoped; /installation/repositories validates auth.
-  HTTP_CODE=$(curl -s -o /tmp/auth-response.json -w '%{http_code}' \
+  HTTP_CODE=$(curl -s -o "$AUTH_RESPONSE" -w '%{http_code}' \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/installation/repositories?per_page=1")
@@ -40,7 +44,7 @@ if [ "$IS_APP_TOKEN" = "true" ]; then
   fi
   echo "Token '${TOKEN_NAME}' is a GitHub App installation token — scope check skipped (App tokens use permissions, not OAuth scopes)"
 else
-  HTTP_CODE=$(curl -s -o /tmp/auth-response.json -w '%{http_code}' \
+  HTTP_CODE=$(curl -s -o "$AUTH_RESPONSE" -w '%{http_code}' \
     -H "Authorization: Bearer ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
     https://api.github.com/user)
@@ -65,9 +69,20 @@ else
     https://api.github.com/user | grep -i "x-oauth-scopes:" | cut -d: -f2- | tr -d ' \r')
 
   if [ -n "$REQUIRED_SCOPES" ]; then
+    # Exact per-scope comparison: a substring match would let a required
+    # 'repo' scope pass on a token that only has 'public_repo'.
     IFS=',' read -ra REQUIRED <<< "$REQUIRED_SCOPES"
+    IFS=',' read -ra GRANTED <<< "$SCOPES_HEADER"
     for scope in "${REQUIRED[@]}"; do
-      if ! echo "$SCOPES_HEADER" | grep -q "$scope"; then
+      scope=$(echo "$scope" | tr -d ' ')
+      found=false
+      for granted in "${GRANTED[@]}"; do
+        if [ "$granted" = "$scope" ]; then
+          found=true
+          break
+        fi
+      done
+      if [ "$found" != "true" ]; then
         echo "::error::Token '${TOKEN_NAME}' missing required scope '${scope}' (has: ${SCOPES_HEADER})"
         echo "valid=false" >> "$GITHUB_OUTPUT"
         exit 1
@@ -91,7 +106,7 @@ if [ "$REMAINING" -lt "$MIN_REMAINING" ]; then
 fi
 
 # 4. Check token expiry (GitHub App installations have expiry)
-EXPIRES=$(jq -r '.expires_at // empty' /tmp/auth-response.json 2>/dev/null || true)
+EXPIRES=$(jq -r '.expires_at // empty' "$AUTH_RESPONSE" 2>/dev/null || true)
 if [ -n "$EXPIRES" ]; then
   echo "expires_at=${EXPIRES}" >> "$GITHUB_OUTPUT"
   echo "Token '${TOKEN_NAME}' expires at: ${EXPIRES}"
