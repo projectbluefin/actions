@@ -54,29 +54,41 @@ runs:
 
     - name: Add Ubuntu resolute apt source
       if: inputs.update-podman == 'true'
+      id: resolute-apt
       shell: bash
       run: |
         set -eux
-        # TODO: remove when Ubuntu 26.04 runners ship a new-enough podman
         # Old podman (Ubuntu 24.04) does not push layer annotations (ostree.components)
         # needed by the rpm-ostree rechunker and does not support zstd:chunked push.
-        IDV=$(. /usr/lib/os-release && echo ${ID}-${VERSION_ID})
-        test "${IDV}" = "ubuntu-24.04"
-        if [ "$(dpkg --print-architecture)" = "amd64" ]; then
-          mirror="http://azure.archive.ubuntu.com/ubuntu"
-        else
-          mirror="http://ports.ubuntu.com/ubuntu-ports"
-        fi
-        echo "deb ${mirror} resolute universe main" | sudo tee /etc/apt/sources.list.d/resolute.list
+        # Ubuntu 26.04 ships Podman 5.x natively, so the resolute backport is not needed.
+        IDV=$(. "${OS_RELEASE:-/usr/lib/os-release}" && echo ${ID}-${VERSION_ID})
+        case "${IDV}" in
+          ubuntu-24.04)
+            if [ "$(dpkg --print-architecture)" = "amd64" ]; then
+              mirror="http://azure.archive.ubuntu.com/ubuntu"
+            else
+              mirror="http://ports.ubuntu.com/ubuntu-ports"
+            fi
+            echo "deb ${mirror} resolute universe main" | sudo tee /etc/apt/sources.list.d/resolute.list
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            ;;
+          ubuntu-26.04)
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "::error::Unsupported runner OS: '${IDV}'. setup-runner requires ubuntu-24.04 or ubuntu-26.04."
+            exit 1
+            ;;
+        esac
 
     - name: Compute apt cache key (weekly rotation)
-      if: inputs.update-podman == 'true'
+      if: inputs.update-podman == 'true' && steps.resolute-apt.outputs.enabled == 'true'
       id: apt-cache-key
       shell: bash
       run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
 
     - name: Restore apt package cache
-      if: inputs.update-podman == 'true'
+      if: inputs.update-podman == 'true' && steps.resolute-apt.outputs.enabled == 'true'
       id: apt-cache-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -86,7 +98,7 @@ runs:
           apt-resolute-podman-${{ runner.os }}-${{ runner.arch }}-
 
     - name: Install podman stack from Ubuntu resolute
-      if: inputs.update-podman == 'true'
+      if: inputs.update-podman == 'true' && steps.resolute-apt.outputs.enabled == 'true'
       shell: bash
       run: |
         set -eux
@@ -103,7 +115,7 @@ runs:
         sudo rm -f /etc/needrestart/conf.d/99-no-restarts.conf
 
     - name: Save apt package cache
-      if: inputs.update-podman == 'true' && steps.apt-cache-restore.outputs.cache-hit != 'true'
+      if: inputs.update-podman == 'true' && steps.resolute-apt.outputs.enabled == 'true' && steps.apt-cache-restore.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: /var/cache/apt/archives
