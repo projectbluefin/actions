@@ -7,7 +7,7 @@ inputs:
     description: "Storage backend: 'btrfs' (remove-software + BTRFS loopback for /var/lib/containers) or 'remove-software' (remove-software only)"
     default: "btrfs"
   update-podman:
-    description: "Install podman/buildah/crun/skopeo from Ubuntu resolute (25.04)"
+    description: "Install podman/buildah/crun/skopeo from Ubuntu resolute (25.04) on ubuntu-24.04 runners; no-op on ubuntu-26.04 runners, which ship Podman 5.x natively"
     default: "true"
   native-overlay:
     description: "Use native rootful overlay storage instead of fuse-overlayfs; resets rootful Podman storage"
@@ -61,7 +61,7 @@ runs:
         # Old podman (Ubuntu 24.04) does not push layer annotations (ostree.components)
         # needed by the rpm-ostree rechunker and does not support zstd:chunked push.
         # Ubuntu 26.04 ships Podman 5.x natively, so the resolute backport is not needed.
-        IDV=$(. "${OS_RELEASE:-/usr/lib/os-release}" && echo ${ID}-${VERSION_ID})
+        IDV=$(. /usr/lib/os-release && echo ${ID}-${VERSION_ID})
         case "${IDV}" in
           ubuntu-24.04)
             if [ "$(dpkg --print-architecture)" = "amd64" ]; then

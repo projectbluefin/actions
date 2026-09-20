@@ -9,7 +9,7 @@ set -eux
 # Old podman (Ubuntu 24.04) does not push layer annotations (ostree.components)
 # needed by the rpm-ostree rechunker and does not support zstd:chunked push.
 # Ubuntu 26.04 ships Podman 5.x natively, so the resolute backport is not needed.
-IDV=$(. "${OS_RELEASE:-/usr/lib/os-release}" && echo ${ID}-${VERSION_ID})
+IDV=$(. /usr/lib/os-release && echo ${ID}-${VERSION_ID})
 case "${IDV}" in
   ubuntu-24.04)
     if [ "$(dpkg --print-architecture)" = "amd64" ]; then
@@ -30,6 +30,12 @@ case "${IDV}" in
 esac
 EOF
 )
+
+# Test seam: the shipped action sources the runner's real /usr/lib/os-release.
+# Repoint that path at a fixture here so the snippet above stays verbatim.
+resolute_apt_logic_with_os_release() {
+  echo "${RESOLUTE_APT_LOGIC//\/usr\/lib\/os-release/$1}"
+}
 
 VALIDATION_LOGIC=$(cat <<'EOF'
 set -euo pipefail
@@ -273,10 +279,9 @@ teardown() {
 ID=ubuntu
 VERSION_ID=24.04
 EOF
-  export OS_RELEASE="${TEST_TMP}/os-release"
   export MOCK_TEE_OUTPUT="${TEST_TMP}/resolute.list"
 
-  run bash -c "${RESOLUTE_APT_LOGIC}"
+  run bash -c "$(resolute_apt_logic_with_os_release "${TEST_TMP}/os-release")"
 
   [ "${status}" -eq 0 ]
   grep -q "^enabled=true$" "${GITHUB_OUTPUT}"
@@ -289,10 +294,9 @@ EOF
 ID=ubuntu
 VERSION_ID=26.04
 EOF
-  export OS_RELEASE="${TEST_TMP}/os-release"
   export MOCK_TEE_OUTPUT="${TEST_TMP}/resolute.list"
 
-  run bash -c "${RESOLUTE_APT_LOGIC}"
+  run bash -c "$(resolute_apt_logic_with_os_release "${TEST_TMP}/os-release")"
 
   [ "${status}" -eq 0 ]
   grep -q "^enabled=false$" "${GITHUB_OUTPUT}"
@@ -305,9 +309,8 @@ EOF
 ID=ubuntu
 VERSION_ID=22.04
 EOF
-  export OS_RELEASE="${TEST_TMP}/os-release"
 
-  run bash -c "${RESOLUTE_APT_LOGIC}"
+  run bash -c "$(resolute_apt_logic_with_os_release "${TEST_TMP}/os-release")"
 
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"Unsupported runner OS: 'ubuntu-22.04'"* ]]
@@ -318,9 +321,8 @@ EOF
 ID=debian
 VERSION_ID=12
 EOF
-  export OS_RELEASE="${TEST_TMP}/os-release"
 
-  run bash -c "${RESOLUTE_APT_LOGIC}"
+  run bash -c "$(resolute_apt_logic_with_os_release "${TEST_TMP}/os-release")"
 
   [ "${status}" -ne 0 ]
   [[ "${output}" == *"Unsupported runner OS: 'debian-12'"* ]]
