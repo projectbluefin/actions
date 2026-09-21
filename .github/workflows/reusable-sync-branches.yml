@@ -86,23 +86,36 @@ jobs:
           ALLOW_FORCE_RESET: ${{ inputs.allow_force_reset }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           set -euo pipefail
+          # github.event.repository is absent on non-push events (e.g. schedule),
+          # so the caller-provided DEFAULT_BRANCH is empty there. Resolve it directly;
+          # if that also fails, refuse rather than force-reset a branch we cannot
+          # prove is not the default (the #543 scenario this guard exists to prevent).
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            DEFAULT_BRANCH=$(gh api "repos/${{ github.repository }}" --jq .default_branch 2>/dev/null || true)
+          fi
+          if [ -z "$DEFAULT_BRANCH" ]; then
+            echo "strategy=refuse" >> "$GITHUB_OUTPUT"
+            echo "Refusing to decide: could not resolve the repository default branch; refusing to force-reset rather than risk resetting it"
+            exit 0
+          fi
           AHEAD=$(git rev-list --count \
-            "origin/${{ inputs.source_branch }}..origin/${{ inputs.target_branch }}")
+            "origin/${SOURCE_BRANCH}..origin/${TARGET_BRANCH}")
           echo "ahead=${AHEAD}" >> "$GITHUB_OUTPUT"
           if [ "$AHEAD" -eq 0 ]; then
             echo "strategy=merge" >> "$GITHUB_OUTPUT"
-            echo "${TARGET_BRANCH} is simply behind ${{ inputs.source_branch }} — will fast-forward merge"
+            echo "${TARGET_BRANCH} is simply behind ${SOURCE_BRANCH} — will fast-forward merge"
           elif [ "$ALLOW_FORCE_RESET" != "true" ]; then
             echo "strategy=refuse" >> "$GITHUB_OUTPUT"
-            echo "${TARGET_BRANCH} is ${AHEAD} commit(s) ahead of ${{ inputs.source_branch }} and allow_force_reset is false"
+            echo "${TARGET_BRANCH} is ${AHEAD} commit(s) ahead of ${SOURCE_BRANCH} and allow_force_reset is false"
           elif [ "$TARGET_BRANCH" = "$DEFAULT_BRANCH" ]; then
             echo "strategy=refuse" >> "$GITHUB_OUTPUT"
             echo "${TARGET_BRANCH} is the repository default branch — force-reset is never permitted"
           else
             echo "strategy=force-reset" >> "$GITHUB_OUTPUT"
-            echo "⚠️  ${TARGET_BRANCH} is ${AHEAD} commit(s) ahead of ${{ inputs.source_branch }} — diverged, will force-reset"
+            echo "⚠️  ${TARGET_BRANCH} is ${AHEAD} commit(s) ahead of ${SOURCE_BRANCH} — diverged, will force-reset"
           fi
 
       - name: Merge source into target (fast-forward)
