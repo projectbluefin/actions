@@ -49,6 +49,14 @@ inputs:
     description: 'Full image ref for screenshot URL slug (e.g. ghcr.io/projectbluefin/bluefin:testing)'
     required: false
     default: ''
+  auto_merge:
+    description: >
+      'true' when the caller enrolls this promotion for automatic merge, so the
+      body may promise a merge window. Set to 'false' for repositories whose
+      promotion is merged by a human (finpilot passes enqueue_promotion: false),
+      otherwise the body advertises an auto-merge that never fires.
+    required: false
+    default: 'true'
   output:
     description: 'Output file path for the rendered PR body'
     required: true
@@ -77,6 +85,7 @@ runs:
         COMMITS_JSON:  ${{ inputs.commits_json }}
         COMPARE_URL:   ${{ inputs.compare_url }}
         E2E_IMAGE:     ${{ inputs.e2e_image }}
+        AUTO_MERGE:    ${{ inputs.auto_merge }}
         PR_BODY_FILE:  ${{ inputs.output }}
       run: |
         set -euo pipefail
@@ -88,6 +97,14 @@ runs:
         [[ -n "${DAYS_AGO}" ]] && DAYS_ARGS+=(--days-since-stable "${DAYS_AGO}")
         TAG_ARGS=()
         [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
+
+        # GITHUB_WORKFLOW_REF names the top-level caller workflow even when this
+        # action runs inside a reusable workflow, so the body credits the file an
+        # operator can actually open in their own repository.
+        WORKFLOW_REF="${GITHUB_WORKFLOW_REF:-}"
+        WORKFLOW_REF="${WORKFLOW_REF%%@*}"   # strip @refs/heads/... before basename
+        MAINTAINER_WORKFLOW="${WORKFLOW_REF##*/}"
+        [[ -n "${MAINTAINER_WORKFLOW}" ]] || MAINTAINER_WORKFLOW="promote-testing-to-main.yml"
 
         python3 "$GITHUB_ACTION_PATH/render_pr_body.py" \
           --project-name  "${PROJECT_NAME}" \
@@ -101,6 +118,9 @@ runs:
           --commit-count  "${COMMIT_COUNT}" \
           --commits-json  "${COMMITS_JSON}" \
           --compare-url   "${COMPARE_URL}" \
+          --source-branch "${SOURCE_BRANCH}" \
+          --target-branch "${TARGET_BRANCH}" \
+          --maintainer-workflow "${MAINTAINER_WORKFLOW}" \
           --output        "${PR_BODY_FILE}"
 
         # Append screenshot section
@@ -110,7 +130,12 @@ runs:
           SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
         fi
         SCREENSHOT_URL="https://projectbluefin.github.io/testsuite/screenshots/${SCREENSHOT_SLUG}-smoke-latest.png"
-        printf '\n## Desktop Screenshot\n\n> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n\n![%s desktop](%s)\n' \
-          "${PRIMARY_IMAGE}" "${SCREENSHOT_URL}" >> "${PR_BODY_FILE}"
+        if [[ "${AUTO_MERGE}" == "false" ]]; then
+          MERGE_NOTE='> [!IMPORTANT]\n> **This promotion is merged by a human.** Nothing merges it on a schedule.\n> Review the release checklist above, then merge this PR from the GitHub UI.\n'
+        else
+          MERGE_NOTE='> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n'
+        fi
+        printf '\n## Desktop Screenshot\n\n%b\n![%s desktop](%s)\n' \
+          "${MERGE_NOTE}" "${PRIMARY_IMAGE}" "${SCREENSHOT_URL}" >> "${PR_BODY_FILE}"
 
         echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"

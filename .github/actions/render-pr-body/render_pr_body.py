@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-render_pr_body.py — Generate the promotion PR body (testing → stable).
+render_pr_body.py — Generate the promotion PR body for a promotion PR.
+
+The promoted branch pair is a parameter (``--source-branch``/``--target-branch``):
+testing → main for the bluefin family, main → stable for finpilot.
 
 Called by both reusable-promote-squash.yml (squash/git workflow) and
 reusable-promote.yml (digest workflow).  The body contains HTML marker
@@ -60,6 +63,9 @@ def _section_header(
     days_ago: int | None,
     last_tag: str | None,
     last_release_url: str | None,
+    source_branch: str = "testing",
+    target_branch: str = "stable",
+    maintainer_workflow: str = "promote-testing-to-main.yml",
 ) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -73,9 +79,9 @@ def _section_header(
         days_line = ""
 
     return (
-        f"## 🦕 {project_name} testing → stable · {date}\n\n"
+        f"## 🦕 {project_name} {source_branch} → {target_branch} · {date}\n\n"
         f"{days_line}"
-        f"> Auto-maintained by `promote-testing-to-main.yml` · "
+        f"> Auto-maintained by `{maintainer_workflow}` · "
         f"Updated `{now}` · [Run ↗]({run_url})\n"
     )
 
@@ -122,13 +128,19 @@ def _section_commits(
     count: int,
     commits: list[dict],
     compare_url: str | None,
+    source_branch: str = "testing",
+    target_branch: str = "stable",
 ) -> str:
     if count == 0 and not commits:
         return ""
 
-    compare_link = f" · [Compare main…testing ↗]({compare_url})" if compare_url else ""
+    compare_link = (
+        f" · [Compare {target_branch}…{source_branch} ↗]({compare_url})"
+        if compare_url
+        else ""
+    )
     noun = "commit" if count == 1 else "commits"
-    intro = f"**{count} {noun}** ahead of stable{compare_link}\n"
+    intro = f"**{count} {noun}** ahead of {target_branch}{compare_link}\n"
 
     if not commits:
         return "### Changes since last stable\n\n" + intro
@@ -158,12 +170,18 @@ def _section_footer(repo: str = "") -> str:
         f"Force: `gh pr merge {pr_placeholder}{repo_flag} --merge --admin`_\n"
     )
 
-def build_title(primary_image: str, date: str) -> str:
+def build_title(primary_image: str, date: str,
+                source_branch: str = "testing",
+                target_branch: str = "stable") -> str:
     """
     Consistent promotion PR title across all image repos:
-        ci(promote): <image> testing → stable YYYY-MM-DD
+        ci(promote): <image> <source> → <target> YYYY-MM-DD
+
+    The branch pair is a parameter because not every repository promotes
+    testing → stable: finpilot promotes main → stable, and a hardcoded pair
+    described someone else's release flow in its PR body.
     """
-    return f"ci(promote): {primary_image} testing → stable {date}"
+    return f"ci(promote): {primary_image} {source_branch} → {target_branch} {date}"
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -193,6 +211,12 @@ def main() -> None:
                     help="GitHub compare URL: .../compare/main...testing")
     ap.add_argument("--source-tag",         default="testing",
                     help="Source tag being promoted (default: testing)")
+    ap.add_argument("--source-branch",      default="testing",
+                    help="Branch being promoted (default: testing)")
+    ap.add_argument("--target-branch",      default="stable",
+                    help="Branch being promoted into (default: stable)")
+    ap.add_argument("--maintainer-workflow", default="promote-testing-to-main.yml",
+                    help="Workflow file that maintains this PR, for the header line")
     ap.add_argument("--output",             default="pr-body.md")
     args = ap.parse_args()
 
@@ -205,13 +229,20 @@ def main() -> None:
             days_ago=args.days_since_stable,
             last_tag=args.last_release_tag or None,
             last_release_url=args.last_release_url or None,
+            source_branch=args.source_branch,
+            target_branch=args.target_branch,
+            maintainer_workflow=args.maintainer_workflow,
         ),
         "",
         _section_gate_placeholder(),
         "",
         _section_variants(variants, args.source_tag),
         "",
-        _section_commits(args.commit_count, commits, args.compare_url or None),
+        _section_commits(
+            args.commit_count, commits, args.compare_url or None,
+            source_branch=args.source_branch,
+            target_branch=args.target_branch,
+        ),
         "",
         _section_footer(args.repo),
     ]
@@ -221,7 +252,8 @@ def main() -> None:
     with open(args.output, "w", encoding="utf-8") as f:
         f.write(body)
 
-    title = build_title(args.primary_image, args.date)
+    title = build_title(args.primary_image, args.date,
+                        args.source_branch, args.target_branch)
     print(f"PR body written: {args.output} ({len(body):,} chars)")
     print(f"PR title: {title}")
 

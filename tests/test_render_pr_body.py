@@ -443,3 +443,82 @@ class TestSectionFooter:
         assert "---" in body
         assert "gh pr merge" in body
         assert "--repo projectbluefin/bluefin" in body
+
+
+class TestPromotedBranchPair:
+    """finpilot promotes main → stable, not testing → stable.
+
+    The body used to hardcode one repository's flow, so operators read a
+    workflow name that does not exist in their repository and a direction that
+    contradicted the PR title.
+    """
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_header_uses_promoted_branches(self, module):
+        md = module._section_header(
+            "Finpilot", "2026-09-21", "https://example.com/run",
+            days_ago=None, last_tag=None, last_release_url=None,
+            source_branch="main", target_branch="stable",
+        )
+        assert "Finpilot main → stable" in md
+        assert "testing → stable" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_header_credits_the_caller_workflow(self, module):
+        md = module._section_header(
+            "Finpilot", "2026-09-21", "https://example.com/run",
+            days_ago=None, last_tag=None, last_release_url=None,
+            maintainer_workflow="promote-main-to-stable.yml",
+        )
+        assert "`promote-main-to-stable.yml`" in md
+        assert "promote-testing-to-main.yml" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_header_defaults_are_unchanged(self, module):
+        md = module._section_header(
+            "Bluefin", "2026-06-11", "https://example.com/run",
+            days_ago=None, last_tag=None, last_release_url=None,
+        )
+        assert "Bluefin testing → stable" in md
+        assert "`promote-testing-to-main.yml`" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_commits_compare_label_follows_branches(self, module):
+        md = module._section_commits(
+            3, [], "https://example.com/compare",
+            source_branch="main", target_branch="stable",
+        )
+        assert "Compare stable…main" in md
+        assert "ahead of stable" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_title_follows_branches(self, module):
+        assert module.build_title(
+            "finpilot", "2026-09-21", "main", "stable"
+        ) == "ci(promote): finpilot main → stable 2026-09-21"
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_cli_threads_branches_into_body(self, module, tmp_path):
+        out = tmp_path / "pr-body.md"
+        old = sys.argv
+        sys.argv = [
+            "render_pr_body.py",
+            "--project-name",  "Finpilot",
+            "--primary-image", "finpilot",
+            "--variants-json", json.dumps([{"image": "finpilot"}]),
+            "--repo",          "projectbluefin/finpilot",
+            "--run-url",       "https://github.com/projectbluefin/finpilot/actions/runs/1",
+            "--date",          "2026-09-21",
+            "--source-branch", "main",
+            "--target-branch", "stable",
+            "--maintainer-workflow", "promote-main-to-stable.yml",
+            "--output",        str(out),
+        ]
+        try:
+            module.main()
+        finally:
+            sys.argv = old
+        body = out.read_text()
+        assert "Finpilot main → stable" in body
+        assert "`promote-main-to-stable.yml`" in body
+        assert "promote-testing-to-main.yml" not in body
