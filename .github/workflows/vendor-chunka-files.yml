@@ -5,6 +5,16 @@ name: Vendor chunkah Containerfile.splitter
 # Downloads the matching Containerfile.splitter from the chunkah GitHub release,
 # updates the SHA-256 comment in action.yml, and commits both back to the
 # Renovate branch so the PR is fully self-contained and ready to automerge.
+#
+# SECURITY: this job holds `contents: write` and checks out the PR head, so the
+# CHUNKAH_VERSION it reads out of the PR's own diff is fully attacker-controlled.
+# Two independent constraints keep that value from reaching the shell:
+#   1. the job is restricted to same-repo branches (Renovate always is), so a
+#      fork PR never runs it at all, and
+#   2. the extracted value must match a strict ^vX.Y.Z$ tag before it is used,
+#      which also stops it steering the release-download URL path.
+# The value is passed to shell steps through `env:`, never via `${{ }}` inside a
+# `run:` block. See docs/skills/composite-actions.md, "Passing inputs to shell".
 
 on:
   pull_request:
@@ -16,7 +26,10 @@ permissions: {}
 
 jobs:
   vendor-containerfile-splitter:
-    if: startsWith(github.head_ref, 'renovate/')
+    # `startsWith(github.head_ref, 'renovate/')` alone is not a trust boundary —
+    # any fork can name its branch `renovate/...`. The head-repo check makes
+    # fork PRs (read-only token, but still runner code execution) a non-starter.
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'renovate/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -30,12 +43,18 @@ jobs:
         id: version
         run: |
           version=$(grep -oP 'CHUNKAH_VERSION="\K[^"]+' bootc-build/chunka/action.yml)
+          if [[ ! "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::CHUNKAH_VERSION '${version}' is not a vX.Y.Z release tag."
+            exit 1
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Download Containerfile.splitter for ${{ steps.version.outputs.version }}
+      - name: Download Containerfile.splitter
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           curl --no-progress-meter -fSL \
-            "https://github.com/coreos/chunkah/releases/download/${{ steps.version.outputs.version }}/Containerfile.splitter" \
+            "https://github.com/coreos/chunkah/releases/download/${VERSION}/Containerfile.splitter" \
             -o bootc-build/chunka/Containerfile.splitter
 
       - name: Update SHA-256 comment in action.yml
@@ -44,14 +63,15 @@ jobs:
           sed -Ei "s|# sha256:[a-f0-9]{64}|# sha256:${sha}|" bootc-build/chunka/action.yml
 
       - name: Commit if changed
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git diff --exit-code; then
-            echo "Containerfile.splitter is already up to date for ${{ steps.version.outputs.version }}"
+            echo "Containerfile.splitter is already up to date for ${VERSION}"
           else
-            version="${{ steps.version.outputs.version }}"
-            msg="chore(chunka): vendor Containerfile.splitter for ${version}"$'\n\n'"Assisted-by: GitHub Actions"$'\n'"Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+            msg="chore(chunka): vendor Containerfile.splitter for ${VERSION}"$'\n\n'"Assisted-by: GitHub Actions"$'\n'"Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
             git commit -am "${msg}"
             git push
           fi
