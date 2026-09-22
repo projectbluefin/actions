@@ -156,6 +156,29 @@ falls below the success-rate threshold.
 - Open issues are deduplicated by repo + pipeline title prefix
 - Issues are filed in `projectbluefin/common` with the labels that currently exist from:
   `priority/p0`, `area/ci`, `kind/bug`
+- **Bound the run fetch by the window, never by a run count.** `gh run list --limit N`
+  samples "the N most recent runs, whatever their age or event", but the job only measures
+  runs it keeps — production events inside the 24h window. On a busy repository the runs it
+  discards (pre-merge `pull_request`/`merge_group` events, runs older than the window) then
+  evict the runs it needs, so a healthy pipeline can read `no-runs` from a starved sample
+  (projectbluefin/actions#567). Fetch with a window bound instead:
+
+  ```bash
+  gh run list --repo "$repo" --workflow "$workflow" \
+    --created ">=${CUTOFF_ISO}" \
+    --limit 500 \
+    --json createdAt,status,conclusion,url
+  ```
+
+  `--created` and `--event` are applied **server-side** (REST query parameters on the
+  workflow-runs endpoint) — they decide which runs are reachable, not merely which survive
+  client-side filtering. `--limit` is a page ceiling that gh stops filling at the first
+  short page, so API cost tracks the number of runs actually inside the window, not the
+  ceiling value; a generous ceiling is therefore nearly free. Derive `CUTOFF_ISO` from the
+  same epoch the client-side window filter uses
+  (`date -u -d "@${CUTOFF_EPOCH}" '+%Y-%m-%dT%H:%M:%SZ'`) so the fetch and the filter cannot
+  disagree at the boundary, and warn when the ceiling is actually reached — a truncated
+  sample must never be reported as if it were the whole window.
 
 ### Authentication pattern
 

@@ -39,6 +39,12 @@ jobs:
           WINDOW_HOURS=24
           THRESHOLD=80
           CUTOFF_EPOCH=$(date -u -d "${WINDOW_HOURS} hours ago" '+%s')
+          CUTOFF_ISO=$(date -u -d "@${CUTOFF_EPOCH}" '+%Y-%m-%dT%H:%M:%SZ')
+          # Fetch ceiling for one pipeline in the window. This is a safety bound,
+          # not a target: `gh run list` pages only until the window is exhausted
+          # (see the fetch below), so a workflow with 30 runs in the window costs
+          # one request regardless of this value.
+          FETCH_LIMIT=500
 
           if [[ -n "${COMMON_ISSUE_TOKEN}" ]]; then
             ISSUE_REPO="projectbluefin/common"
@@ -54,14 +60,31 @@ jobs:
             local pipeline="$2"
             local workflow="$3"
 
-            local runs_json recent_json completed_json total success rate_display rate_value status failures_md
+            local runs_json fetched recent_json completed_json total success rate_display rate_value status failures_md
 
+            # Bound the fetch by the monitoring window, not by a run count.
+            # `--limit` alone samples "the N most recent runs, whatever their
+            # age or event", so on a busy repository the runs this job later
+            # discards — pre-merge `pull_request`/`merge_group` runs and any run
+            # outside the window — evict production runs from the sample and the
+            # measured set silently shrinks (worst case a healthy pipeline reads
+            # `no-runs`). `--created` moves that bound into the query, so only
+            # runs inside the window compete for slots (projectbluefin/actions#567).
             runs_json=$(gh run list \
               --repo "${repo}" \
               --workflow "${workflow}" \
-              --limit 100 \
+              --created ">=${CUTOFF_ISO}" \
+              --limit "${FETCH_LIMIT}" \
               --json createdAt,status,conclusion,url \
               2>/dev/null || echo '[]')
+
+            # A ceiling that is reached is the one case where the window can
+            # still be truncated. Say so rather than reporting a thin sample as
+            # if it were the whole window.
+            fetched=$(jq 'length' <<<"${runs_json}")
+            if (( fetched >= FETCH_LIMIT )); then
+              echo "::warning::${repo} ${pipeline} (${workflow}) has ${fetched} runs in the ${WINDOW_HOURS}h window, at the ${FETCH_LIMIT}-run fetch ceiling; the success rate below is computed from a truncated sample."
+            fi
 
             recent_json=$(jq --argjson cutoff "${CUTOFF_EPOCH}" '
               [ .[]
