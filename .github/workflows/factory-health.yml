@@ -70,8 +70,10 @@ jobs:
           # makes the whole job conclude `success`, so the fallback was silent
           # in the checks UI for months (projectbluefin/actions#556).
           # ISSUE_AUTHOR is the login each token files issues as, in the form
-          # `gh issue list --json author` reports it. The close pass only acts
-          # on alerts this account opened.
+          # `gh issue list --json author` reports it. The dedupe pass only
+          # matches alerts this account opened so human-filed issues do not
+          # mute the pipeline (projectbluefin/actions#576), and the close pass
+          # only acts on alerts this account opened.
           if [[ -n "${COMMON_ISSUE_TOKEN}" ]]; then
             ISSUE_REPO="${INTENDED_ISSUE_REPO}"
             ISSUE_TOKEN="${COMMON_ISSUE_TOKEN}"
@@ -370,7 +372,8 @@ jobs:
             title_prefix="fix(factory): [${repo}] [${pipeline}] success rate dropped"
             existing_issue=$(jq -r \
               --arg prefix "${title_prefix}" \
-              '.[] | select(.title | startswith($prefix)) | .number' \
+              --arg author "${ISSUE_AUTHOR}" \
+              '.[] | select(.title | startswith($prefix)) | select(.author.login == $author) | .number' \
               <<<"${open_issues_json}" | head -1)
 
             if [[ -n "${existing_issue}" ]]; then
