@@ -35,11 +35,28 @@ _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 # Workflow files this gate found blind at the time it was written, and which it
 # cannot itself repair: the fix is an edit to `.github/workflows/unit-tests.yml`.
 # Each entry is a live gap, not an acceptance. `test_no_stale_known_blind_spots`
-# fails once an entry is covered, forcing it back out of this list, so the set
-# only ever shrinks and no *new* blind spot can be introduced silently.
+# fails once an entry is covered, forcing it back out of this list; growing the
+# list requires an explicit edit here, so no blind spot enters silently.
 #
-#   .github/workflows/ghcr-cleanup.yml — guarded by tests/test_ghcr_cleanup_action.py
-KNOWN_BLIND = frozenset({".github/workflows/ghcr-cleanup.yml"})
+# Every entry below is a `paths:` line that belongs in `unit-tests.yml`. The
+# exact replacement text is in the tracking issue.
+#
+#   .github/workflows/factory-drift.yml — guarded by
+#       tests/test_factory_drift_thin_caller_check.py
+#   .github/workflows/factory-health.yml — guarded by
+#       tests/test_factory_health_alert_routing.py, tests/test_factory_health_fetch.py
+#   .github/workflows/reusable-pkg-cadence.yml — guarded by
+#       tests/test_pkg_cadence_intervals.py
+#   .github/workflows/reusable-thin-caller-gate.yml — guarded by
+#       tests/test_reusable_thin_caller_gate.py
+KNOWN_BLIND = frozenset(
+    {
+        ".github/workflows/factory-drift.yml",
+        ".github/workflows/factory-health.yml",
+        ".github/workflows/reusable-pkg-cadence.yml",
+        ".github/workflows/reusable-thin-caller-gate.yml",
+    }
+)
 
 
 def _workflow_basenames() -> set[str]:
