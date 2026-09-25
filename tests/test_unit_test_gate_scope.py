@@ -43,8 +43,6 @@ _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 #
 #   .github/workflows/factory-drift.yml — guarded by
 #       tests/test_factory_drift_thin_caller_check.py
-#   .github/workflows/factory-health.yml — guarded by
-#       tests/test_factory_health_alert_routing.py, tests/test_factory_health_fetch.py
 #   .github/workflows/reusable-pkg-cadence.yml — guarded by
 #       tests/test_pkg_cadence_intervals.py
 #   .github/workflows/reusable-thin-caller-gate.yml — guarded by
@@ -52,7 +50,6 @@ _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 KNOWN_BLIND = frozenset(
     {
         ".github/workflows/factory-drift.yml",
-        ".github/workflows/factory-health.yml",
         ".github/workflows/reusable-pkg-cadence.yml",
         ".github/workflows/reusable-thin-caller-gate.yml",
     }
