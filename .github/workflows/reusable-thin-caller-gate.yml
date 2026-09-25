@@ -24,6 +24,7 @@ name: reusable-thin-caller-gate
 
 on:
   workflow_call:
+    # requires: any
     inputs:
       actions_repository:
         description: >-

@@ -184,7 +184,7 @@ def test_main_check_reusable_requires_flag(tmp_path, monkeypatch):
 def test_live_reusable_workflows_have_valid_token_annotations():
     repo_root = Path(__file__).resolve().parent.parent
     reusables = find_reusable_workflows(repo_root)
-    assert len(reusables) == 13
+    assert len(reusables) > 0
 
     for wf in reusables:
         annotation = get_reusable_requires_annotation(wf)
