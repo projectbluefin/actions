@@ -179,7 +179,9 @@ falls below the success-rate threshold.
 - Threshold = 80%
 - Minimum sample = 3 completed runs in the window (`MIN_RUNS`)
 - Escalation floor = 2 back-to-back failures (`MIN_CONSECUTIVE_FAILURES`)
-- Open issues are deduplicated by repo + pipeline title prefix
+- Open issues are deduplicated by repo + pipeline title prefix and alerting bot author
+  (only alerts opened by the workflow's alerting identity suppress new alerts, preventing human-filed
+  issues with matching titles from muting a pipeline)
 - Issues are filed in `projectbluefin/common` with the labels that currently exist from:
   `priority/p0`, `area/ci`, `kind/bug`
 

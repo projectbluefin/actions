@@ -142,6 +142,7 @@ def should_open_issue(
     health: dict,
     existing_issues: list[dict],
     title_prefix: str,
+    author: str | None = None,
 ) -> bool:
     """
     Return True if a new alert issue should be opened for this pipeline.
@@ -151,13 +152,17 @@ def should_open_issue(
     - rate_value is -1 (no-runs window — no data to alert on)
     - The window is under-sampled (status "low-sample" — too few completed
       runs for the rate to mean anything, and not failing back-to-back)
-    - An open issue with matching title prefix already exists
+    - An open issue with matching title prefix (and matching author if specified) already exists
     """
     if health["rate_value"] < 0 or health["status"] != "alert":
         return False
     for issue in existing_issues:
         if issue.get("title", "").startswith(title_prefix):
-            return False  # existing → don't open again
+            if author is not None:
+                issue_author = (issue.get("author") or {}).get("login")
+                if issue_author != author:
+                    continue
+            return False  # existing matching issue → don't open again
     # No duplicate found → should open
     return True
 

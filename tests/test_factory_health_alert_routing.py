@@ -19,6 +19,7 @@ the assertions cover behaviour and not wording.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -150,6 +151,26 @@ class TestRoutingDecision:
         result = _run_preamble(routing_preamble, tmp_path, token="")
         assert result["author"] == "app/github-actions"
 
+
+# ── Dedupe contract ───────────────────────────────────────────────────────────
+
+class TestDedupeContract:
+    def test_monitor_step_declares_app_slug(self, steps):
+        monitor_step = _step_with_id(steps, "monitor")
+        assert "APP_SLUG" in monitor_step.get("env", {})
+        assert monitor_step["env"]["APP_SLUG"] == "${{ steps.app-token.outputs.app-slug }}"
+
+    def test_issue_list_fetches_author(self, steps):
+        script = _step_with_id(steps, "monitor")["run"]
+        joined = script.replace("\\\n", " ")
+        match = re.search(r"open_issues_json=\$\(.*?\bgh issue list\b.*?--json\s+([a-zA-Z0-9_,]+)", joined)
+        assert match, "no `open_issues_json=$(... gh issue list ... --json ...)` found in monitor step"
+        fields = [f.strip() for f in match.group(1).split(",")]
+        assert "author" in fields
+
+    def test_dedupe_filters_by_author(self, steps):
+        script = _step_with_id(steps, "monitor")["run"]
+        assert "select(.author.login == $author)" in script
 
 # ── Visibility contract ───────────────────────────────────────────────────────
 

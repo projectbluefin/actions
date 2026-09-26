@@ -339,6 +339,38 @@ class TestShouldOpenIssue:
         existing = [{"title": "fix(factory): [other/repo] something else"}]
         assert should_open_issue(self._alert_health(), existing, "fix(factory): [org/repo]")
 
+    def test_suppresses_duplicate_when_open_issue_matches_author(self):
+        existing = [
+            {
+                "title": "fix(factory): [org/repo] rate dropped to 50% (24h window)",
+                "author": {"login": "app/mergeraptor"},
+            }
+        ]
+        assert not should_open_issue(
+            self._alert_health(), existing, "fix(factory): [org/repo]", author="app/mergeraptor"
+        )
+
+    def test_opens_issue_when_existing_issue_has_different_author(self):
+        existing = [
+            {
+                "title": "fix(factory): [org/repo] rate dropped to 50% (24h window)",
+                "author": {"login": "human-contributor"},
+            }
+        ]
+        assert should_open_issue(
+            self._alert_health(), existing, "fix(factory): [org/repo]", author="app/mergeraptor"
+        )
+
+    def test_opens_issue_when_existing_issue_has_missing_or_empty_author(self):
+        existing = [
+            {"title": "fix(factory): [org/repo] rate dropped to 50% (24h window)"},
+            {"title": "fix(factory): [org/repo] rate dropped to 50% (24h window)", "author": None},
+            {"title": "fix(factory): [org/repo] rate dropped to 50% (24h window)", "author": {"login": ""}},
+        ]
+        assert should_open_issue(
+            self._alert_health(), existing, "fix(factory): [org/repo]", author="app/mergeraptor"
+        )
+
 
 # ── aggregate_health ──────────────────────────────────────────────────────────
 
