@@ -41,7 +41,16 @@ completed_json=$(jq '
   # runs are pending approval — neither produced a build result, so
   # counting them deflates the rate and fires false alerts
   # (projectbluefin/actions#483). skipped/in_progress excluded too.
+  #
+  # Pre-merge validation events (pull_request, merge_group) reflect
+  # in-flight work, not the deployed pipeline. A failed PR run or a
+  # merge-queue collision routinely gets fixed and re-run before the
+  # branch lands, so counting them as "Build" failures produces false
+  # alerts (projectbluefin/actions#503). Only production pipeline
+  # events (push, schedule, workflow_dispatch, workflow_run, etc.)
+  # measure real pipeline health.
   | select(.status == "completed" and (.conclusion == "success" or .conclusion == "failure"))
+  | select(.event != "pull_request" and .event != "merge_group")
   ]
 ' <<<"${recent_json}")
 
