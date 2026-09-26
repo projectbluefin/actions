@@ -57,6 +57,10 @@ def compute_pipeline_health(
         - ``status``: "completed" | "in_progress" | "queued" | ...
         - ``conclusion``: "success" | "failure" | "cancelled" | "skipped" | None
         - ``url``: run URL string
+        - ``event``: "push" | "schedule" | "pull_request" | "merge_group" | ...
+          (optional; a run with no ``event`` key is counted, matching the
+          workflow's jq, where a missing field compares unequal to both
+          excluded values)
     cutoff_epoch:
         Unix timestamp; runs created before this are excluded.
     threshold:
@@ -91,10 +95,18 @@ def compute_pipeline_health(
     # neither produced a build result, so counting them deflates the rate and
     # fires false alerts (projectbluefin/actions#483). success/(success+failure)
     # is the standard build success rate; skipped/in_progress/queued excluded too.
+    #
+    # Pre-merge validation events (pull_request, merge_group) reflect in-flight
+    # work, not the deployed pipeline. A failed PR run or a merge-queue collision
+    # routinely gets fixed and re-run before the branch lands, so counting them as
+    # build failures produces false alerts (projectbluefin/actions#503). Only
+    # production pipeline events (push, schedule, workflow_dispatch, workflow_run,
+    # etc.) measure real pipeline health.
     completed = [
         r for r in recent
         if r.get("status") == "completed"
         and r.get("conclusion") in ("success", "failure")
+        and r.get("event") not in ("pull_request", "merge_group")
     ]
 
     total = len(completed)
