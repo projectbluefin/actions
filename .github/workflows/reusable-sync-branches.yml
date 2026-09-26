@@ -4,12 +4,17 @@
 # Called by each consumer repo's sync-main-to-testing.yml on push to main.
 #
 # Divergence handling: if target has commits source does not (e.g. Renovate
-# PRs landed on testing while main got CI fixes), the target is force-reset
-# to source instead of attempting a merge. The force-reset is safe because:
+# PRs landed on testing while main got CI fixes), the default strategy is to
+# fast-forward merge when the target is simply behind, or REFUSE to discard the
+# target's history when the branches diverge. A force-reset only happens when a
+# caller explicitly opts in with allow_force_reset: true AND the target is not
+# the repository default branch. The force-reset is only safe because:
+#   - The caller has confirmed target carries automated commits exclusively
 #   - Automated commits on testing (Renovate digests) are recreated by Renovate
 #   - Human commits should not land on testing directly (enforced by pr-triage)
 #   - A failed merge leaves the pipeline broken indefinitely; force-reset
 #     recovers in seconds and is logged clearly.
+# Never safe for a branch that receives human work (e.g. a default branch).
 name: Reusable Sync Branches
 
 on:
@@ -24,6 +29,15 @@ on:
         description: "Branch to merge into (e.g. testing)"
         default: testing
         type: string
+      allow_force_reset:
+        description: >-
+          Permit force-resetting target_branch onto source_branch when the branches
+          diverge. Only set true when target_branch carries automated commits
+          exclusively (e.g. a testing branch fed by Renovate). Never safe for a
+          branch that receives human work.
+        required: false
+        default: false
+        type: boolean
     secrets:
       GH_TOKEN:
         description: "GitHub App token for bypassing protected-branch push rules. Generate in caller using actions/create-github-app-token and pass here."
@@ -68,17 +82,43 @@ jobs:
       - name: Detect divergence
         id: diverge
         if: steps.check.outputs.sync_needed == 'true'
+        env:
+          ALLOW_FORCE_RESET: ${{ inputs.allow_force_reset }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
         run: |
           set -euo pipefail
           AHEAD=$(git rev-list --count \
-            "origin/${{ inputs.source_branch }}..origin/${{ inputs.target_branch }}")
+            "origin/${SOURCE_BRANCH}..origin/${TARGET_BRANCH}")
           echo "ahead=${AHEAD}" >> "$GITHUB_OUTPUT"
-          if [ "$AHEAD" -gt 0 ]; then
-            echo "strategy=force-reset" >> "$GITHUB_OUTPUT"
-            echo "⚠️  ${{ inputs.target_branch }} is ${AHEAD} commit(s) ahead of ${{ inputs.source_branch }} — diverged, will force-reset"
-          else
+          if [ "$AHEAD" -eq 0 ]; then
             echo "strategy=merge" >> "$GITHUB_OUTPUT"
-            echo "${{ inputs.target_branch }} is simply behind ${{ inputs.source_branch }} — will fast-forward merge"
+            echo "${TARGET_BRANCH} is simply behind ${SOURCE_BRANCH} — will fast-forward merge"
+          elif [ "$ALLOW_FORCE_RESET" != "true" ]; then
+            echo "strategy=refuse" >> "$GITHUB_OUTPUT"
+            echo "${TARGET_BRANCH} is ${AHEAD} commit(s) ahead of ${SOURCE_BRANCH} and allow_force_reset is false"
+          else
+            # github.event.repository is absent on non-push events (e.g. schedule),
+            # so the caller-provided DEFAULT_BRANCH is empty there. Resolve it directly;
+            # if that also fails, refuse rather than force-reset a branch we cannot
+            # prove is not the default (the #543 scenario this guard exists to prevent).
+            if [ -z "$DEFAULT_BRANCH" ]; then
+              DEFAULT_BRANCH=$(gh api "repos/${{ github.repository }}" --jq .default_branch 2>/dev/null || true)
+            fi
+            if [ -z "$DEFAULT_BRANCH" ]; then
+              echo "strategy=refuse" >> "$GITHUB_OUTPUT"
+              echo "Refusing to decide: could not resolve the repository default branch; refusing to force-reset rather than risk resetting it"
+              exit 0
+            fi
+            if [ "$TARGET_BRANCH" = "$DEFAULT_BRANCH" ]; then
+              echo "strategy=refuse" >> "$GITHUB_OUTPUT"
+              echo "${TARGET_BRANCH} is the repository default branch — force-reset is never permitted"
+            else
+              echo "strategy=force-reset" >> "$GITHUB_OUTPUT"
+              echo "⚠️  ${TARGET_BRANCH} is ${AHEAD} commit(s) ahead of ${SOURCE_BRANCH} — diverged, will force-reset"
+            fi
           fi
 
       - name: Merge source into target (fast-forward)
@@ -92,6 +132,21 @@ jobs:
             --no-edit
           git push origin "${{ inputs.target_branch }}"
           echo "✅ Merged ${{ inputs.source_branch }} → ${{ inputs.target_branch }}"
+
+      - name: Refuse to discard diverged history
+        if: >-
+          steps.check.outputs.sync_needed == 'true' &&
+          steps.diverge.outputs.strategy == 'refuse'
+        env:
+          AHEAD: ${{ steps.diverge.outputs.ahead }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          set -euo pipefail
+          echo "::error::${TARGET_BRANCH} has ${AHEAD} commit(s) that ${SOURCE_BRANCH} does not."
+          echo "::error::Refusing to force-reset. Resolve by merging ${SOURCE_BRANCH} into ${TARGET_BRANCH} through a pull request,"
+          echo "::error::or, if ${TARGET_BRANCH} genuinely carries only disposable automated commits, call this workflow with allow_force_reset: true."
+          exit 1
 
       - name: Force-reset target to source (diverged)
         if: >-

@@ -714,12 +714,15 @@ Two patterns to know:
 When provided, it uses a GitHub App token to bypass protected-branch push rules. Without it,
 `github.token` is used — which fails on protected branches.
 
-**Diverged target:** If the target branch has commits not in source (e.g. direct CI fixes on
-`main` while `testing` was being promoted), the workflow force-resets `target` to `source`
-instead of attempting a merge. This is safe because:
-- `main` only receives CI fixes that don't need cherry-picking
-- A failed merge leaves the pipeline broken indefinitely
-- Force-reset produces a clean, predictable state
+**Diverged target:** If the target branch has commits not in source (e.g. Renovate PRs landed on
+`testing` while `main` got CI fixes), the workflow's default is to fast-forward merge when the
+target is simply behind, or **refuse** when the branches have diverged. It force-resets `target`
+to `source` **only** when the caller sets `allow_force_reset: true` AND `target_branch` is not the
+repository default branch. Never force-reset a branch that receives human work — the default branch
+is never permitted, and a caller that pointed `target_branch` at its `main` got a 100-commit
+force-reset attempt (stopped only by branch protection; see issue #543). Consumers whose
+`main`→`testing` sync relied on force-reset to recover from Renovate divergence must add
+`allow_force_reset: true` to their `with:` block or their syncs fail closed (loudly, no data loss).
 
 ---
 
