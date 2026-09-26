@@ -47,13 +47,7 @@ _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 #       tests/test_pkg_cadence_intervals.py
 #   .github/workflows/reusable-thin-caller-gate.yml — guarded by
 #       tests/test_reusable_thin_caller_gate.py
-KNOWN_BLIND = frozenset(
-    {
-        ".github/workflows/factory-drift.yml",
-        ".github/workflows/reusable-pkg-cadence.yml",
-        ".github/workflows/reusable-thin-caller-gate.yml",
-    }
-)
+KNOWN_BLIND: frozenset[str] = frozenset()
 
 
 def _workflow_basenames() -> set[str]:
