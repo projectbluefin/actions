@@ -1,7 +1,7 @@
 # This file is used to split existing images using `buildah build`. See
 # README.md for how to use it.
 
-ARG CHUNKAH=quay.io/coreos/chunkah:latest@sha256:ff8b8b466a942ec6000445d4001fc661e2fc5a952ad9ee29b4de9ab09d1d1708
+ARG CHUNKAH=quay.io/coreos/chunkah:latest@sha256:8b56578258d1d10d3e1c7b0f71a4d05317c5fde331c4f483576a1b60e65f0cea
 ARG CHUNKAH_ARGS=""
 ARG CHUNKAH_CONFIG_STR
 
