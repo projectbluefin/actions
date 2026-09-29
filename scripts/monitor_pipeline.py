@@ -194,6 +194,9 @@ def _consecutive_failures(runs: list[dict]) -> int:
             r for r in runs
             if r.get("status") == "completed"
             and r.get("conclusion") in ("success", "failure")
+            # Same pre-merge exclusion as the rate: the streak guards the
+            # low-sample path, so the two must count the same runs.
+            and r.get("event") not in ("pull_request", "merge_group")
         ),
         key=lambda r: _parse_epoch(r.get("createdAt", "")),
         reverse=True,

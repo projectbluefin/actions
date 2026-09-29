@@ -366,6 +366,20 @@ class TestPreMergeEventExclusion:
         assert result["total"] == 1
         assert result["success"] == 0
 
+    def test_pre_merge_failures_do_not_extend_the_failure_streak(self):
+        # The streak escalates an under-sampled pipeline, so it must not be
+        # fed the runs the rate already discards: one production failure
+        # behind a PR failure is a streak of one, not an outage.
+        runs = [
+            _make_run("failure", minutes_ago=10, event="pull_request"),
+            _make_run("failure", minutes_ago=30, event="push"),
+            _make_run("success", minutes_ago=24 * 60 + 30, event="push"),
+        ]
+        result = compute_pipeline_health(runs, CUTOFF_1H_AGO, threshold=80)
+        assert result["total"] == 1
+        assert result["consecutive_failures"] == 1
+        assert result["status"] == "low-sample"
+
 # ── should_open_issue ─────────────────────────────────────────────────────────
 
 class TestShouldOpenIssue:

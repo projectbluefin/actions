@@ -66,6 +66,9 @@ success=$(jq '[ .[] | select(.conclusion == "success") ] | length' <<<"${complet
 consecutive_failures=$(jq '
   [ .[]
   | select(.status == "completed" and (.conclusion == "success" or .conclusion == "failure"))
+  # Same pre-merge exclusion as the rate: the streak guards the
+  # low-sample path, so the two must count the same runs.
+  | select(.event != "pull_request" and .event != "merge_group")
   ]
   | sort_by(.createdAt)
   | reverse
