@@ -174,7 +174,7 @@ falls below the success-rate threshold.
 
 ### Alerting behavior
 
-- Success rate = `successful completed runs / completed non-skipped runs`
+- Success rate = `successful completed runs / completed production runs`
 - Window = last 24 hours
 - Threshold = 80%
 - Minimum sample = 3 completed runs in the window (`MIN_RUNS`)
