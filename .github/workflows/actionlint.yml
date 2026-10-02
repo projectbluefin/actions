@@ -36,7 +36,7 @@ jobs:
         run: python3 scripts/check-self-repository-references.py
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@1129829fb3230509a1c9aa4e93cec2b234746a68 # v1.78.0
+        uses: reviewdog/action-actionlint@13465d022aa41c282f730be17574b5ce692d0186 # v1.78.1
         with:
           # github-pr-check needs a PR context, which merge_group has not.
           reporter: ${{ github.event_name == 'merge_group' && 'github-check' || 'github-pr-check' }}
