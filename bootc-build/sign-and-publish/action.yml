@@ -57,6 +57,14 @@ outputs:
   sbom-digest:
     description: "Digest of the attached SBOM OCI artifact"
     value: ${{ steps.upload-sbom.outputs.sbom-digest }}
+  image-signed:
+    description: >
+      "true" once the image signature has been written and verified (and, for
+      new-bundle-format=false, the legacy .sig tag confirmed). Empty when any of
+      those steps failed or did not run. Callers that wrap this action in
+      continue-on-error (so SBOM/attestation hiccups stay non-fatal) should gate
+      on this output so a push with no usable signature still fails the job.
+    value: ${{ steps.mark-signed.outputs.signed }}
 
 runs:
   using: "composite"
@@ -157,6 +165,14 @@ runs:
           exit 1
         fi
         echo "Legacy signature tag present: ${IMAGE}:${sig_tag}"
+
+    # Reached only when signing, verification and the .sig assertion all
+    # passed; the SBOM/attestation steps below are deliberately not part of
+    # this contract.
+    - name: Mark image signed
+      id: mark-signed
+      shell: bash
+      run: echo "signed=true" >> "$GITHUB_OUTPUT"
 
     - name: Install Syft
       if: inputs.generate-sbom == 'true'
