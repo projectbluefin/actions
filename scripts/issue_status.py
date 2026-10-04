@@ -226,7 +226,7 @@ def status_report(record, facts, catalog, context):
             "To accept, add `triage/accepted`.",
             "Removing `needs-triage` or `needs-human` does not work, let the bot do it.",
             "Accepting means we want it in Bluefin - you are not committed to working on this.",
-            f"Need more information? Ask, then add `triage/needs-information`. To decline, close with a reason. `/hive approve` does not accept {display} issues.",
+            "Need more information? Ask, then add `triage/needs-information`. To decline, close with a reason.",
         ])
     elif stage == "triage/needs-information":
         if context.get("requester") == "maintainer" or record.get("user", {}).get("type") != "User":
@@ -236,7 +236,6 @@ def status_report(record, facts, catalog, context):
                 "Then remove `needs-decision` and add `triage/accepted`."
                 if "needs-decision" in labels else
                 "Then add `triage/accepted`.",
-                "Removing labels or posting `/hive approve` does not accept the issue.",
             ])
             if missing:
                 maintainer.append("Say who can provide: " + ", ".join(f"**{field}**" for field in missing) + ".")
@@ -306,7 +305,7 @@ def status_report(record, facts, catalog, context):
             + ("image." if delivery_type == "image" else "app install, including any image-installed helpers."),
             *_delivery_fields(delivery_type),
         ]
-        maintainer.append("Then add `needs-verification`. Keep the report open.")
+        maintainer.append("Once the fix is published, add `needs-verification`. Keep the report open.")
         reporter = "No action needed yet. Wait for the release."
         transition = "Released → reporter tests it."
     elif stage == "needs-verification":
