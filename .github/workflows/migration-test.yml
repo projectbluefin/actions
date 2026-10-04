@@ -97,9 +97,9 @@ permissions:
 jobs:
   migration-test:
     name: Migration — ${{ inputs.source_image }}
-    # NOTE: bump this SHA after merging projectbluefin/testsuite migration-target plumbing PR.
-    # The migration-target and extra-tags inputs require testsuite e2e.yml >= that merge.
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@f71d58d592b18d2722f7903e77dea8a3aa9d687f # main (includes migration-target + extra-tags inputs, PR #311; ghcr.io/ prefix fix, PR #412)
+    # Keep this pin identical to the testsuite e2e.yml pin in reusable-execute-release.yml
+    # (same `# v1` comment) so Renovate bumps all callers together.
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@db97ea65abe7ce032d2e54b14de79568f995acdc # v1
     permissions:
       contents: read
       packages: write
