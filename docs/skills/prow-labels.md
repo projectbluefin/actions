@@ -152,6 +152,12 @@ bounded 512-character excerpt; authorization and upstream still consume the
 original unmodified comment. Quoted feedback is not a delivered lifecycle
 notification marker.
 
+Keep bot text short and plain: **Status**, role headings with short action
+bullets, then **Reporter action**. Say what to do next, not why the system is
+built that way. Change display strings only; never change the payloads passed to
+`_action()` in `issue_status.py`. Those are the reporter notification dedup keys,
+and changing them re-pings every reporter with an open request.
+
 Renderer result schema:
 
 ```text

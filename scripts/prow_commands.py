@@ -21,10 +21,6 @@ from scripts.issue_policy import protected_labels
 from scripts.issue_status import prow_report
 
 PROW_CONFIG = ".github/prow.yaml"
-NEXT_ACCEPTANCE = (
-    "For implementation acceptance, review the issue scope and use GitHub's Labels "
-    "picker to select triage/accepted; Prow does not accept or assign work."
-)
 
 
 class ApiError(RuntimeError):
@@ -108,19 +104,16 @@ def expected_config(catalog):
 
 
 def supported_commands(catalog):
-    commands = ["/help or /prow help — list controls; no labels change"]
+    commands = ["/help — list commands"]
     for family in ("kind", "area"):
         values = family_values(catalog, family)
         if values:
-            suffix = "replace the existing kind" if family == "kind" else "add an area"
-            commands.append(f"/{family} VALUE — {suffix}; VALUE: {', '.join(values)}")
+            action = "set kind" if family == "kind" else "add area"
+            commands.append(f"/{family} VALUE — {action} ({', '.join(values)})")
             if family == "area":
-                commands.append("/remove-area VALUE — remove that catalog area only")
+                commands.append("/remove-area VALUE — remove area")
     if "hold" in catalog["labels"]:
-        commands.extend([
-            "/hold — pause this issue; record the reason and resumption condition",
-            "/hold cancel, /unhold or /remove-hold — explicitly withdraw hold only",
-        ])
+        commands.extend(["/hold — pause", "/hold cancel — resume"])
     return commands
 
 
@@ -130,7 +123,7 @@ def result(command, outcome, reason, catalog, *, next_steps=None):
         "outcome": outcome,
         "changes": {"add": [], "remove": []},
         "reason": reason,
-        "next_steps": next_steps or ["Post one supported command by itself in a new comment.", NEXT_ACCEPTANCE],
+        "next_steps": next_steps or ["Post one command per comment."],
         "supported_commands": supported_commands(catalog),
     }
 
@@ -150,16 +143,16 @@ def command_request(body):
 def plan_command(command, catalog, current):
     normalized = command.lower()
     if normalized in {"/help", "/prow help"}:
-        return result(command, "help", "These are maintainer-only issue controls. Help changes no labels.", catalog), None
+        return result(command, "help", "Maintainer commands for issues. Help changes nothing.", catalog), None
     if "\n" in command or "\r" in command:
-        return result(command, "invalid", "Use exactly one command-only line per comment; no code block, prose, or second command was executed.", catalog), None
+        return result(command, "invalid", "Post one command per comment, with nothing else. Nothing ran.", catalog), None
     words = normalized.split()
     base = words[0]
     if base in {"/kind", "/area", "/remove-area"}:
         family = "kind" if base == "/kind" else "area"
         values = family_values(catalog, family)
         if len(words) != 2 or words[1] not in {value.lower() for value in values}:
-            return result(command, "invalid", f"{base} requires exactly one catalog value. Allowed {family} values: {', '.join(values) or '(none)'}. Nothing was executed.", catalog), None
+            return result(command, "invalid", f"{base} needs one value: {', '.join(values) or '(none)'}. Nothing ran.", catalog), None
         canonical = next(value for value in values if value.lower() == words[1])
         label = family + "/" + canonical
         wanted = set(current)
@@ -169,12 +162,10 @@ def plan_command(command, catalog, current):
             if protected_kinds:
                 return result(
                     command, "denied",
-                    f"/kind would remove protected operational labels: {', '.join(protected_kinds)}. Nothing was executed.",
+                    f"/kind would remove protected labels: {', '.join(protected_kinds)}. Nothing ran.",
                     catalog,
                     next_steps=[
-                        f"Use GitHub's Labels picker to select {label} and deselect only other managed primary kinds. Leave {', '.join(protected_kinds)} and all independent labels unchanged.",
-                        "Only the Hive operator can confirm the live consumer configuration before any operational signal assignment or definition is changed.",
-                        NEXT_ACCEPTANCE,
+                        f"Use GitHub's Labels picker to select {label} and deselect only other managed primary kinds. Leave {', '.join(protected_kinds)} and independent labels as they are.",
                     ],
                 ), None
             wanted = {name for name in wanted if not name.lower().startswith("kind/")}
@@ -190,7 +181,7 @@ def plan_command(command, catalog, current):
         if not cancel:
             wanted.add("hold")
         return result(command, "applied", "", catalog), {"upstream_command": "/hold", "expected": sorted(wanted), "required": [] if cancel else ["hold"]}
-    return result(command, "invalid", "This command is not enabled. Prow cannot change lifecycle stages, acceptance, independent human gates, assignment, reviews, dispatch, or merge state. No command was executed.", catalog), None
+    return result(command, "invalid", "Command not available. Prow can only set kind/area or pause issues. Nothing ran.", catalog), None
 
 
 def validate_config(catalog, config):
@@ -220,40 +211,40 @@ def prepare(event, catalog, github, *, catalog_path=".github/issue-policy.json")
         return None
     state = {"number": event["issue"]["number"], "pull_request": "pull_request" in event["issue"], "execute": False, "result": result(command, "invalid", "", catalog)}
     if event.get("action") != "created":
-        state["result"] = result(command, "invalid", "Only newly created command comments execute; post a new command comment instead of editing an old one.", catalog)
+        state["result"] = result(command, "invalid", "Edited comments don't run. Post a new command comment.", catalog)
         return state
     actor = event.get("comment", {}).get("user") or {}
     sender = event.get("sender") or {}
     if actor.get("type") != "User" or actor.get("login") != sender.get("login") or actor.get("id") != sender.get("id"):
-        state["result"] = result(command, "denied", "The immutable commenter must be the human event sender; bot or mismatched actor commands are not authorized.", catalog)
+        state["result"] = result(command, "denied", "Only the person who posted the comment can run it. Bot commands don't run.", catalog)
         return state
     try:
         live_comment = github.request(f"issues/comments/{event['comment']['id']}")
         if (live_comment.get("user", {}).get("id") != actor.get("id")
                 or live_comment.get("body") != event["comment"].get("body")
                 or live_comment.get("updated_at") != event["comment"].get("updated_at")):
-            raise ValueError("The command comment changed since this event; post a new command comment")
+            raise ValueError("Comment changed since it was posted; post a new command comment")
         state["result"], execution = plan_command(command, catalog, set())
         if state["result"]["outcome"] == "help":
             return state
         permission = github.request(f"collaborators/{quote(actor['login'], safe='')}/permission").get("permission")
         if permission not in {"write", "maintain", "admin"}:
-            state["result"] = result(command, "denied", f"Current repository permission is {permission or 'unknown'}; write, maintain, or admin is required. Ask a maintainer to issue the command; comment prose or organization membership does not grant permission.", catalog)
+            state["result"] = result(command, "denied", f"You need write, maintain, or admin access (you have {permission or 'unknown'}). Ask a maintainer.", catalog)
             return state
         issue = github.request(f"issues/{state['number']}")
         if "pull_request" in event["issue"] or "pull_request" in issue:
             state["pull_request"] = True
-            state["result"] = result(command, "denied", "Prow label controls are issue-only. Use native pull-request labels, review, assignment, checks, and merge controls; Prow did not execute.", catalog)
+            state["result"] = result(command, "denied", "Prow label controls are issue-only. Use the PR's review and merge controls.", catalog)
             return state
         if issue.get("state") != "open":
-            raise ValueError("Prow controls require an open issue; a maintainer must reopen it using GitHub before issuing a new command")
+            raise ValueError("Commands only work on open issues; reopen it first")
         if execution is None:
             return state
         repo = github.request()
         ref = github.request(f"branches/{quote(repo['default_branch'], safe='')}")["commit"]["sha"]
         remote_catalog = github.file_json(catalog_path, ref)
         if remote_catalog != catalog:
-            raise ValueError("The checked-out catalog differs from the current trusted default branch; rerun with the default-branch caller catalog")
+            raise ValueError("Catalog differs from the default branch; rerun from the default branch")
         config = github.file_json(PROW_CONFIG, ref)
         validate_config(catalog, config)
         state["before"] = sorted(github.labels(f"issues/{state['number']}/labels"))
@@ -263,11 +254,11 @@ def prepare(event, catalog, github, *, catalog_path=".github/issue-policy.json")
         definitions = {name.lower() for name in github.labels("labels")}
         missing = [label for label in execution["required"] if label.lower() not in definitions]
         if missing:
-            raise ValueError(f"Repository label definitions are missing: {', '.join(missing)}. A maintainer must seed the caller catalog before retrying; nothing was executed")
+            raise ValueError(f"Label definitions are missing: {', '.join(missing)}. Add them, then retry")
         state.update(execution)
         state.update({"execute": True, "config": f"{catalog['repository']}:{PROW_CONFIG}@{ref}"})
     except (ApiError, ValueError, KeyError, TypeError) as error:
-        state["result"] = result(command, "invalid", f"Preflight refused execution: {error}.", catalog)
+        state["result"] = result(command, "invalid", f"Preflight refused: {error}.", catalog)
     return state
 
 
@@ -281,20 +272,20 @@ def observed_result(state, catalog, after, upstream_outcome):
     if upstream_outcome != "success" or not matches:
         report.update({
             "outcome": "invalid",
-            "reason": f"Upstream Prow step outcome: {upstream_outcome}. The observed labels {'match' if matches else 'do not match'} the requested postcondition; the changes listed are actual API observations, not assumed success.",
-            "next_steps": ["Review this workflow run and current labels. Lifecycle reconciliation still owns stage and classification repairs; resolve the error before posting a new command.", NEXT_ACCEPTANCE],
+            "reason": f"Prow step {upstream_outcome}. Labels {'match' if matches else 'do not match'} the request; changes below are actual API observations.",
+            "next_steps": ["Check the run and current labels before posting another command."],
         })
     else:
         command = report["command"].lower()
-        next_step = "Classification changed; implementation acceptance and assignment are unchanged."
+        next_step = "Labels updated. Acceptance and assignment did not change."
         if command == "/hold":
-            next_step = "Maintainer: explain why work is paused and what permits resuming. To withdraw only this pause, post /hold cancel in a new comment."
+            next_step = "Explain why it's paused. Post `/hold cancel` to resume."
         elif command in {"/hold cancel", "/unhold", "/remove-hold"}:
-            next_step = "The hold pause is withdrawn. blocked, human-only, needs-human and all independent gates remain as they were; resolve each through its owner. This does not accept, assign, or dispatch work."
+            next_step = "Hold removed. Other independent gates (`blocked`, `needs-human`) stay."
         report.update({
             "outcome": "applied",
-            "reason": "Upstream Prow completed; GitHub confirms the requested labels." if report["changes"]["add"] or report["changes"]["remove"] else "GitHub confirms the requested state was already present; no label transition occurred.",
-            "next_steps": [next_step, NEXT_ACCEPTANCE],
+            "reason": "GitHub confirms the labels." if report["changes"]["add"] or report["changes"]["remove"] else "Labels were already present.",
+            "next_steps": [next_step],
         })
     return report
 
@@ -306,13 +297,13 @@ def finish(state, catalog, github, upstream_outcome):
         except ApiError as error:
             state["result"].update({
                 "outcome": "invalid", "changes_unknown": True,
-                "reason": f"Upstream outcome: {upstream_outcome}; the post-execution GitHub read failed: {error}. Label changes are unknown; no success or no-mutation claim can be made.",
-                "next_steps": ["Check this run and GitHub's current labels before retrying. Do not infer acceptance, dispatch, or resumption from this failure.", NEXT_ACCEPTANCE],
+                "reason": f"Prow step {upstream_outcome}; could not read labels afterward: {error}. Changes unknown.",
+                "next_steps": ["Check the run and current labels before retrying."],
             })
     if state.get("pull_request"):
         state["result"]["pull_request"] = True
         state["result"]["next_steps"] = [
-            "Use native pull-request labels, assignment, requested reviewers, reviews, required checks, and merge controls. Prow issue commands do not alter them."
+            "Use the PR's normal review and merge controls; Prow doesn't change PRs."
         ]
     comment = prow_report(catalog, state["result"])
     response = github.request(f"issues/{state['number']}/comments", method="POST", data={"body": comment})

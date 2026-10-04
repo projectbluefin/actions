@@ -16,10 +16,10 @@ import re
 
 STAGES = {
     "needs-triage": "Waiting on Maintainer",
-    "triage/needs-information": "Waiting for information or a decision",
-    "triage/accepted": "Accepted for implementation",
-    "awaiting-release": "Fix awaiting delivery",
-    "needs-verification": "Published fix awaiting reporter verification",
+    "triage/needs-information": "Waiting for information",
+    "triage/accepted": "Accepted",
+    "awaiting-release": "Fixed, waiting for release",
+    "needs-verification": "Released, waiting for reporter to test",
 }
 NO_ACTION = "No action needed unless information is requested."
 
@@ -82,8 +82,8 @@ def _delivery_fields(delivery_type):
         else "`Package: <published application/package>` and `Version: <published version>`"
     )
     return [
-        f"Record {target} under **Delivery evidence** in the issue body.",
-        "Add `Fix revision: <40-hex-commit>`, `Release/build: https://<published-release-or-build>`, and `Verify: <specific update and reproduction steps>`.",
+        f"Add {target} under **Delivery evidence** in the issue body.",
+        "Also add `Fix revision: <commit>`, `Release/build: <URL>`, and `Verify: <steps>`.",
     ]
 
 
@@ -109,44 +109,34 @@ def _pr_report(record, facts, catalog):
     pr = facts.get("pull_request", {})
     roles = {}
     if pr.get("draft"):
-        status, actor = "Draft implementation", "PR contributor"
-        roles["PR contributor"] = [
-            "Finish the agreed changes and tests, then select GitHub's **Ready for review** control.",
-        ]
-        transition = "Draft → ready for native PR review."
+        status, actor = "Draft", "PR contributor"
+        roles["PR contributor"] = ["Finish the change and tests, then mark it **Ready for review**."]
+        transition = "Ready for review."
     elif pr.get("native_mergeable") == "CONFLICTING":
-        status, actor = "PR has merge conflicts", "PR contributor"
-        roles["PR contributor"] = [
-            "Resolve conflicts against the target branch and run the relevant tests.",
-            "Address outstanding review requests, then re-request review using GitHub's **Reviewers** picker.",
-        ]
-        transition = "Conflicts resolved → native review and required checks."
+        status, actor = "Merge conflicts", "PR contributor"
+        roles["PR contributor"] = ["Fix the conflicts, rerun tests, and re-request review."]
+        transition = "Review."
     elif pr.get("review_decision") == "CHANGES_REQUESTED":
-        status, actor = "Reviewer requested changes", "PR contributor"
-        roles["PR contributor"] = [
-            "Address the outstanding review findings and run the relevant tests.",
-            "Re-request review of the new head using GitHub's **Reviewers** picker.",
-        ]
-        transition = "Updated PR head → renewed native review."
+        status, actor = "Changes requested", "PR contributor"
+        roles["PR contributor"] = ["Address the feedback, rerun tests, and re-request review."]
+        transition = "Review."
     elif pr.get("review_decision") == "APPROVED":
-        status = "Native review approved; required checks and merge controls still apply"
-        actor = "PR contributor for failing checks; maintainer / native merge automation after checks pass"
-        roles["PR contributor"] = ["Resolve any failing required checks; approval alone is not a merge."]
-        roles["Maintainer / native merge automation"] = [
-            "Use the repository's native merge controls and merge queue after required checks pass; do not bypass them.",
-        ]
-        transition = "Required checks and native merge controls satisfied → merge, not proof of delivery."
+        status = "Approved, waiting on checks and merge"
+        actor = "PR contributor; maintainer"
+        roles["PR contributor"] = ["Fix any failing checks."]
+        roles["Maintainer"] = ["Merge through the merge queue after checks pass."]
+        transition = "Merge. Merging is not a release."
     else:
-        status, actor = "Awaiting native PR review", "Requested reviewers"
-        roles["Requested reviewers"] = ["Review the current PR head using GitHub's **Review changes** control."]
-        roles["PR contributor"] = ["Address requested changes and re-request review using GitHub's **Reviewers** picker."]
-        transition = "Native review → changes requested or approval; required checks and merge controls still apply."
+        status, actor = "Waiting for review", "Requested reviewers"
+        roles["Requested reviewers"] = ["Review this PR."]
+        roles["PR contributor"] = ["Address feedback and re-request review."]
+        transition = "Approval or requested changes."
     roles.setdefault("PR contributor", []).append(
-        "Link unresolved product reports with `Refs #NNN`, not `Closes #NNN`; preserve assignments, reviews, and merge-queue decisions."
+        "Use `Refs #NNN` for reports that still need a release, not `Closes #NNN`."
     )
     return {
         "comment": _render(catalog["comment_marker"], status, actor, transition, roles,
-                           "No action needed here; reply on the linked issue if it requests information or verification."),
+                           "No action needed here; reply on the linked issue if asked."),
         "notify_reporter": False,
         "notification_action": None,
     }
@@ -184,7 +174,7 @@ def status_report(record, facts, catalog, context):
     reporter = NO_ACTION
     reporter_steps = []
     notification_action = None
-    transition = "Maintainer review → `triage/accepted`, `triage/needs-information`, or closure with a reason."
+    transition = "Maintainer accepts, asks for information, or closes."
     blockers = labels & {"blocked", "hold"}
     independent_gate = "needs-human" in labels and not context.get("automatic_gate", False)
     native_gates = set(context.get("active_gate_labels", labels & set(catalog.get("gate_labels", [])))) - {"blocked", "hold", "needs-human", "human-only"}
@@ -194,82 +184,74 @@ def status_report(record, facts, catalog, context):
     gated = bool(blockers or independent_gate or native_gates or kind_missing or context.get("kind_ambiguous") or not approved)
 
     if kind_missing or context.get("kind_ambiguous"):
-        maintainer.append(
-            "Use GitHub's **Labels** picker to select exactly one catalog `kind/*` label before scheduling; remove conflicting kind labels."
-        )
+        maintainer.append("Add exactly one `kind/*` label.")
     if stale:
-        maintainer.append(
-            "The current scope lacks valid human acceptance or changed after approval. Review the body scope and completion criteria first, then use GitHub's **Labels** picker to select `triage/accepted` again for fresh acceptance."
-        )
+        maintainer.append("Acceptance is out of date. Review the issue, then add `triage/accepted` again.")
     if blockers:
         status += " — " + " / ".join(sorted(blockers))
         actor = "Maintainer / blocker or hold owner"
         roles["Blocker / hold owner"] = [
-            "Resolve the recorded dependency or hold reason; the owner then removes "
+            "Resolve the blocker, then remove "
             + " and ".join(f"`{label}`" for label in sorted(blockers))
-            + " using GitHub's **Labels** picker before new implementation dispatch.",
-            "Preserve existing assignments, branches, PRs, reviews, and merge-queue decisions.",
+            + ".",
         ]
     if native_gates and not context.get("close"):
         gate_names = " and ".join(f"`{label}`" for label in sorted(native_gates))
         roles["Human gate owner"] = [
-            f"Resolve the recorded question or human decision behind {gate_names} and update the agreed scope and completion criteria in the issue body.",
-            f"The gate's owner then explicitly removes {gate_names} using GitHub's **Labels** picker only when its reason is resolved; do not remove a gate merely to dispatch work.",
-            "A maintainer must record any fresh implementation acceptance with `triage/accepted`; acceptance does not clear native human gates or assign a contributor.",
+            f"Answer the question or decision behind {gate_names}, then remove it.",
+            "Acceptance does not remove this gate or assign anyone.",
         ]
     if human_only:
-        maintainer.append(
-            "Preserve the reporter's `human-only` preference: use human interaction and human contributors, not machine analysis or agent implementation."
-        )
+        maintainer.append("Reporter asked for humans only: no AI analysis or agent work.")
 
     if tracking:
-        status = "Standing tracker — not an implementation assignment" + (
+        status = "Tracker, not a work item" + (
             " — " + " / ".join(sorted(blockers)) if blockers else ""
         )
         maintainer.extend([
-            "Maintain this tracker and link actionable child issues in its body or comments.",
-            "Triage and assign each child issue separately; do not dispatch this tracker as an implementation task.",
+            "Keep this tracker updated and link child issues.",
+            "Accept and assign child issues separately.",
         ])
-        transition = "Tracker remains open; actionable child issues follow their own lifecycle."
+        transition = "Tracker stays open; child issues move separately."
     elif context.get("close"):
         if stage != "needs-verification" or not complete_evidence:
             raise ValueError("Confirmed closure requires a verification stage and delivery evidence")
-        status, actor = "Reporter confirmed the published fix", "Lifecycle automation"
-        roles["Lifecycle automation"] = ["Close this report as completed after the recorded reporter confirmation."]
-        maintainer.append("Retain the delivery evidence and the reporter's tested version in this issue.")
-        transition = "Reporter confirmation → closed as completed."
-        reporter = "No action needed; reopen or file a linked report if the problem returns."
+        status, actor = "Reporter confirmed the fix", "Lifecycle automation"
+        roles["Lifecycle automation"] = ["Close as completed."]
+        maintainer.append("Keep the delivery evidence in this issue.")
+        transition = "Closed as completed."
+        reporter = "No action needed; reopen if the problem returns."
     elif stage == "needs-triage":
         maintainer.extend([
-            "Review, use GitHub's **Labels** picker to add `triage/accepted` if you approve implementation.",
-            "Do not remove `needs-triage` or `needs-human` to signal approval: the bot restores them until acceptance is recorded.",
-            "Acceptance does not assign a contributor.",
-            f"If a specific question prevents acceptance, ask it and select `triage/needs-information`; if declining or marking a duplicate, close with the reason. `/hive approve` is not a {display} lifecycle acceptance action.",
+            "To accept, add `triage/accepted`.",
+            "Removing `needs-triage` or `needs-human` does not accept it; the bot adds them back.",
+            "Accepting does not assign anyone.",
+            f"Need more information? Ask, then add `triage/needs-information`. To decline, close with a reason. `/hive approve` does not accept {display} issues.",
         ])
     elif stage == "triage/needs-information":
         if context.get("requester") == "maintainer" or record.get("user", {}).get("type") != "User":
-            status = "Waiting on Maintainer decision" + (" — blocked / held" if blockers else "")
+            status = "Waiting on maintainer decision" + (" — blocked / held" if blockers else "")
             maintainer.extend([
-                "Resolve the recorded decision and update the agreed scope and completion criteria in the issue body first.",
-                "Remove `needs-decision` in GitHub's **Labels** picker only after its reason is resolved, then select `triage/accepted` to accept the updated scope."
+                "Make the decision and update the issue body.",
+                "Then remove `needs-decision` and add `triage/accepted`."
                 if "needs-decision" in labels else
-                "After the missing fact or decision is resolved, use GitHub's **Labels** picker to select `triage/accepted` for the agreed scope.",
-                "Removing a waiting label or posting `/hive approve` does not record lifecycle acceptance.",
+                "Then add `triage/accepted`.",
+                "Removing labels or posting `/hive approve` does not accept the issue.",
             ])
             if missing:
-                maintainer.append("Clarify who can supply the missing fields: " + ", ".join(f"**{field}**" for field in missing) + ".")
-            transition = "Maintainer resolves decision and records fresh acceptance → `triage/accepted`."
+                maintainer.append("Say who can provide: " + ", ".join(f"**{field}**" for field in missing) + ".")
+            transition = "Decision made → `triage/accepted`."
         elif missing:
             actor = "Reporter"
-            reporter = "Provide the requested information in an ordinary reply or the corresponding issue form fields."
-            reporter_steps = [f"Supply **{field}**." for field in missing]
+            reporter = "Reply with the missing information or update the issue form."
+            reporter_steps = [f"Add **{field}**." for field in missing]
             if delivery_type == "image" and "image details" in missing:
-                reporter_steps.append("Run `bootc status` and paste the complete output, or explain that the machine cannot boot, the command fails, or it is not applicable.")
+                reporter_steps.append("Run `bootc status` and paste the complete output, or say why you can't.")
             elif delivery_type == "release" and any("version" in field.lower() or "application" in field.lower() or "package" in field.lower() for field in missing):
-                reporter_steps.append(f"Include the installed {display} package/version and installation source; do not substitute an unrelated image digest.")
-            maintainer.append("Reassess the reporter's ordinary reply or body edit; acceptance still requires a fresh maintainer decision in GitHub's **Labels** picker.")
+                reporter_steps.append(f"Include your installed {display} version and how you installed it.")
+            maintainer.append("Review the reply, then decide whether to accept.")
             notification_action = _action("information-fields", sorted(set(missing)))
-            transition = "Reporter reply or field edit → `needs-triage` for maintainer reassessment, not automatic acceptance."
+            transition = "Reporter replies → maintainer review."
         else:
             request = _request(record, facts, marker, context.get("request_event"))
             if request:
@@ -278,65 +260,62 @@ def status_report(record, facts, catalog, context):
                     f"[the maintainer's request]({request['html_url']})"
                     if request.get("html_url") else f"the maintainer's comment #{request['id']}"
                 )
-                reporter = f"Answer {reference} in an ordinary reply; no label access or slash command is needed."
-                maintainer.append("Reassess the reporter's reply before recording any fresh implementation acceptance.")
+                reporter = f"Answer {reference} by replying here."
+                maintainer.append("Review the reply before accepting.")
                 notification_action = _action("information-comment", request.get("id") or request.get("html_url"))
-                transition = "Reporter reply → `needs-triage` for maintainer reassessment."
+                transition = "Reporter replies → maintainer review."
             else:
-                maintainer.append("Select `triage/needs-information`, then post the exact request in a new comment and explicitly @mention the reporter only if they must answer; otherwise name the responsible maintainer.")
-                reporter = "No action needed until a maintainer states the exact request and names who should answer."
-                transition = "Explicit maintainer request → the named person's reply, then maintainer reassessment."
+                maintainer.append("Post your question. @mention the reporter only if they need to answer.")
+                reporter = "No action needed until a maintainer asks you a question."
+                transition = "Question → reply → maintainer review."
     elif stage == "triage/accepted":
         if not approved:
-            status = "Implementation acceptance is not valid for the current scope"
+            status = "Acceptance is out of date"
         if independent_gate and not human_only:
-            maintainer.append("A human or app added an independent `needs-human` gate. Resolve its recorded reason, then its owner explicitly removes that label using GitHub's **Labels** picker only when implementation is allowed; the bot will not clear it.")
+            maintainer.append("Someone else added `needs-human`. They remove it when resolved; the bot will not.")
         assignees = record.get("assignees", [])
         if not assignees or human_only:
             maintainer.append(
-                "Use GitHub's **Assignees** picker to assign an available "
+                "Assign a "
                 + ("human contributor" if human_only else "contributor")
-                + ", or explicitly route the accepted scope to the existing "
-                + ("human PR owner" if human_only else "PR owner")
-                + ". Acceptance and a merged reference/documentation PR do not assign anyone."
+                + ", or route this to the existing PR owner."
             )
         contributor_role = "Human contributor" if human_only else "Assigned contributor"
         if gated:
-            maintainer.append("Resolve the listed acceptance, classification, blocker, or independent routing gates before new implementation dispatch; preserve ongoing work.")
-            transition = "Maintainer resolves gates and routes accepted scope → assigned implementation, not delivery."
+            maintainer.append("Clear the listed blockers before starting work.")
+            transition = "Blockers cleared → assign."
         elif assignees:
             actor = contributor_role + " (" + ", ".join("@" + assignee["login"] for assignee in assignees) + ")"
             if human_only:
                 actor = "Maintainer to confirm human assignment; then human contributor"
             roles[contributor_role] = [
-                f"Implement only the accepted scope, run its relevant tests, and open or update the existing linked PR with `Refs #{record['number']}`.",
+                f"Implement the accepted scope, test it, and open a PR with `Refs #{record['number']}`.",
             ]
-            roles["Reviewers"] = ["Review the current PR head using GitHub's native **Review changes** control; required checks and merge controls still apply."]
-            transition = "Assigned implementation → native PR review and merge; only a maintainer's actual-fix assessment selects `awaiting-release`."
+            roles["Reviewers"] = ["Review the PR."]
+            transition = "PR review and merge; a maintainer adds `awaiting-release` after the fix merges."
         else:
-            transition = "Maintainer assignment or explicit routing → implementation of the accepted scope."
-        maintainer.append("After verifying that the actual fix merged, select `awaiting-release` in GitHub's **Labels** picker; a merged `Refs` link alone is not proof of a fix or delivery.")
+            transition = "Assign someone → implementation."
+        maintainer.append("After the actual fix merges, add `awaiting-release`.")
     elif stage == "awaiting-release":
-        status = "Fix awaiting image delivery" if delivery_type == "image" else f"Fix awaiting {display} application-release delivery"
+        status = "Fixed, waiting for image release" if delivery_type == "image" else f"Fixed, waiting for {display} release"
         if blockers:
             status += " — " + " / ".join(sorted(blockers))
         actor = "Maintainer / release owner"
         roles["Release owner"] = [
-            "Verify that the actual fix merged, then track consumption and publication in the reporter's affected "
-            + ("image/channel." if delivery_type == "image" else "application installation/channel, including required image-installed helpers."),
+            "Confirm the fix is published to the affected "
+            + ("image." if delivery_type == "image" else "app install, including any image-installed helpers."),
             *_delivery_fields(delivery_type),
-            "Confirm publication actually reached that installation; a green run with publication skipped is not delivery.",
         ]
-        maintainer.append("After checking the recorded delivery evidence, select `needs-verification` using GitHub's **Labels** picker; do not close an unresolved product report at merge.")
-        reporter = "No update or verification requested yet; a merged change is not proof the fix reached your installation."
-        transition = "Verified publication and authorized `needs-verification` selection → reporter verification."
+        maintainer.append("Then add `needs-verification`. Keep the report open.")
+        reporter = "No action needed yet. Wait for the release."
+        transition = "Released → reporter tests it."
     elif stage == "needs-verification":
         if not complete_evidence:
-            status = "Verification request lacks complete delivery evidence"
+            status = "Missing delivery evidence"
             maintainer.extend(_delivery_fields(delivery_type))
-            maintainer.append("Verify actual publication, then select `needs-verification` using GitHub's **Labels** picker; do not request an update or close on missing evidence.")
-            reporter = "No update or verification requested until a maintainer records complete delivery evidence."
-            transition = "Complete authorized delivery evidence → reporter verification request."
+            maintainer.append("Add the evidence, then add `needs-verification`.")
+            reporter = "No action needed yet."
+            transition = "Evidence added → reporter tests."
         else:
             actor = "Reporter"
             target = (
@@ -344,23 +323,23 @@ def status_report(record, facts, catalog, context):
                 if delivery_type == "image"
                 else f"{display} package `{evidence['package']}` version `{evidence['version']}`"
             )
-            reporter = "Reply `Confirmed fixed` with the version tested, or `Still broken` with what you observed."
+            reporter = "Reply `Confirmed fixed` with the version you tested, or `Still broken` with what you saw."
             reporter_steps = [
-                f"Update to {target} from [this release/build]({evidence['url']}); reboot if required.",
+                f"Update to {target} from [this release]({evidence['url']}); reboot if needed.",
                 evidence["verify"],
             ]
             if delivery_type == "release":
-                reporter_steps.append("Follow the recorded installation steps, including any required image-installed helper update.")
-            maintainer.append("Retain the delivery evidence; review the reporter's result. Do not treat an unrelated reply or PR merge as confirmation.")
+                reporter_steps.append("Follow the install steps, including any image-installed helper update.")
+            maintainer.append("Review the reporter's reply.")
             # The writer anchors instructions to the authorized request event.
             # Reformatting its Verify text must not create a second notification.
             notification_action = _action("verify-delivery", {key: evidence[key] for key in sorted(required - {"verify"})})
-            transition = "Reporter `Confirmed fixed` → completed closure; `Still broken` → `needs-triage`."
+            transition = "`Confirmed fixed` → closed; `Still broken` → back to triage."
 
     if native_gates and not context.get("close"):
         gate_names = " / ".join(f"`{label}`" for label in sorted(native_gates))
-        status += f" — human gate: {gate_names}"
-        actor += f"; owner of {gate_names} for the recorded human gate"
+        status += f" — waiting on {gate_names}"
+        actor += f"; owner of {gate_names}"
 
     links = [
         f"[PR #{pr['number']}]({pr['html_url']})"
@@ -368,7 +347,7 @@ def status_report(record, facts, catalog, context):
         if not pr.get("merged_at") and pr.get("state") == "open"
     ]
     if links:
-        maintainer.append("Preserve existing work: " + ", ".join(links) + "; retain its assignees, branches, reviews, and merge-queue decisions. Route through the existing work owner; do not start a duplicate implementation.")
+        maintainer.append("Existing work: " + ", ".join(links) + ". Don't start a duplicate.")
     notify = bool(notification_action and record.get("user", {}).get("type") == "User")
     if stage == "needs-triage" and not tracking:
         transition = ""
@@ -392,7 +371,7 @@ def _code_span(value):
 def prow_report(catalog, result):
     """Format actual command outcomes, including recorded partial API changes."""
     outcome = result["outcome"]
-    titles = {"applied": "Prow command applied", "denied": "Prow command denied", "invalid": "Prow command invalid or not completed", "help": "Prow command help"}
+    titles = {"applied": "Command applied", "denied": "Command denied", "invalid": "Command not completed", "help": "Command help"}
     if outcome not in titles:
         raise ValueError("Unsupported Prow outcome")
     changes = result.get("changes") or {}
@@ -403,29 +382,26 @@ def prow_report(catalog, result):
     if result.get("reason"):
         steps.append("Result: " + result["reason"])
     if added:
-        steps.append("Confirmed added: " + ", ".join(_code_span(label) for label in added) + ".")
+        steps.append("Added: " + ", ".join(_code_span(label) for label in added) + ".")
     if removed:
-        steps.append("Confirmed removed: " + ", ".join(_code_span(label) for label in removed) + ".")
+        steps.append("Removed: " + ", ".join(_code_span(label) for label in removed) + ".")
     if result.get("changes_unknown"):
-        steps.append("The final label state could not be observed; no complete result is confirmed. Inspect GitHub's **Labels** picker before retrying.")
+        steps.append("Could not confirm the final labels. Check the issue labels before retrying.")
     elif not added and not removed:
         steps.append("No labels changed.")
     elif outcome != "applied":
-        steps.append("Only the confirmed changes above occurred; the requested command did not complete. Inspect GitHub's **Labels** picker before retrying.")
+        steps.append("Only the changes above happened. Check the labels before retrying.")
     steps.extend(result.get("next_steps") or [])
     if result.get("supported_commands"):
-        steps.append("Enabled commands: " + ", ".join(_code_span(command) for command in result["supported_commands"]) + ".")
+        steps.append("Commands: " + ", ".join(_code_span(command) for command in result["supported_commands"]) + ".")
     if result.get("pull_request"):
-        steps.append("Prow commands are issue-only here. Use GitHub's native **Ready for review**, **Reviewers**, and **Review changes** controls on this PR; required checks and merge controls still apply.")
+        steps.append("Commands only work on issues. Use the PR's normal review and merge controls.")
     else:
-        steps.extend([
-            "Use only the enabled maintainer commands for descriptive labels or negative hold controls; choose catalog labels in GitHub's **Labels** picker and keep exactly one `kind/*` label.",
-            "Implementation acceptance still requires a trusted human to select `triage/accepted` in GitHub's **Labels** picker; Prow does not assign work, clear independent human gates, approve reviews, or merge.",
-        ])
+        steps.append("Prow only sets kind/area or pauses issues. To accept work, add `triage/accepted`.")
     return _render(
         catalog["comment_marker"].replace(" -->", ":prow -->"),
-        ("Prow command outcome unconfirmed" if result.get("changes_unknown") else titles[outcome]) + f" — {catalog['display_name']}",
-        "Maintainer" if outcome != "help" else "Maintainer seeking command help",
-        "Descriptive labels or negative holds only; lifecycle acceptance, native review, delivery, and closure are unchanged.",
+        ("Command result unconfirmed" if result.get("changes_unknown") else titles[outcome]) + f" — {catalog['display_name']}",
+        "Maintainer",
+        "",
         {"Maintainer": steps}, NO_ACTION,
     )
