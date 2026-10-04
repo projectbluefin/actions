@@ -220,6 +220,13 @@ def approved_scope(timeline, facts):
         reset and event_order(reset) > event_order(event) for reset in resets
     )
 
+def human_only_waived(timeline, facts):
+    """A trusted Labels-picker removal outranks the intake body preference until re-added."""
+    removal = latest_event([e for e in timeline if trusted_event(e, facts)], "human-only", "unlabeled")
+    added = latest_event(timeline, "human-only")
+    return bool(removal) and (not added or event_order(removal) > event_order(added))
+
+
 
 def delivery_evidence(body, catalog):
     text = headings(body).get("delivery evidence", "")
@@ -316,16 +323,20 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
     body = record.get("body") or ""
     fields = headings(body)
     preference = fields.get("automation preference", "").strip()
-    human_only = (
-        "human-only" in current
-        or preference == "Human interaction only"
+    requested = (
+        preference == "Human interaction only"
         or bool(re.search(r"<!--\s*automation-preference:\s*human-only\s*-->", body))
     )
     if not preference or preference.lower() in EMPTY:
-        human_only |= bool(
+        requested |= bool(
             re.search(r"<!--\s*[\w-]*queue-preference:\s*3-human-queue\s*-->", body)
         )
-    human_only |= "3-human-queue" in current
+    # The body seeds the preference at intake; afterwards the label is the control.
+    human_only = (
+        "human-only" in current
+        or "3-human-queue" in current
+        or (requested and not human_only_waived(facts.get("timeline", []), facts))
+    )
     if migrate and "needs-human" in current and not (current & stages):
         human_only = True
     tracking = record["number"] in catalog["standing_issues"] or bool(

@@ -161,6 +161,73 @@ def test_decision_before_acceptance_still_waits_for_information():
     assert "needs-human" in final_labels(record, result)
 
 
+
+
+def test_trusted_removal_of_human_only_waives_body_preference():
+    body = (
+        "### Automation preference\nHuman interaction only\n"
+        "### What happened?\nBug\n"
+        "### What did you expect?\nFix\n"
+        "### Steps to reproduce\n1. Run\n"
+        "### Image details\nbluefin:stable\n"
+    )
+    record = issue(
+        ("triage/accepted", "needs-human", "kind/bug"),
+        body=body,
+    )
+    data = facts(
+        (
+            event("needs-human", "github-actions[bot]", "Bot", time=T0),
+            event("human-only", "github-actions[bot]", "Bot", time=T0),
+            event("triage/accepted", "maintainer", "User", time=T1),
+            event("human-only", "maintainer", "User", time=T2, action="unlabeled"),
+        )
+    )
+    result = policy.plan(record, data, CATALOG)
+    # Acceptance stands, human-only is waived, and the automatic needs-human gate releases
+    assert final_labels(record, result) == {"triage/accepted", "kind/bug"}
+
+
+def test_untrusted_removal_of_human_only_does_not_waive_preference():
+    body = (
+        "### Automation preference\nHuman interaction only\n"
+        "### What happened?\nBug\n"
+        "### What did you expect?\nFix\n"
+        "### Steps to reproduce\n1. Run\n"
+        "### Image details\nbluefin:stable\n"
+    )
+    record = issue(
+        ("triage/accepted", "needs-human", "kind/bug"),
+        body=body,
+    )
+    data = facts(
+        (
+            event("needs-human", "github-actions[bot]", "Bot", time=T0),
+            event("human-only", "github-actions[bot]", "Bot", time=T0),
+            event("triage/accepted", "maintainer", "User", time=T1),
+            event("human-only", "outsider", "User", time=T2, action="unlabeled"),
+        )
+    )
+    result = policy.plan(record, data, CATALOG)
+    # Outsider removal is ignored; body preference restores human-only and keeps needs-human
+    assert final_labels(record, result) == {"triage/accepted", "kind/bug", "human-only", "needs-human"}
+
+
+def test_re_adding_human_only_after_trusted_removal_restores_gate():
+    record = issue(
+        ("triage/accepted", "needs-human", "kind/bug", "human-only"),
+        body="### Automation preference\nHuman interaction only\n### What happened?\nBug",
+    )
+    data = facts(
+        (
+            event("human-only", "maintainer", "User", time=T1, action="unlabeled"),
+            event("human-only", "maintainer", "User", time=T2, action="labeled"),
+            event("triage/accepted", "maintainer", "User", time=T2),
+        )
+    )
+    result = policy.plan(record, data, CATALOG)
+    assert "human-only" in final_labels(record, result)
+    assert "needs-human" in final_labels(record, result)
 def test_edited_spec_revokes_acceptance_without_reassigning_work():
     record, data = accepted()
     record["assignees"] = [{"login": "contributor"}]
