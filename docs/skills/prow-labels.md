@@ -80,9 +80,10 @@ This single source derives both Prow values and the wrapper whitelist/cardinalit
 }
 ```
 
-List **all and only** suffixes from the caller's `labels` entries under `kind/*`
-and `area/*`; omit `area` if there are none. Values must be lower-case command
-tokens. Kind is exclusive, area is not. No extra plugins/configuration are allowed.
+List **all and only managed** suffixes from the caller's `labels` entries under
+`kind/*` and `area/*`; omit `area` if there are none. Catalog `protected_labels`
+are unmanaged and never command values. Values must be lower-case command tokens.
+Kind is exclusive, area is not. No extra plugins/configuration are allowed.
 Label names must be unique case-insensitively; lifecycle/retired stages cannot
 occupy `kind/*` or `area/*`. Include `hold` in the catalog to enable hold controls.
 Seed actual repository label definitions from the reviewed caller catalog before
@@ -104,7 +105,7 @@ no rewritten/fabricated event is passed to upstream.
 
 | Control | Actual effect |
 | --- | --- |
-| `/kind VALUE` | Upstream replaces existing `kind/*` with the one catalog kind |
+| `/kind VALUE` | Upstream replaces existing `kind/*` with one managed catalog kind; refused if a protected operational `kind/*` is present |
 | `/area VALUE` | Upstream adds one catalog area; existing areas remain |
 | `/remove-area VALUE` | Upstream removes that catalog area only |
 | `/hold` | Upstream adds literal `hold`; maintainer records why and the condition to resume |
@@ -119,6 +120,16 @@ The live comment's actor, body, and revision must still match the immutable even
 Help is available without label permission. Bots and mismatched actors cannot
 execute controls. Label controls apply to **open issues only**; PR attempts are
 denied with native PR instructions.
+
+Upstream exclusivity removes **every** other `kind/*`, not just configured values.
+Before invoking it, preflight reads current labels and denies `/kind` if it would
+remove a catalog-protected operational kind, including case variants. This is a
+no-execution denial, not an acceptable partial mutation. Use GitHub's **Labels**
+picker to select the requested managed kind and deselect only other managed
+primary kinds; leave protected operational signals and independent labels
+unchanged. Confirm any operational signal change with its Hive operator first.
+For example, ordinary debt can use `/kind debt`/`kind/debt` only when no protected
+kind is present; `/kind tech-debt` cannot assign protected `kind/tech-debt`.
 
 There is deliberately no `/remove-kind`: an open issue requires exactly one kind.
 Multiple kinds in one comment are rejected even though upstream accepts them.

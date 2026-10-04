@@ -17,6 +17,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+from scripts.issue_policy import protected_labels
 from scripts.issue_status import prow_report
 
 PROW_CONFIG = ".github/prow.yaml"
@@ -87,7 +88,8 @@ class GitHub:
 
 def family_values(catalog, family):
     prefix = family + "/"
-    return sorted(name[len(prefix):] for name in catalog["labels"] if name.startswith(prefix))
+    unmanaged = protected_labels(catalog)
+    return sorted(name[len(prefix):] for name in catalog["labels"] if name.startswith(prefix) and name.lower() not in unmanaged)
 
 
 def expected_config(catalog):
@@ -162,6 +164,19 @@ def plan_command(command, catalog, current):
         label = family + "/" + canonical
         wanted = set(current)
         if base == "/kind":
+            unmanaged = protected_labels(catalog)
+            protected_kinds = sorted(name for name in current if name.lower().startswith("kind/") and name.lower() in unmanaged)
+            if protected_kinds:
+                return result(
+                    command, "denied",
+                    f"/kind would remove protected operational labels: {', '.join(protected_kinds)}. Nothing was executed.",
+                    catalog,
+                    next_steps=[
+                        f"Use GitHub's Labels picker to select {label} and deselect only other managed primary kinds. Leave {', '.join(protected_kinds)} and all independent labels unchanged.",
+                        "Only the Hive operator can confirm the live consumer configuration before any operational signal assignment or definition is changed.",
+                        NEXT_ACCEPTANCE,
+                    ],
+                ), None
             wanted = {name for name in wanted if not name.lower().startswith("kind/")}
             wanted.add(label)
         elif base == "/area":
@@ -243,6 +258,8 @@ def prepare(event, catalog, github, *, catalog_path=".github/issue-policy.json")
         validate_config(catalog, config)
         state["before"] = sorted(github.labels(f"issues/{state['number']}/labels"))
         state["result"], execution = plan_command(command, catalog, set(state["before"]))
+        if execution is None:
+            return state
         definitions = {name.lower() for name in github.labels("labels")}
         missing = [label for label in execution["required"] if label.lower() not in definitions]
         if missing:

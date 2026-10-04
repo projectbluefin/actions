@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlsplit
 
 # Never import Python from the candidate checkout, including when invoked by path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scripts.issue_policy import validate_catalog
+from scripts.issue_policy import protected_labels, validate_catalog
 from scripts.prow_commands import validate_config
 
 try:
@@ -83,19 +83,21 @@ def check_intake(forms, catalog):
     if not forms:
         return [".github/ISSUE_TEMPLATE: add native issue forms with a required Automation preference field"]
     bug_headings = []
+    unmanaged = protected_labels(catalog)
     feature_headings = []
     for path, form in forms:
         labels = form.get("labels", [])
         if not isinstance(labels, list) or any(not isinstance(label, str) for label in labels):
             errors.append(f"{path}: labels must be a list of catalog label names")
             continue
-        kinds = [label for label in labels if label.startswith("kind/")]
+        kinds = [label for label in labels if label.startswith("kind/") and label.lower() not in unmanaged]
         if len(kinds) != 1 or kinds[0] not in catalog["labels"]:
-            errors.append(f"{path}: select exactly one catalog kind/* label; intake cannot infer acceptance")
+            errors.append(f"{path}: select exactly one managed catalog kind/* label; intake cannot infer acceptance")
         unknown = set(labels) - set(catalog["stages"]) - set(catalog["labels"])
         forbidden = set(labels) & (set(catalog["retired_stages"]) | (set(catalog["stages"]) - {"needs-triage"}))
+        forbidden.update(label for label in labels if label.lower() in unmanaged)
         if unknown or forbidden:
-            errors.append(f"{path}: remove unknown/legacy/approval or delivery intake labels: {sorted(unknown | forbidden)}")
+            errors.append(f"{path}: remove unknown/legacy/approval, operational or delivery intake labels: {sorted(unknown | forbidden)}")
         body = form.get("body")
         if not isinstance(body, list) or any(not isinstance(field, dict) for field in body):
             errors.append(f"{path}: body must contain native form fields")

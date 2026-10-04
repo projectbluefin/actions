@@ -31,6 +31,11 @@ class StaleRecord(RuntimeError):
     """A human changed this record; skip it rather than overwrite that work."""
 
 
+def protected_labels(catalog):
+    """Exact operator-owned names, compared like GitHub labels, never managed here."""
+    return {name.lower() for name in catalog.get("protected_labels", [])}
+
+
 def validate_catalog(catalog, repository=None):
     """Bind configuration to a single repository before reading or writing records."""
     repo = catalog.get("repository", "")
@@ -55,19 +60,25 @@ def validate_catalog(catalog, repository=None):
             raise ValueError("Invalid catalog label definition")
         if not re.fullmatch(r"[0-9a-fA-F]{6}", definition["color"]) or not isinstance(definition["description"], str):
             raise ValueError("Invalid label color or description")
+    signals = catalog.get("protected_labels", [])
+    if not isinstance(signals, list) or any(not isinstance(name, str) or not name for name in signals):
+        raise ValueError("protected_labels must explicitly list independent operational label names")
+    unmanaged = protected_labels(catalog)
+    if len(unmanaged) != len(signals) or unmanaged & {name.lower() for name in catalog["stages"] | labels}:
+        raise ValueError("protected_labels must be unique and outside managed catalog definitions")
     retired = catalog.get("retired_stages")
-    if not isinstance(retired, list) or any(not isinstance(n, str) or not n for n in retired) or set(retired) & set(catalog["stages"] | labels):
-        raise ValueError("Retired labels must not overlap canonical definitions")
+    if not isinstance(retired, list) or any(not isinstance(n, str) or not n for n in retired) or set(retired) & set(catalog["stages"] | labels) or any(name.lower() in unmanaged for name in retired):
+        raise ValueError("Retired labels must not overlap canonical definitions or protected operational labels")
     if not isinstance(catalog.get("standing_issues"), list) or any(type(n) is not int or n < 1 for n in catalog["standing_issues"]):
         raise ValueError("Invalid standing issue numbers")
     aliases = catalog.get("label_aliases")
     if not isinstance(aliases, dict):
         raise ValueError("Catalog requires explicit label_aliases")
-    protected = STAGES | {"blocked", "hold", "needs-human", "human-only", "needs-kind", "tracking", "lgtm", "automerge"}
+    protected = STAGES | {"blocked", "hold", "needs-human", "human-only", "needs-kind", "tracking", "lgtm", "automerge"} | unmanaged
     for old, new in aliases.items():
-        if not isinstance(old, str) or not old or old in protected or old.startswith(("agent/", "hive/")) or old in set(catalog["stages"] | labels):
+        if not isinstance(old, str) or not old or old.lower() in protected or old.startswith(("agent/", "hive/")) or old in set(catalog["stages"] | labels):
             raise ValueError("Alias cannot retire a canonical or independent operational label")
-        if new is not None and (new not in labels or new in protected or not new.startswith(("kind/", "area/"))):
+        if new is not None and (new not in labels or new.lower() in protected or not new.startswith(("kind/", "area/"))):
             raise ValueError("Aliases may only map descriptive labels, never grant a lifecycle stage or gate")
     sources = catalog.get("kind_sources", {})
     if not isinstance(sources, dict) or any(
@@ -111,7 +122,7 @@ def validate_catalog(catalog, repository=None):
             ):
                 raise ValueError("Intake selectors must be bounded nonempty literal strings")
         if not isinstance(targets, list) or not 1 <= len(targets) <= 8 or any(
-            not isinstance(name, str) or name not in labels or name in protected_intake
+            not isinstance(name, str) or name not in labels or name in protected_intake or name.lower() in unmanaged
             or name.startswith(("needs-", "hive/", "queue/", "status/")) for name in targets
         ):
             raise ValueError("Intake targets must be catalog metadata, never stages, consent, dispatch or independent control labels")
@@ -271,16 +282,19 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
     alias_remove = original & set(aliases)
     alias_add = {aliases[name] for name in alias_remove if aliases[name] is not None}
     current = (original - alias_remove) | alias_add
+    unmanaged = protected_labels(catalog)
+    classification = {name for name in current if name.lower() not in unmanaged}
     intake = set()
     if record.get("state") != "closed" and "pull_request" not in record:
         intake = _intake_labels(record, catalog)
-        if any(name.startswith("kind/") for name in current):
+        if any(name.startswith("kind/") for name in classification):
             intake = {name for name in intake if not name.startswith("kind/")}
         current.update(intake)
+        classification.update(intake)
     marker = catalog["comment_marker"]
     stages, retired = set(catalog["stages"]), set(catalog["retired_stages"])
     if record.get("state") == "closed" or "pull_request" in record:
-        if not any(name.startswith("kind/") and name in catalog["labels"] for name in current):
+        if not any(name.startswith("kind/") and name in catalog["labels"] for name in classification):
             source_kinds = {target for name, target in catalog.get("kind_sources", {}).items() if name in current}
             if len(source_kinds) == 1:
                 alias_add.update(source_kinds)
@@ -317,7 +331,7 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
     tracking = record["number"] in catalog["standing_issues"] or bool(
         current & {"tracking", "Epic", "epic", "kind/epic"}
     )
-    kind = {label for label in current if label.startswith("kind/")}
+    kind = {label for label in classification if label.startswith("kind/")}
     kind_ambiguous = len(kind) > 1 or bool(kind - set(catalog["labels"]))
     if kind_ambiguous:
         choices = [authorized_stage_event(facts.get("timeline", []), facts, name)
@@ -447,7 +461,7 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
     )
     if gated:
         desired.add("needs-human")
-    managed = stages | retired | {"needs-kind", "needs-human"} | {label for label in current if label.startswith("kind/")}
+    managed = stages | retired | {"needs-kind", "needs-human"} | {label for label in classification if label.startswith("kind/")}
     # Never clear an independent human/app routing gate just because scope was
     # accepted. Only the lifecycle bot's own automatic gate is removable.
     gate_event = latest_event(timeline, "needs-human")

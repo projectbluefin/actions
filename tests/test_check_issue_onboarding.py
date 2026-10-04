@@ -257,3 +257,26 @@ def test_feature_form_must_match_consumer_required_headings(consumer):
     feature["body"][-1]["attributes"]["label"] = "Desired outcome"
     save(workspace, ".github/ISSUE_TEMPLATE/feature.yml", feature)
     assert "feature_fields do not match emitted headings" in failures(consumer)
+
+
+@pytest.mark.parametrize("signal", ["kind/tech-debt", "source:agent", "Kind/Tech-Debt"])
+def test_native_intake_cannot_assign_protected_operational_signal(consumer, signal):
+    workspace, catalog, form, _ = consumer
+    catalog["protected_labels"] = ["kind/tech-debt", "source:agent"]
+    save(workspace, ".github/issue-policy.json", catalog)
+    assert failures(consumer) == ""
+    form["labels"].append(signal)
+    save(workspace, ".github/ISSUE_TEMPLATE/bug.yml", form)
+    assert "operational" in failures(consumer)
+
+
+def test_catalog_cannot_retire_or_sync_protected_operational_definitions(consumer):
+    workspace, catalog, _, _ = consumer
+    catalog["protected_labels"] = ["kind/tech-debt", "source:agent"]
+    catalog["retired_stages"].append("kind/tech-debt")
+    save(workspace, ".github/issue-policy.json", catalog)
+    assert "Retired" in failures(consumer)
+    catalog["retired_stages"].remove("kind/tech-debt")
+    catalog["labels"]["source:agent"] = {"color": "abcdef", "description": "Guessed operator definition"}
+    save(workspace, ".github/issue-policy.json", catalog)
+    assert "protected_labels" in failures(consumer)

@@ -16,10 +16,11 @@ def catalog():
         "comment_marker": "<!-- example-issue-lifecycle:v1 -->",
         "stages": {"needs-triage": {}, "triage/accepted": {}},
         "labels": {name: {} for name in [
-            "kind/bug", "kind/feature", "kind/task", "area/api", "area/docs",
+            "kind/bug", "kind/feature", "kind/task", "kind/debt", "area/api", "area/docs",
             "hold", "needs-human", "human-only", "blocked",
         ]},
         "retired_stages": ["3-clanker-queue"],
+        "protected_labels": ["kind/tech-debt", "source:agent"],
     }
 
 
@@ -379,3 +380,70 @@ def test_local_or_other_repository_write_refused(catalog, tmp_path, monkeypatch,
     monkeypatch.setenv("GITHUB_REPOSITORY", repository)
     with pytest.raises(ValueError, match="require GitHub Actions"):
         prow.main(["prepare", "--catalog", str(path)])
+
+
+def test_catalog_commands_exclude_protected_operational_signals(catalog):
+    assert prow.family_values(catalog, "kind") == ["bug", "debt", "feature", "task"]
+    assert prow.expected_config(catalog)["labels"]["kind"]["values"] == ["bug", "debt", "feature", "task"]
+    assert "tech-debt" not in " ".join(prow.supported_commands(catalog))
+    # Even a direct configuration derivation cannot expose a protected shadow definition.
+    catalog["labels"]["kind/tech-debt"] = {}
+    assert "tech-debt" not in prow.family_values(catalog, "kind")
+
+
+@pytest.mark.parametrize("signal", ["kind/tech-debt", "Kind/Tech-Debt"])
+@pytest.mark.parametrize("command", ["/kind debt", "/kind bug"])
+def test_protected_kind_denies_upstream_before_any_mutation(catalog, event, signal, command):
+    event["comment"]["body"] = command
+    api = FixtureGitHub(catalog, event)
+    api.current.update({signal, "source:agent"})
+    original = set(api.current)
+    # Denial must precede even the required-definition read, not execute then report loss.
+    api.error_path = "labels"
+    state = prow.prepare(event, catalog, api)
+    assert not state["execute"]
+    assert "upstream_command" not in state and "config" not in state
+    assert state["result"]["outcome"] == "denied"
+    assert state["result"]["changes"] == {"add": [], "remove": []}
+    assert signal in state["result"]["reason"]
+    instructions = " ".join(state["result"]["next_steps"])
+    assert "GitHub's Labels picker" in instructions
+    assert "select kind/" + command.split()[1] in instructions
+    assert "deselect only other managed primary kinds" in instructions
+    assert signal in instructions and "independent" in instructions
+    assert api.current == original
+    assert all(method == "GET" for method, _, _ in api.calls)
+
+
+def test_command_cannot_assign_operational_debt_signal(catalog, event):
+    event["comment"]["body"] = "/kind tech-debt"
+    api = FixtureGitHub(catalog, event)
+    state = prow.prepare(event, catalog, api)
+    assert not state["execute"]
+    assert state["result"]["outcome"] == "invalid"
+    assert state["result"]["changes"] == {"add": [], "remove": []}
+
+
+@pytest.mark.parametrize("command", ["/area docs", "/remove-area api", "/hold", "/hold cancel"])
+def test_safe_nonkind_commands_preserve_protected_operational_signals(catalog, event, command):
+    event["comment"]["body"] = command
+    api = FixtureGitHub(catalog, event)
+    api.current.update({"kind/tech-debt", "source:agent", "area/api"})
+    state = prow.prepare(event, catalog, api)
+    assert state["execute"]
+    assert {"kind/tech-debt", "source:agent"} <= set(state["expected"])
+
+
+def test_safe_debt_command_without_protected_kind_preserves_other_operational_labels(catalog, event):
+    event["comment"]["body"] = "/kind debt"
+    api = FixtureGitHub(catalog, event)
+    api.current.add("source:agent")
+    state = prow.prepare(event, catalog, api)
+    assert state["execute"]
+    assert set(state["expected"]) == (api.current - {"kind/bug"}) | {"kind/debt"}
+
+
+def test_upstream_config_cannot_reenable_operational_kind(catalog, event):
+    api = FixtureGitHub(catalog, event)
+    api.config["labels"]["kind"]["values"].append("tech-debt")
+    assert not prow.prepare(event, catalog, api)["execute"]

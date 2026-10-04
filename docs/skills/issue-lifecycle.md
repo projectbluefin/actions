@@ -42,6 +42,15 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
    clears them. Optional `prior_comment_markers` lists known historical lifecycle
    markers for transferred issues so only trusted Bot status comments can be
    reused under the new repository's marker.
+   Optional `protected_labels` explicitly lists operator-owned operational signals.
+   They must be unique case-insensitively and absent from managed `labels` and
+   `stages` definitions: sync leaves their live definitions unchanged. Aliases,
+   intake, kind sources and retirement cannot assign or delete them. An existing
+   protected `kind/*` is neither a primary kind nor an ambiguity/removal candidate;
+   an unrelated unknown descriptor still requires human classification. Use a
+   non-colliding canonical kind for ordinary work, such as `kind/debt` rather than
+   an operator-owned `kind/tech-debt`. Protection records ownership, not a guessed
+   approval meaning; only the operator can confirm the active consumer config.
    Optional `intake_rules` are caller-owned descriptive data, not a shared
    application's title/provenance assumptions. Each rule has `match` groups
    (`title_prefixes`, `body_contains`, `body_headings`) and `labels`; groups
@@ -101,6 +110,8 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
 6. Retire definitions only after client cutover, with both `retire-labels` and
    `confirm-client-cutover` enabled. The engine checks all history, including
    closed PRs, for remaining retired and alias assignments before deletion.
+   Protected operational labels and their historical assignments are never
+   retirement candidates, even if their names resemble a descriptive family.
    Retain archives and inspect stale-record failures before another dispatch.
 
 ### Transition and notification invariants

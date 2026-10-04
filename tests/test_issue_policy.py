@@ -811,6 +811,9 @@ def release_catalog():
     for reader in ("bug", "enhancement", "question", "epic"):
         catalog["labels"][reader] = {"color": "ededed", "description": "Active operational reader"}
     catalog["kind_sources"] = {"bug": "kind/bug", "enhancement": "kind/feature", "question": "kind/task", "epic": "kind/task"}
+    catalog["protected_labels"] = ["kind/tech-debt", "source:agent"]
+    catalog["labels"]["kind/debt"] = {"color": "fbca04", "description": "Ordinary debt classification"}
+    catalog["label_aliases"]["tech-debt"] = "kind/debt"
     catalog["gate_labels"] = ["question"]
     catalog["prior_comment_markers"] = [CATALOG["comment_marker"]]
     catalog["labels"]["area/ui"] = {"color": "ededed", "description": "User interface"}
@@ -1469,10 +1472,10 @@ def test_retirement_preview_cannot_request_action_or_close_verified_issue(tmp_pa
 
 def metadata_intake_catalog():
     catalog = copy.deepcopy(CATALOG)
-    for label in ("area/runtime", "source:agent"):
+    for label in ("area/runtime", "agent/quality"):
         catalog["labels"][label] = {"color": "ededed", "description": "Descriptive intake metadata"}
     catalog["intake_rules"] = [{"match": {"title_prefixes": ["APP:"], "body_contains": ["intake marker"]},
-                               "labels": ["kind/task", "area/runtime", "source:agent"]}]
+                               "labels": ["kind/task", "area/runtime", "agent/quality"]}]
     return catalog
 
 
@@ -1481,7 +1484,7 @@ def test_catalog_intake_metadata_never_accepts_assigns_or_infers_consent():
     record = issue(body="intake marker\n### Automation preference\nHuman interaction only\n")
     record.update(title="app: specific task", assignees=[{"login": "existing-owner"}])
     result = policy.plan(record, facts(), catalog)
-    assert {"kind/task", "area/runtime", "source:agent", "needs-triage", "needs-human", "human-only"} <= final_labels(record, result)
+    assert {"kind/task", "area/runtime", "agent/quality", "needs-triage", "needs-human", "human-only"} <= final_labels(record, result)
     assert result["stage"] != "triage/accepted"
     assert record["assignees"] == [{"login": "existing-owner"}]
     assert not result["notify_reporter"] and not result["close"]
@@ -1522,7 +1525,7 @@ def test_bounded_intake_does_not_match_body_marker_outside_reviewed_window():
     record = issue(body="x" * 65536 + "intake marker")
     record["title"] = "APP: oversized report"
     result = policy.plan(record, facts(), catalog)
-    assert "source:agent" not in final_labels(record, result)
+    assert "agent/quality" not in final_labels(record, result)
     assert "needs-kind" in final_labels(record, result)
 
 
@@ -1601,3 +1604,168 @@ def test_quoted_bot_feedback_marker_cannot_claim_delivered_notification(monkeypa
     client.apply(record, data, result)
     assert len(posted) == 1
     assert marker in posted[0]["body"].splitlines()
+
+
+@pytest.mark.parametrize("state,is_pr", [("open", False), ("closed", False), ("open", True), ("closed", True)])
+@pytest.mark.parametrize("existing_signals", [(), ("kind/tech-debt", "source:agent")])
+def test_quiet_debt_migration_never_grants_or_removes_operational_signals(state, is_pr, existing_signals):
+    catalog = release_catalog()
+    record = issue(("tech-debt", "hold", "human-only", *existing_signals), "Unchanged scope")
+    record.update(state=state, assignees=[{"login": "existing-owner"}])
+    if is_pr:
+        record["pull_request"] = {}
+    original = copy.deepcopy(record)
+    result = policy.plan(record, facts(), catalog, migrate=True)
+    assert {"kind/debt", "hold", "human-only"} <= final_labels(record, result)
+    assert final_labels(record, result) & set(catalog["protected_labels"]) == set(existing_signals)
+    assert not set(result["add"] + result["remove"]) & set(catalog["protected_labels"])
+    assert "tech-debt" in result["remove"]
+    assert not result["comment"] and not result["notify_reporter"] and not result["close"]
+    assert result["notification_action"] is None
+    assert record == original
+
+
+def test_operational_kind_is_not_primary_classification_or_acceptance():
+    catalog = release_catalog()
+    record = issue(("kind/tech-debt", "source:agent", "triage/accepted", "needs-human"))
+    data = facts((event("triage/accepted"), event("needs-human", "github-actions[bot]", "Bot")))
+    result = policy.plan(record, data, catalog)
+    assert {"kind/tech-debt", "source:agent", "needs-kind", "needs-human"} <= final_labels(record, result)
+    assert not set(result["remove"]) & set(catalog["protected_labels"])
+    assert not result["notify_reporter"] and not result["close"]
+
+
+def test_operational_kind_and_one_canonical_kind_are_not_ambiguous():
+    catalog = release_catalog()
+    record = issue(("kind/tech-debt", "source:agent", "kind/debt", "triage/accepted", "needs-human"))
+    data = facts((event("triage/accepted"), event("needs-human", "github-actions[bot]", "Bot")))
+    result = policy.plan(record, data, catalog)
+    assert final_labels(record, result) == {"kind/tech-debt", "source:agent", "kind/debt", "triage/accepted"}
+    assert result["remove"] == ["needs-human"]
+    record["labels"] = sorted(final_labels(record, result))
+    settled = policy.plan(record, data, catalog, labels_only=True)
+    assert settled["add"] == [] and settled["remove"] == []
+
+
+@pytest.mark.parametrize("gate", ["hold", "blocked", "human-only", "question"])
+def test_operational_kind_preservation_does_not_clear_independent_gates(gate):
+    catalog = release_catalog()
+    record = issue(("kind/tech-debt", "source:agent", "kind/debt", "triage/accepted", "needs-human", gate))
+    data = facts((event("triage/accepted"), event("needs-human", "github-actions[bot]", "Bot")))
+    result = policy.plan(record, data, catalog)
+    assert final_labels(record, result) == policy.labels_of(record)
+    assert result["add"] == [] and result["remove"] == []
+    assert not result["notify_reporter"] and not result["close"]
+
+
+def test_human_kind_selection_removes_only_descriptors_not_protected_signal():
+    catalog = release_catalog()
+    record = issue(("kind/tech-debt", "source:agent", "kind/bug", "kind/debt"))
+    result = policy.plan(record, facts((event("kind/debt"),)), catalog)
+    assert {"kind/tech-debt", "source:agent", "kind/debt"} <= final_labels(record, result)
+    assert "kind/bug" in result["remove"]
+    assert "needs-kind" not in final_labels(record, result)
+
+
+def test_unknown_nonoperational_kind_still_gates_classification():
+    catalog = release_catalog()
+    record = issue(("kind/tech-debt", "kind/debt", "kind/unknown", "triage/accepted", "needs-human"))
+    data = facts((event("triage/accepted"), event("needs-human", "github-actions[bot]", "Bot")))
+    result = policy.plan(record, data, catalog)
+    assert {"kind/tech-debt", "kind/debt", "kind/unknown", "needs-kind", "needs-human"} <= final_labels(record, result)
+
+
+def test_protected_kind_does_not_block_source_backed_or_intake_classification():
+    catalog = release_catalog()
+    catalog["intake_rules"] = [{"match": {"title_prefixes": ["debt:"]}, "labels": ["kind/debt"]}]
+    record = issue(("kind/tech-debt", "source:agent"))
+    record["title"] = "debt: ordinary cleanup"
+    assert "kind/debt" in final_labels(record, policy.plan(record, facts(), catalog))
+    record["title"] = "unclassified"
+    record["labels"].append("bug")
+    assert "kind/bug" in final_labels(record, policy.plan(record, facts(), catalog))
+    record["state"] = "closed"
+    assert "kind/bug" in final_labels(record, policy.plan(record, facts(), catalog, migrate=True))
+
+
+@pytest.mark.parametrize("name", ["kind/tech-debt", "source:agent", "Kind/Tech-Debt", "SOURCE:AGENT"])
+@pytest.mark.parametrize("direction", ["source", "target"])
+def test_aliases_cannot_assign_or_retire_protected_operational_labels(name, direction):
+    catalog = release_catalog()
+    catalog["label_aliases"] = {name: None} if direction == "source" else {"old-debt": name}
+    with pytest.raises(ValueError, match="Alias"):
+        policy.plan(issue((name,)), facts(), catalog, migrate=True)
+
+
+@pytest.mark.parametrize("name", ["kind/tech-debt", "source:agent"])
+def test_intake_and_kind_sources_cannot_assign_protected_operational_labels(name):
+    catalog = release_catalog()
+    catalog["intake_rules"] = [{"match": {"title_prefixes": ["debt:"]}, "labels": [name]}]
+    with pytest.raises(ValueError, match="Intake targets"):
+        policy.plan(issue(), facts(), catalog)
+    catalog["intake_rules"] = []
+    catalog["kind_sources"]["bug"] = name
+    with pytest.raises(ValueError, match="kind_sources"):
+        policy.plan(issue(("bug",)), facts(), catalog)
+
+
+@pytest.mark.parametrize("names", ["kind/tech-debt", [None], [""], ["kind/tech-debt", "Kind/Tech-Debt"]])
+def test_protected_label_declaration_is_explicit_unique_data(names):
+    catalog = release_catalog()
+    catalog["protected_labels"] = names
+    with pytest.raises(ValueError, match="protected_labels"):
+        policy.validate_catalog(catalog)
+
+
+@pytest.mark.parametrize("name", ["kind/tech-debt", "source:agent", "Kind/Tech-Debt"])
+def test_protected_labels_cannot_be_catalog_synced_or_retired(name):
+    catalog = release_catalog()
+    catalog["labels"][name] = {"color": "ffffff", "description": "Guessed definition"}
+    with pytest.raises(ValueError, match="protected_labels"):
+        policy.validate_catalog(catalog)
+    del catalog["labels"][name]
+    catalog["retired_stages"].append(name)
+    with pytest.raises(ValueError, match="Retired"):
+        policy.validate_catalog(catalog)
+
+
+def test_sync_catalog_leaves_protected_live_definitions_unchanged(monkeypatch):
+    catalog = release_catalog()
+    current = [{"name": name, **definition} for name, definition in (catalog["stages"] | catalog["labels"]).items()
+               if name != "kind/debt"]
+    signals = [{"name": name, "color": "123456", "description": "Operator-owned live definition"}
+               for name in catalog["protected_labels"]]
+    current.extend(signals)
+    original = copy.deepcopy(current)
+    writes = []
+    client = policy.GitHub(catalog["repository"], catalog)
+    def request(method, path, body=None, **kwargs):
+        if method == "GET":
+            return current
+        writes.append((method, path, body))
+    monkeypatch.setattr(client, "request", request)
+    client.sync_catalog(catalog, apply=True)
+    assert writes == [("POST", f"repos/{catalog['repository']}/labels", {"name": "kind/debt", **catalog["labels"]["kind/debt"]})]
+    assert current == original
+
+
+def test_retirement_keeps_protected_definitions_and_historical_assignments(tmp_path, monkeypatch):
+    catalog = release_catalog()
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(json.dumps(catalog))
+    historical = issue(("kind/tech-debt", "source:agent", "kind/debt"))
+    historical.update(state="closed", pull_request={})
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args: None)
+    monkeypatch.setattr(policy.GitHub, "sync_catalog", lambda *args: None)
+    monkeypatch.setattr(policy.GitHub, "collect", lambda *args, **kwargs: (historical, facts()))
+    writes = []
+    def request(self, method, path, body=None, **kwargs):
+        if method == "GET":
+            return [historical] if "/issues?" in path else [{"name": name} for name in (*catalog["protected_labels"], "tech-debt")]
+        writes.append((method, path, body))
+    monkeypatch.setattr(policy.GitHub, "request", request)
+    assert policy.main(["--catalog", str(catalog_path), "--backup-dir", str(tmp_path / "backup"),
+                        "--retire-labels", "--confirm-client-cutover", "--apply"]) == 0
+    assert writes == [("DELETE", f"repos/{catalog['repository']}/labels/tech-debt", None)]
+    assert set(historical["labels"]) == {"kind/tech-debt", "source:agent", "kind/debt"}
