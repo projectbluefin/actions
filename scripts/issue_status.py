@@ -224,8 +224,8 @@ def status_report(record, facts, catalog, context):
     elif stage == "needs-triage":
         maintainer.extend([
             "To accept, add `triage/accepted`.",
-            "Removing `needs-triage` or `needs-human` does not accept it; the bot adds them back.",
-            "Accepting does not assign anyone.",
+            "Removing `needs-triage` or `needs-human` does not work, let the bot do it.",
+            "Accepting means we want it in Bluefin - you are not committed to working on this.",
             f"Need more information? Ask, then add `triage/needs-information`. To decline, close with a reason. `/hive approve` does not accept {display} issues.",
         ])
     elif stage == "triage/needs-information":
