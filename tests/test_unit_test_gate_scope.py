@@ -72,7 +72,7 @@ def _trigger_paths(event: str) -> list[str]:
     workflow = yaml.safe_load(UNIT_TESTS_WORKFLOW.read_text(encoding="utf-8"))
     # PyYAML parses the unquoted `on:` key as the boolean True.
     triggers = workflow.get("on", workflow.get(True))
-    return list(triggers[event]["paths"])
+    return list(triggers[event].get("paths", [".github/workflows/**"]))
 
 
 def _matches(path: str, pattern: str) -> bool:

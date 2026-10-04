@@ -1,0 +1,85 @@
+name: issue-lifecycle
+description: Reconcile repository-owned issue policy using trusted maintainer provenance and structured status reports.
+author: projectbluefin
+inputs:
+  catalog:
+    description: Repository-owned catalog path relative to the trusted default-branch checkout.
+    default: .github/issue-policy.json
+  workspace:
+    description: Caller data checkout; an alternate path is useful for read-only candidate previews.
+    default: ''
+  apply:
+    description: Apply writes only from the reviewed default-branch caller and released first-party action.
+    default: 'false'
+  authorize-only:
+    description: Verify released source, trusted caller and main CI without reading or changing issues.
+    default: 'false'
+  issue:
+    description: Optional single issue or PR number; empty reconciles the event target or full repository.
+    default: ''
+  event-file:
+    description: Optional GitHub event JSON path; empty performs a repository sweep.
+    default: ''
+  labels-only:
+    description: Quietly repair assignments without comments, reporter notifications, or closure.
+    default: 'false'
+  migrate:
+    description: Quietly migrate explicit aliases and retired assignments including closed history and PRs.
+    default: 'false'
+  retire-labels:
+    description: Delete inert alias/retired definitions only after all assignments are gone.
+    default: 'false'
+  confirm-client-cutover:
+    description: Confirm supported clients no longer require the obsolete label definitions.
+    default: 'false'
+  output:
+    description: Optional absolute path for the collected records and proposed transition JSON.
+    default: ''
+outputs:
+  backup-directory:
+    description: Local directory containing repository-scoped pre-migration archives; upload even on failure.
+    value: ${{ steps.reconcile.outputs.backup-directory }}
+runs:
+  using: composite
+  steps:
+    - name: Reconcile catalog-bound issue lifecycle
+      id: reconcile
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ISSUE_POLICY_WORKFLOW_TOKEN: ${{ github.token }}
+        ISSUE_POLICY_ACTION_REPOSITORY: ${{ github.action_repository }}
+        ISSUE_POLICY_ACTION_REF: ${{ github.action_ref }}
+        POLICY_WORKSPACE: ${{ inputs.workspace || github.workspace }}
+        POLICY_CATALOG: ${{ inputs.catalog }}
+        POLICY_APPLY: ${{ inputs.apply }}
+        POLICY_AUTHORIZE_ONLY: ${{ inputs.authorize-only }}
+        POLICY_ISSUE: ${{ inputs.issue }}
+        POLICY_EVENT_FILE: ${{ inputs.event-file }}
+        POLICY_LABELS_ONLY: ${{ inputs.labels-only }}
+        POLICY_MIGRATE: ${{ inputs.migrate }}
+        POLICY_RETIRE: ${{ inputs.retire-labels }}
+        POLICY_CLIENT_CUTOVER: ${{ inputs.confirm-client-cutover }}
+        POLICY_OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+        backup_directory="${RUNNER_TEMP}/issue-policy-backups"
+        printf 'backup-directory=%s\n' "$backup_directory" >> "$GITHUB_OUTPUT"
+        args=(--workspace "$POLICY_WORKSPACE" --catalog "$POLICY_CATALOG" --backup-dir "$backup_directory")
+        for value in "$POLICY_APPLY" "$POLICY_LABELS_ONLY" "$POLICY_MIGRATE" "$POLICY_RETIRE" "$POLICY_CLIENT_CUTOVER"; do
+          if [[ "$value" != true && "$value" != false ]]; then
+            printf 'Boolean lifecycle inputs must be true or false\n' >&2
+            exit 1
+          fi
+        done
+        if [[ "$POLICY_APPLY" == true ]]; then args+=(--apply); else args+=(--dry-run); fi
+        if [[ "$POLICY_AUTHORIZE_ONLY" == true ]]; then args+=(--authorize-only); fi
+        if [[ -n "$POLICY_ISSUE" ]]; then args+=(--issue "$POLICY_ISSUE"); fi
+        if [[ -n "$POLICY_EVENT_FILE" ]]; then args+=(--event-file "$POLICY_EVENT_FILE"); fi
+        if [[ "$POLICY_LABELS_ONLY" == true ]]; then args+=(--labels-only); fi
+        if [[ "$POLICY_MIGRATE" == true ]]; then args+=(--migrate); fi
+        if [[ "$POLICY_RETIRE" == true ]]; then args+=(--retire-labels); fi
+        if [[ "$POLICY_CLIENT_CUTOVER" == true ]]; then args+=(--confirm-client-cutover); fi
+        if [[ -n "$POLICY_OUTPUT" ]]; then args+=(--output "$POLICY_OUTPUT"); fi
+        python3 -m scripts.issue_policy "${args[@]}"

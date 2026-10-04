@@ -1,7 +1,7 @@
 # Release Notes Redesign
 
-**Date:** 2026-06-23  
-**Scope:** `bootc-build/create-release`, `reusable-release.yml`, `bluefin-lts/execute-release.yml`  
+**Date:** 2026-06-23
+**Scope:** `bootc-build/create-release`, `reusable-release.yml`, `bluefin-lts/execute-release.yml`
 **Affects:** bluefin, bluefin-lts, dakota
 
 ---
@@ -226,18 +226,18 @@ The `render_notes.py` PR changelog section uses the output from `generate-notes`
 
 **New functions:**
 
-- `_section_variants(variants: list[dict] | None) -> str`  
-  Renders a markdown table from `[{"name": "bluefin-lts", "tag": ":stable", "digest": "sha256:...", "note": "..."}]`.  
+- `_section_variants(variants: list[dict] | None) -> str`
+  Renders a markdown table from `[{"name": "bluefin-lts", "tag": ":stable", "digest": "sha256:...", "note": "..."}]`.
   Returns `""` when `variants` is `None` or empty.
 
-- `_section_contributors(contributors: list[str]) -> str`  
-  Converts `["castrojo", "aaroneaton"]` to linked names: `[castrojo](https://github.com/castrojo) · [aaroneaton](...)`.  
+- `_section_contributors(contributors: list[str]) -> str`
+  Converts `["castrojo", "aaroneaton"]` to linked names: `[castrojo](https://github.com/castrojo) · [aaroneaton](...)`.
   Returns `""` when list is empty.
 
-- `_section_pr_changelog(prs: list[dict]) -> str`  
-  Groups non-bot PRs by conventional-commit type (`feat`, `fix`, other).  
-  Each PR: `- {title} (#{number})`.  
-  Wrapped in a `<details>` block.  
+- `_section_pr_changelog(prs: list[dict]) -> str`
+  Groups non-bot PRs by conventional-commit type (`feat`, `fix`, other).
+  Each PR: `- {title} (#{number})`.
+  Wrapped in a `<details>` block.
   Returns `""` when list is empty.
 
 **Modified functions:**

@@ -1,0 +1,62 @@
+name: prow-labels
+description: Authorized issue-only CNCF Prow classification and hold commands with observed results
+author: projectbluefin
+inputs:
+  github-token:
+    description: Caller GITHUB_TOKEN with issues write and contents read; do not supply a user token
+    required: true
+  catalog:
+    description: Absolute path to the trusted default-branch caller issue-policy.json
+    required: true
+  catalog-path:
+    description: Repository path of the caller catalog, checked against the current default branch
+    default: .github/issue-policy.json
+outputs:
+  outcome:
+    description: applied, denied, invalid, help; empty for a comment without a command
+    value: ${{ steps.report.outputs.outcome }}
+runs:
+  using: composite
+  steps:
+    - name: Require reviewed deployment and successful main CI before any Prow write
+      uses: $/issue-lifecycle
+      with:
+        catalog: ${{ inputs.catalog }}
+        apply: 'true'
+        authorize-only: 'true'
+    - name: Authorize the immutable comment and caller catalog
+      id: prepare
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        CATALOG: ${{ inputs.catalog }}
+        CATALOG_PATH: ${{ inputs.catalog-path }}
+        ACTION_ROOT: ${{ github.action_path }}/..
+      run: |
+        set -euo pipefail
+        cd "$ACTION_ROOT"
+        python3 -m scripts.prow_commands prepare --catalog "$CATALOG" --catalog-path "$CATALOG_PATH"
+    - name: Execute the authorized command with released CNCF Prow
+      id: prow
+      if: steps.prepare.outputs.execute == 'true'
+      continue-on-error: true
+      uses: cncf/prow-github-actions@187c5e3cd95a329c43448e1bdb3b1f5249232e44 # v3.0.1
+      with:
+        github-token: ${{ inputs.github-token }}
+        prow-commands: ${{ steps.prepare.outputs.command }}
+        config: ${{ steps.prepare.outputs.config }}
+        jobs: ''
+    - name: Read and publish the actual Prow outcome
+      id: report
+      if: always() && steps.prepare.outputs.state != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        CATALOG: ${{ inputs.catalog }}
+        STATE: ${{ steps.prepare.outputs.state }}
+        UPSTREAM_OUTCOME: ${{ steps.prow.outcome }}
+        ACTION_ROOT: ${{ github.action_path }}/..
+      run: |
+        set -euo pipefail
+        cd "$ACTION_ROOT"
+        python3 -m scripts.prow_commands report --catalog "$CATALOG" --state "$STATE" --upstream-outcome "$UPSTREAM_OUTCOME"

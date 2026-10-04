@@ -1,21 +1,15 @@
-# Auto-update v1 tag after merge to main
-#
-# After any PR merges to main in projectbluefin/actions, this workflow
-# force-pushes the v1 tag to HEAD. Consumers referencing @v1 get the
-# latest composite actions without manual tag management.
-#
-# Security: Only runs on push to main (post-merge). The human gate
-# for actions is the PR review — once merged, tag update is mechanical.
+# Publish managed v1 only after both native main CI workflows succeed.
+# workflow_run reads trusted main source only; no PR code or artifacts execute.
 
 name: Update v1 tag
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [Unit Tests, actionlint]
+    types: [completed]
+    branches: [main]
 
-permissions:
-  contents: write
+permissions: {}
 
 concurrency:
   group: update-v1-tag
@@ -23,14 +17,40 @@ concurrency:
 
 jobs:
   update-tag:
+    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository
+    permissions:
+      contents: write
+      actions: read
     name: Force-push v1 to HEAD
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
+          ref: main
+
+      - name: Require actual main CI before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          CI_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          current_sha=$(git rev-parse HEAD)
+          if [[ "$current_sha" != "$CI_SHA" ]]; then
+            echo 'Completed CI is not for current main; leaving v1 unchanged.'
+            exit 1
+          fi
+          for workflow in unit-tests.yml actionlint.yml; do
+            result=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?head_sha=$CI_SHA&branch=main&event=push&per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_sha == "'"$CI_SHA"'" and .head_branch == "main")] | sort_by(.id) | last | .conclusion')
+            if [[ "$result" != success ]]; then
+              printf 'Main CI %s is not successful; leaving v1 unchanged.\n' "$workflow"
+              exit 1
+            fi
+          done
 
       - name: Update v1 tag
         run: |

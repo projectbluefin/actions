@@ -3,30 +3,16 @@ name: Unit Tests
 on:
   push:
     branches: [main]
-    paths:
-      - "actions/**"
-      - "bootc-build/**"
-      - "scripts/**"
-      - ".github/actions/**"
-      - "tests/**"
-      - ".github/workflows/factory-drift.yml"
-      - ".github/workflows/factory-health.yml"
-      - ".github/workflows/ghcr-cleanup.yml"
-      - ".github/workflows/factory-health.yml"
-      - ".github/workflows/reusable-build.yml"
-      - ".github/workflows/reusable-execute-release.yml"
-      - ".github/workflows/reusable-pkg-cadence.yml"
-      - ".github/workflows/reusable-promote-squash.yml"
-      - ".github/workflows/reusable-release-gate.yml"
-      - ".github/workflows/reusable-release.yml"
-      - ".github/workflows/reusable-renovate-automerge.yml"
-      - ".github/workflows/reusable-renovate.yml"
-      - ".github/workflows/reusable-thin-caller-gate.yml"
-      - ".github/workflows/unit-tests.yml"
   pull_request:
     paths:
+      - ".github/workflows/actionlint.yml"
+      - ".github/workflows/reusable-design-enforcement.yml"
       - "actions/**"
       - "bootc-build/**"
+      - "issue-lifecycle/**"
+      - "prow-labels/**"
+      - ".github/workflows/reusable-issue-lifecycle.yml"
+      - ".github/workflows/reusable-issue-policy-preview.yml"
       - "scripts/**"
       - ".github/actions/**"
       - "tests/**"

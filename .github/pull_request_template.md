@@ -4,13 +4,13 @@
 
 ## Consumer validation
 
-Required when this PR changes `bootc-build/**/action.yml` or `.github/workflows/reusable-*.yml`.
+Required for consumer-facing composites and reusable workflows. Production uses managed `@v1`; a reviewed first-party candidate source is permitted only in the read-only onboarding preview.
 
-Consumer PR: <!-- https://github.com/projectbluefin/bluefin/pull/123 -->
-Consumer CI run: <!-- https://github.com/projectbluefin/bluefin/actions/runs/123456789 -->
+Consumer PR: <!-- actual opted-in consumer PR URL -->
+Consumer CI run: <!-- actual matching consumer run exercising this change -->
 Out-of-org consumer impact: <!-- explain why aurora/bazzite are safe, or say N/A -->
 
-- [ ] Opened a draft consumer PR pinned to this branch SHA
+- [ ] Opened a consumer PR using `@v1` production references (read-only candidate preview only when bootstrapping)
 - [ ] Linked a passing consumer CI run that exercised this change
 - [ ] Evaluated out-of-org consumers (`ublue-os/aurora`, `ublue-os/bazzite`) and documented the impact above
 

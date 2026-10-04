@@ -1,0 +1,119 @@
+name: Read-only issue policy preview
+
+on:
+  workflow_call:
+    # requires: any
+    inputs:
+      runtime-ref:
+        description: First-party Actions runtime ref; candidate branches are read-only preview sources
+        type: string
+        default: v1
+      caller-ref:
+        description: Candidate caller data revision; empty selects PR head SHA or event SHA
+        type: string
+        default: ''
+      issue:
+        description: Optional issue or PR number; empty previews the open repository
+        type: string
+        default: ''
+      migrate:
+        description: Preview explicit alias and retired assignments including closed history; never apply
+        type: boolean
+        default: false
+
+# No secrets, environments, write-capable tokens, caller setup, or caller tests.
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Validate first-party read-only runtime ref
+        env:
+          RUNTIME_REF: ${{ inputs['runtime-ref'] }}
+        run: |
+          set -euo pipefail
+          # Repository is fixed below; no external repository or PR code runs.
+          # Candidate refs are allowed only in this read-only, secret-free job.
+          git check-ref-format "refs/heads/$RUNTIME_REF"
+
+      - name: Check out candidate caller data without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs['caller-ref'] || github.event.pull_request.head.sha || github.sha }}
+          path: caller-data
+          persist-credentials: false
+
+      - name: Check out reviewed Actions runtime separately
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: projectbluefin/actions
+          ref: ${{ inputs['runtime-ref'] }}
+          path: actions-source
+          persist-credentials: false
+
+      - name: Set up trusted Python runtime
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+
+      - name: Install data parser without caller dependency files
+        run: python3 -m pip install 'pyyaml>=6.0,<7'
+
+      - name: Record actual candidate revisions
+        env:
+          RUNTIME_REF: ${{ inputs['runtime-ref'] }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          {
+            printf 'runtime_repository=projectbluefin/actions\nruntime_ref=%s\nruntime_commit=' "$RUNTIME_REF"
+            git -C actions-source rev-parse HEAD
+            printf 'caller_repository=%s\ncaller_commit=' "$CALLER_REPOSITORY"
+            git -C caller-data rev-parse HEAD
+            printf 'apply=false\npermissions=contents:read,issues:read,pull-requests:read\n'
+          } > "$RUNNER_TEMP/issue-policy-source-revisions.txt"
+
+      - name: Preflight candidate configuration as data only
+        working-directory: actions-source
+        env:
+          CALLER_WORKSPACE: ${{ github.workspace }}/caller-data
+          CALLER_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 -I scripts/check-issue-onboarding.py \
+            --workspace "$CALLER_WORKSPACE" --repository "$CALLER_REPOSITORY" \
+            2>&1 | tee "$RUNNER_TEMP/onboarding-preflight.txt"
+
+      # A local action has no deployed Actions provenance. That is acceptable only
+      # here: apply is literally false and this job cannot acquire a write token.
+      - name: Exercise actual candidate lifecycle composite without applying
+        uses: ./actions-source/issue-lifecycle
+        with:
+          apply: 'false'
+          workspace: ${{ github.workspace }}/caller-data
+          catalog: .github/issue-policy.json
+          issue: ${{ inputs.issue }}
+          migrate: ${{ inputs.migrate }}
+          output: ${{ runner.temp }}/issue-policy-preview.json
+
+      - name: Archive real proposed transitions and status/notification fields
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-policy-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/onboarding-preflight.txt
+            ${{ runner.temp }}/issue-policy-preview.json
+            ${{ runner.temp }}/issue-policy-source-revisions.txt
+          if-no-files-found: warn
+          retention-days: 30

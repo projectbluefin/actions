@@ -97,6 +97,11 @@ next run and block every PR.
 
 ## Bats test patterns for shell scripts
 
+For nonempty signing-key validation, use an obviously test-only string, not PEM
+private-key delimiters: even fake PEM trips the native credential scanner. Temp
+repository tests should isolate inherited host hooks; production commits retain
+the repository's hooks and native review/queue gates.
+
 ### Mock external binaries via PATH injection
 
 Prepend a temp `bin/` dir to PATH in `setup()` and write mock scripts there. This intercepts

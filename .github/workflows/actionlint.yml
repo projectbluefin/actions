@@ -14,9 +14,6 @@ on:
   merge_group:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/**'
-      - 'bootc-build/**'
 
 permissions: {}
 
@@ -32,13 +29,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up trusted policy-data parser
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Install workflow parser
+        run: python3 -m pip install 'pyyaml==6.0.3'
+
       - name: Check self-repository references
         run: python3 scripts/check-self-repository-references.py
 
       - name: Run actionlint
         uses: reviewdog/action-actionlint@13465d022aa41c282f730be17574b5ce692d0186 # v1.78.1
         with:
-          # github-pr-check needs a PR context, which merge_group has not.
-          reporter: ${{ github.event_name == 'merge_group' && 'github-check' || 'github-pr-check' }}
+          # Push and merge_group have no PR context; both produce native check evidence.
+          reporter: ${{ github.event_name == 'pull_request' && 'github-pr-check' || 'github-check' }}
           fail_on_error: true
           # https://github.blog/changelog/2023-02-09-github-actions-update-on-code-and-workflow-permissions/

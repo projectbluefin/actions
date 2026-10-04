@@ -191,4 +191,3 @@ def test_live_reusable_workflows_have_valid_token_annotations():
         assert annotation is not None, (
             f"{Path(wf).name} is missing a valid '# requires: PAT|App-token|any' annotation under workflow_call:"
         )
-

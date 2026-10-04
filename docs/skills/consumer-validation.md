@@ -21,6 +21,12 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 | `ublue-os/aurora` | ublue-os (external) | ⚠️ No CI visibility |
 | `ublue-os/bazzite` | ublue-os (external) | ⚠️ No CI visibility |
 
+
+Opted-in issue-policy consumers include `projectbluefin/common` and
+`projectbluefin/chairlift`. Their catalog/Prow callers validate the shared
+lifecycle rather than a bootc image-build action. Use the actual target's
+read-only onboarding preview as evidence; an unrelated image build cannot
+prove issue authority, notification behavior, or Prow outcomes.
 ## Validation steps (required before merge)
 
 1. **Open a consumer PR**: Create a PR in `projectbluefin/bluefin` (target: `testing`) using
@@ -76,7 +82,7 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
    - `Consumer CI run: https://github.com/projectbluefin/<consumer>/actions/runs/<id>`
    - `Out-of-org consumer impact: <why aurora/bazzite are safe, or N/A>`
 4. **Keep the checklist honest**: Check the three consumer-validation boxes only after the linked PR and run exist.
-5. **Merge this actions PR**, then advance `@v1` to the new main HEAD (see the `@v1` runbook in AGENTS.md).
+5. **Merge this actions PR natively**, then verify main Unit Tests/actionlint and the gated managed `@v1` publisher. Consumer production uses `@v1`; switch any bootstrap-only read-only preview interface to `@v1` after publication.
    Consumer repos pick up the change on their next workflow run — no further action needed.
 
 ## Automated PR check
@@ -84,7 +90,7 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 `.github/workflows/consumer-validation.yml` makes the protocol harder to skip:
 
 - It runs on PR open, sync, ready-for-review, and PR body edits.
-- It only enforces the evidence fields when the PR changes `bootc-build/**/action.yml` or `.github/workflows/reusable-*.yml`.
+- It enforces evidence for `bootc-build/**/action.yml`, `issue-lifecycle/action.yml`, `prow-labels/action.yml`, and reusable workflows under `.github/workflows/`.
 - It fails if any required field is missing or in the wrong format.
 
 **Bot/Renovate exemption:** PRs authored by a bot (login ending in `[bot]` or starting with `app/`, e.g. `renovate[bot]`, `mergeraptor[bot]`) are automatically exempt — they skip all three evidence checks. SHA pin bumps carry no behavior change and cannot provide consumer PR URLs.
@@ -111,8 +117,8 @@ the hook will flag it. Either SHA-pin the reference or add an explicit exemption
 
 | Field | Accepts "N/A"? | Requirement |
 |---|---|---|
-| `Consumer PR:` | ❌ No | Must be `https://github.com/projectbluefin/(bluefin\|bluefin-lts\|dakota)/pull/NNN` |
-| `Consumer CI run:` | ❌ No | Must be `.../actions/runs/NNN` |
+| `Consumer PR:` | ❌ No | Must identify a real `projectbluefin/{bluefin,bluefin-lts,dakota,common,chairlift}` consumer PR |
+| `Consumer CI run:` | ❌ No | Must identify that consumer's actual Actions run exercising the relevant change |
 | `Out-of-org consumer impact:` | ✅ Yes | Any non-empty, non-`TODO`/`TBD` explanation (including "N/A — aurora/bazzite unaffected because...") |
 
 Even for additive-only changes (new optional input with a safe default), you still need to open a consumer PR and get a CI run number. The consumer CI run URL is what proves the action was exercised in a real workflow.
@@ -122,7 +128,7 @@ Even for additive-only changes (new optional input with a safe default), you sti
 gh api repos/projectbluefin/actions/actions/runs/<run-id>/approve -X POST
 ```
 
-**After merging a fix to `consumer-validation.yml` itself:** `gh run rerun` re-executes the workflow from the HEAD branch's original commit — it ignores changes on `main`. To get a run using the updated workflow, push a new commit to the PR branch or admin-merge the PR directly.
+**After fixing a workflow:** `gh run rerun` retains the original workflow code. Push a new feature-branch commit for a fresh run; native reviews and queue controls still apply.
 
 Treat the check as evidence collection, not as a substitute for real validation. Fake links still violate policy and should be rejected in review.
 

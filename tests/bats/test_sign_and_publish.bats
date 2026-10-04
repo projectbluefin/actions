@@ -134,7 +134,7 @@ get_output() {
 # ── Key-based validation ──────────────────────────────────────────────────────
 
 @test "key: COSIGN_PRIVATE_KEY set → passes" {
-  export COSIGN_PRIVATE_KEY="-----BEGIN EC PRIVATE KEY-----\nfakekeydata\n-----END EC PRIVATE KEY-----"
+  export COSIGN_PRIVATE_KEY="test-only-nonempty-signing-key"
   run bash -c "$VALIDATE_KEY"
   [ "$status" -eq 0 ]
 }

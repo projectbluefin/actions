@@ -38,7 +38,7 @@ jobs:
             [ -z "${file}" ] && continue
 
             case "${file}" in
-              bootc-build/*/action.yml|.github/workflows/reusable-*.yml)
+              bootc-build/*/action.yml|issue-lifecycle/action.yml|prow-labels/action.yml|.github/workflows/reusable-*.yml)
                 echo "Consumer-facing change detected: ${file}"
                 requires_validation=true
                 break
@@ -76,12 +76,12 @@ jobs:
 
           require_line \
             "Consumer PR" \
-            '^Consumer PR:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota)/pull/[0-9]+([[:space:]].*)?$' \
-            "a projectbluefin consumer PR URL (bluefin preferred)"
+            '^Consumer PR:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota|common|chairlift)/pull/[0-9]+([[:space:]].*)?$' \
+            "a projectbluefin consumer PR URL exercising the changed action"
 
           require_line \
             "Consumer CI run" \
-            '^Consumer CI run:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota)/actions/runs/[0-9]+([[:space:]].*)?$' \
+            '^Consumer CI run:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota|common|chairlift)/actions/runs/[0-9]+([[:space:]].*)?$' \
             "a projectbluefin consumer Actions run URL"
 
           impact_line="$(printf '%s\n' "${body}" | grep -E '^Out-of-org consumer impact:' || true)"

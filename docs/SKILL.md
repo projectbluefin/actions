@@ -13,6 +13,9 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | Validate a PR (just check, shellcheck, hadolint, pre-commit) | `docs/skills/composite-actions/action-reference.md` → "validate-pr" |
 | Author or modify a composite action | `docs/skills/composite-actions.md` |
 | Add a new action to the repo | `docs/skills/composite-actions.md` → "Adding a new action" |
+| Onboard or repair a catalog-bound issue lifecycle | `docs/skills/issue-lifecycle.md` |
+| Preflight caller data or run a read-only candidate lifecycle preview | `docs/skills/issue-lifecycle.md` → "Read-only onboarding preview" |
+| Operate authorized issue-only Prow commands and clear result reports | `docs/skills/prow-labels.md` |
 | Debug a CI failure in a consuming repo | `docs/skills/composite-actions.md` → "Known workarounds" |
 | Configure or understand Renovate auto-merge | `docs/skills/factory-operations.md` → "Renovate" |
 | Verify the Renovate auto-merge path is actually wired up (not inert) | `docs/skills/factory-operations.md` → "Verification — is auto-merge actually wired up?" |
@@ -77,6 +80,8 @@ Agent entry point for `projectbluefin/actions`. Load only the skill relevant to 
 | [`consumer-guide.md`](skills/consumer-guide.md) | Onboarding a new image repo: Path 1 (reusable workflow) and Path 2 (à la carte), checklist |
 | [`consumer-guide/upgrade-and-migration.md`](skills/consumer-guide/upgrade-and-migration.md) | Upgrade test gate, migration test, dakota Path 2 notes, live consumer examples |
 | [`consumer-validation.md`](skills/consumer-validation.md) | Required consumer validation flow and blast radius before merge |
+| [`issue-lifecycle.md`](skills/issue-lifecycle.md) | Shared stage authority, typed delivery receipts, migration, provenance and semantic notifications |
+| [`prow-labels.md`](skills/prow-labels.md) | Released CNCF Prow commands, authorization, issue-only scope and observed outcome reports |
 | [`thin-caller-gate.md`](skills/thin-caller-gate.md) | Thin-caller size contract, canonical validator, consumer opt-in via `reusable-thin-caller-gate.yml` |
 | [`determinism.md`](skills/determinism.md) | Non-deterministic surfaces in the factory: classification, mitigations, investigations |
 | [`factory-operations.md`](skills/factory-operations.md) | Production gate (2-human approval), factory health monitor, Renovate auto-merge, promotion PR format (Design C) |
