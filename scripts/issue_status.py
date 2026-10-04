@@ -378,21 +378,23 @@ def prow_report(catalog, result):
     added, removed = changes.get("add", []), changes.get("remove", [])
     command = result["command"]
     displayed_command = command[:512] + ("…" if len(command) > 512 else "")
-    steps = ["Command: " + _code_span(displayed_command) + "."]
-    if result.get("reason"):
-        steps.append("Result: " + result["reason"])
-    if added:
-        steps.append("Added: " + ", ".join(_code_span(label) for label in added) + ".")
-    if removed:
-        steps.append("Removed: " + ", ".join(_code_span(label) for label in removed) + ".")
-    if result.get("changes_unknown"):
-        steps.append("Could not confirm the final labels. Check the issue labels before retrying.")
-    elif not added and not removed:
-        steps.append("No labels changed.")
-    elif outcome != "applied":
-        steps.append("Only the changes above happened. Check the labels before retrying.")
-    steps.extend(result.get("next_steps") or [])
-    if result.get("supported_commands"):
+    steps = []
+    if outcome != "help":
+        steps.append("Command: " + _code_span(displayed_command) + ".")
+        if result.get("reason"):
+            steps.append("Result: " + result["reason"])
+        if added:
+            steps.append("Added: " + ", ".join(_code_span(label) for label in added) + ".")
+        if removed:
+            steps.append("Removed: " + ", ".join(_code_span(label) for label in removed) + ".")
+        if result.get("changes_unknown"):
+            steps.append("Could not confirm the final labels. Check the issue labels before retrying.")
+        elif not added and not removed:
+            steps.append("No labels changed.")
+        elif outcome != "applied":
+            steps.append("Only the changes above happened. Check the labels before retrying.")
+        steps.extend(result.get("next_steps") or [])
+    if result.get("supported_commands") and outcome != "applied":
         steps.append("Commands: " + ", ".join(_code_span(command) for command in result["supported_commands"]) + ".")
     if result.get("pull_request"):
         steps.append("Commands only work on issues. Use the PR's normal review and merge controls.")
