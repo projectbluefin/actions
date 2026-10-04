@@ -377,10 +377,12 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
     if (
         requested == "triage/needs-information"
         or found == {"triage/needs-information"}
-        or "needs-decision" in current
+        or ("needs-decision" in current and not approved)
     ):
         stage = "triage/needs-information"
-    if approved and not tracking and "needs-decision" not in current:
+    # A decision request on accepted work pauses it (needs-human stays on) but
+    # keeps acceptance, so resolving the decision resumes without re-accepting.
+    if approved and not tracking:
         stage = "triage/accepted"
     evidence = delivery_evidence(body, catalog)
     if (

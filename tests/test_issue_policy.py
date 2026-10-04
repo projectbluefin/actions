@@ -138,6 +138,29 @@ def test_authenticated_maintainer_acceptance_releases_gate():
     assert final_labels(record, result) == {"triage/accepted", "kind/feature"}
 
 
+def test_hive_decision_pauses_accepted_work_and_resolving_it_resumes():
+    # Reproduces common#1385: Hive asks for a decision on accepted work, then clears it.
+    record, data = accepted(("needs-decision",))
+    data["timeline"].append(event("needs-decision", "hivecommons-hive[bot]", "Bot", time=T2))
+    paused = policy.plan(record, data, CATALOG)
+    assert paused["stage"] == "triage/accepted"
+    assert final_labels(record, paused) == {"triage/accepted", "kind/feature", "needs-decision", "needs-human"}
+    record["labels"] = ["triage/accepted", "kind/feature", "needs-human"]
+    data["timeline"] += [
+        event("needs-human", "github-actions[bot]", "Bot", time=T2),
+        event("needs-decision", "hivecommons-hive[bot]", "Bot", time="2026-10-02T13:00:00Z", action="unlabeled"),
+    ]
+    resumed = policy.plan(record, data, CATALOG)
+    assert final_labels(record, resumed) == {"triage/accepted", "kind/feature"}
+
+
+def test_decision_before_acceptance_still_waits_for_information():
+    record = issue(("needs-triage", "kind/feature", "needs-decision"))
+    result = policy.plan(record, facts(), CATALOG)
+    assert result["stage"] == "triage/needs-information"
+    assert "needs-human" in final_labels(record, result)
+
+
 def test_edited_spec_revokes_acceptance_without_reassigning_work():
     record, data = accepted()
     record["assignees"] = [{"login": "contributor"}]

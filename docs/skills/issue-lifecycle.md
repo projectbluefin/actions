@@ -124,6 +124,10 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
   readable scope-edit history. Numbered queues and arbitrary merged `Refs`
   links never create acceptance or prove delivery. A maintainer selects
   `awaiting-release` after assessing the actual merged fix.
+- `needs-decision` on accepted work (for example, Hive asking a question) pauses
+  it: the issue stays `triage/accepted` and `needs-human` stays on until the
+  decision is removed. It does not withdraw acceptance. Before acceptance,
+  `needs-decision` still keeps the issue at `triage/needs-information`.
 - Image receipts require `Image: ...@sha256:<64 hex>`, `Fix revision: <40 hex>`,
   `Release/build: https://...`, and `Verify: ...`. Application release receipts
   require `Package`, `Version`, and the same revision, release/build, and verify

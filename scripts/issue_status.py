@@ -236,6 +236,7 @@ def status_report(record, facts, catalog, context):
                 "Then remove `needs-decision` and add `triage/accepted`."
                 if "needs-decision" in labels else
                 "Then add `triage/accepted`.",
+                "`/hive approve` does not accept the issue; use the label.",
             ])
             if missing:
                 maintainer.append("Say who can provide: " + ", ".join(f"**{field}**" for field in missing) + ".")
@@ -270,6 +271,9 @@ def status_report(record, facts, catalog, context):
     elif stage == "triage/accepted":
         if not approved:
             status = "Acceptance is out of date"
+        if "needs-decision" in labels:
+            status += " — paused for a decision"
+            maintainer.append("Paused for a decision. Answer it, then remove `needs-decision`. Acceptance stays; no need to re-accept.")
         if independent_gate and not human_only:
             maintainer.append("Someone else added `needs-human`. They remove it when resolved; the bot will not.")
         assignees = record.get("assignees", [])
@@ -283,6 +287,8 @@ def status_report(record, facts, catalog, context):
         if gated:
             maintainer.append("Clear the listed blockers before starting work.")
             transition = "Blockers cleared → assign."
+        elif "needs-decision" in labels:
+            transition = "Decision answered → work resumes."
         elif assignees:
             actor = contributor_role + " (" + ", ".join("@" + assignee["login"] for assignee in assignees) + ")"
             if human_only:
