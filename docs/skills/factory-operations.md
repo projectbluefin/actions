@@ -433,6 +433,8 @@ gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state
 
 **Gotcha — the `secrets` context is unavailable in step-level `if:`.** To conditionally mint an app token in a reusable workflow, mirror credential presence into job-level `env` first (`HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}`) and branch on `env.HAS_APP_CREDS`.
 
+**Gotcha — Qualify the PR before generating an app token.** `workflow_run` fires on every CI workflow completion, including pushes to `main` where no open PR can match the commit. The PR lookup step (`find-pr`) only needs read access via `github.token` or `secrets.token`. Running `find-pr` first and gating app-token generation on `steps.find-pr.outputs.pr_number != ''` prevents spurious token-minting failures (and unnecessary API calls) on runs where no qualifying Renovate PR exists.
+
 **Consumer-validation exemption:** Renovate PRs (author login ending in `[bot]` or starting with `app/`) are automatically exempt from the consumer PR + CI run evidence requirement, even when they touch action files. See `docs/skills/consumer-validation.md`.
 
 ### Validation workflow

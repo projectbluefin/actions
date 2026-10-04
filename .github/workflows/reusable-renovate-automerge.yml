@@ -97,18 +97,10 @@ jobs:
     env:
       HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}
     steps:
-      - name: Generate app token
-        id: app-token
-        if: env.HAS_APP_CREDS == 'true'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
-        with:
-          app-id: ${{ secrets.app_id }}
-          private-key: ${{ secrets.private_key }}
-
       - name: Find qualifying Renovate PR for this commit
         id: find-pr
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          GH_TOKEN: ${{ secrets.token || github.token }}
           HEAD_SHA: ${{ inputs.head_sha }}
           BASE_BRANCH: ${{ inputs.base_branch }}
           REQUIRE_AUTO_MERGE: ${{ inputs.require_auto_merge }}
@@ -158,6 +150,15 @@ jobs:
             echo "Found qualifying PR #$pr_number"
           fi
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Generate app token
+        id: app-token
+        if: env.HAS_APP_CREDS == 'true' && steps.find-pr.outputs.pr_number != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.private_key }}
 
       - name: Require a complete, all-successful check rollup
         id: checks
