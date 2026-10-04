@@ -32,27 +32,32 @@ jobs:
           ref: main
 
       - name: Require actual main CI before publication
+        id: evidence
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           CI_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
+          printf 'ready=false\n' >> "$GITHUB_OUTPUT"
           current_sha=$(git rev-parse HEAD)
           if [[ "$current_sha" != "$CI_SHA" ]]; then
             echo 'Completed CI is not for current main; leaving v1 unchanged.'
-            exit 1
+            exit 0
           fi
           for workflow in unit-tests.yml actionlint.yml; do
             result=$(gh api "repos/$REPOSITORY/actions/workflows/$workflow/runs?head_sha=$CI_SHA&branch=main&event=push&per_page=100" \
               --jq '[.workflow_runs[] | select(.head_sha == "'"$CI_SHA"'" and .head_branch == "main")] | sort_by(.id) | last | .conclusion')
-            if [[ "$result" != success ]]; then
-              printf 'Main CI %s is not successful; leaving v1 unchanged.\n' "$workflow"
-              exit 1
-            fi
+            case "$result" in
+              success) ;;
+              null|'') printf 'Awaiting main CI %s; publication remains paused.\n' "$workflow"; exit 0 ;;
+              *) printf 'Main CI %s is not successful; leaving v1 unchanged.\n' "$workflow"; exit 1 ;;
+            esac
           done
+          printf 'ready=true\n' >> "$GITHUB_OUTPUT"
 
       - name: Update v1 tag
+        if: steps.evidence.outputs.ready == 'true'
         run: |
           set -euo pipefail
 

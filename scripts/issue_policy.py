@@ -794,7 +794,7 @@ class GitHub:
                 person = record["user"]["login"]
                 text = text.replace(marker, marker + f"\n@{person}", 1) + "\n\n" + notification
             already_notified = notification and any(
-                notification in (c.get("body") or "") and authorized(c)
+                notification in (c.get("body") or "").splitlines() and authorized(c)
                 for c in facts["comments"]
             )
             if prior:

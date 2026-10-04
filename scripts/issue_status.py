@@ -379,6 +379,16 @@ def status_report(record, facts, catalog, context):
     }
 
 
+def _code_span(value):
+    """Keep untrusted feedback data inside one inert Markdown code span."""
+    text = " ".join(str(value).splitlines())
+    runs = re.findall(r"`+", text)
+    if not runs:
+        return f"`{text}`"
+    delimiter = "`" * (max(map(len, runs)) + 1)
+    return f"{delimiter} {text} {delimiter}"
+
+
 def prow_report(catalog, result):
     """Format actual command outcomes, including recorded partial API changes."""
     outcome = result["outcome"]
@@ -387,13 +397,15 @@ def prow_report(catalog, result):
         raise ValueError("Unsupported Prow outcome")
     changes = result.get("changes") or {}
     added, removed = changes.get("add", []), changes.get("remove", [])
-    steps = [f"Command: `{result['command']}`."]
+    command = result["command"]
+    displayed_command = command[:512] + ("…" if len(command) > 512 else "")
+    steps = ["Command: " + _code_span(displayed_command) + "."]
     if result.get("reason"):
         steps.append("Result: " + result["reason"])
     if added:
-        steps.append("Confirmed added: " + ", ".join(f"`{label}`" for label in added) + ".")
+        steps.append("Confirmed added: " + ", ".join(_code_span(label) for label in added) + ".")
     if removed:
-        steps.append("Confirmed removed: " + ", ".join(f"`{label}`" for label in removed) + ".")
+        steps.append("Confirmed removed: " + ", ".join(_code_span(label) for label in removed) + ".")
     if result.get("changes_unknown"):
         steps.append("The final label state could not be observed; no complete result is confirmed. Inspect GitHub's **Labels** picker before retrying.")
     elif not added and not removed:
@@ -402,7 +414,7 @@ def prow_report(catalog, result):
         steps.append("Only the confirmed changes above occurred; the requested command did not complete. Inspect GitHub's **Labels** picker before retrying.")
     steps.extend(result.get("next_steps") or [])
     if result.get("supported_commands"):
-        steps.append("Enabled commands: " + ", ".join(f"`{command}`" for command in result["supported_commands"]) + ".")
+        steps.append("Enabled commands: " + ", ".join(_code_span(command) for command in result["supported_commands"]) + ".")
     if result.get("pull_request"):
         steps.append("Prow commands are issue-only here. Use GitHub's native **Ready for review**, **Reviewers**, and **Review changes** controls on this PR; required checks and merge controls still apply.")
     else:

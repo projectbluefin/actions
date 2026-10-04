@@ -128,6 +128,8 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
   headings or prose to decide notification eligibility. A first status can
   notify directly; changing an existing status uses one separate targeted
   notification only for a genuinely new action.
+   Delivery markers are standalone protocol lines, not substrings of bot prose;
+   quoted command feedback cannot forge receipt of a reporter notification.
    A free-form information request requires a trusted human's explicit `@reporter`
    question after the information selection, or that selecting human's question
    within five minutes before it (ask-then-picker pairing). Older, answered or

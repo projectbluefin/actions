@@ -1574,3 +1574,30 @@ def test_descriptive_intake_cannot_recreate_a_resolved_native_question_gate():
     catalog["intake_rules"][0]["labels"].append("question")
     with pytest.raises(ValueError, match="Intake targets"):
         policy.plan(record, data, catalog)
+
+
+def test_quoted_bot_feedback_marker_cannot_claim_delivered_notification(monkeypatch):
+    import hashlib
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    record["html_url"] = "https://github.com/projectbluefin/common/issues/10"
+    data = facts((event("needs-verification"),))
+    result = policy.plan(record, data, CATALOG)
+    key = hashlib.sha256(json.dumps({"repository": CATALOG["repository"], "number": 10,
+                                    "request": result["request_id"], "action": result["notification_action"]},
+                                   sort_keys=True).encode()).hexdigest()
+    marker = CATALOG["comment_marker"].removesuffix(" -->") + ":request:" + key + " -->"
+    previous = reply(CATALOG["comment_marker"] + "\nOld status", actor="github-actions[bot]", kind="Bot")
+    feedback = reply("- Command: `unsupported " + marker + "`", actor="github-actions[bot]", kind="Bot")
+    feedback["id"] = 3
+    data["comments"] = [previous, feedback]
+    posted = []
+    client = policy.GitHub(CATALOG["repository"], CATALOG)
+    def request(method, path, body=None, **kwargs):
+        if method == "GET":
+            return record
+        if method == "POST" and path.endswith("/comments"):
+            posted.append(body)
+    monkeypatch.setattr(client, "request", request)
+    client.apply(record, data, result)
+    assert len(posted) == 1
+    assert marker in posted[0]["body"].splitlines()

@@ -7,8 +7,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-SEARCH_ROOTS = (ROOT / ".github", ROOT / "bootc-build", ROOT / "actions")
-SELF_REFERENCE = re.compile(r"^\s*uses:\s*(?:projectbluefin/actions/|\./)")
+SEARCH_ROOTS = (ROOT / ".github", ROOT / "bootc-build", ROOT / "actions",
+                ROOT / "issue-lifecycle", ROOT / "prow-labels")
+SELF_REFERENCE = re.compile(r"^\s*(?:-\s+)?uses:\s*(?:projectbluefin/actions/|\./)")
 
 
 def workflow_files() -> list[Path]:

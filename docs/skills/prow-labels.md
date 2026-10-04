@@ -135,6 +135,11 @@ Every request outcome is rendered by `scripts.issue_status.prow_report` and post
 as one new result comment. It includes the command, status, observed labels,
 maintainer controls/next steps, and explicit reporter action. Ordinary reporters
 never need slash commands or label permissions.
+Untrusted command and label text stays inside single-line inert Markdown code
+spans, even with embedded backticks/headings/mentions. Command display is a
+bounded 512-character excerpt; authorization and upstream still consume the
+original unmodified comment. Quoted feedback is not a delivered lifecycle
+notification marker.
 
 Renderer result schema:
 
