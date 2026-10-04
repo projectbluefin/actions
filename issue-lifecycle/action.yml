@@ -67,7 +67,7 @@ runs:
         backup_directory="${RUNNER_TEMP}/issue-policy-backups"
         printf 'backup-directory=%s\n' "$backup_directory" >> "$GITHUB_OUTPUT"
         args=(--workspace "$POLICY_WORKSPACE" --catalog "$POLICY_CATALOG" --backup-dir "$backup_directory")
-        for value in "$POLICY_APPLY" "$POLICY_LABELS_ONLY" "$POLICY_MIGRATE" "$POLICY_RETIRE" "$POLICY_CLIENT_CUTOVER"; do
+        for value in "$POLICY_APPLY" "$POLICY_AUTHORIZE_ONLY" "$POLICY_LABELS_ONLY" "$POLICY_MIGRATE" "$POLICY_RETIRE" "$POLICY_CLIENT_CUTOVER"; do
           if [[ "$value" != true && "$value" != false ]]; then
             printf 'Boolean lifecycle inputs must be true or false\n' >&2
             exit 1

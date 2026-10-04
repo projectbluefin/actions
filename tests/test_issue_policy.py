@@ -1155,12 +1155,15 @@ def test_migration_archives_all_history_before_mutating_aliases(tmp_path, monkey
     records = [issue(("old-bug",), number=10), issue(("old-bug",), number=11)]
     records[1]["state"] = "closed"
     records[1]["pull_request"] = {}
+    unchanged = issue(("kind/bug", "hold"), number=12)
+    unchanged.update(state="closed", pull_request={})
+    records.append(unchanged)
     backups = tmp_path / "backups"
     writes = []
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args: None)
     monkeypatch.setattr(policy.GitHub, "sync_catalog", lambda *args: None)
-    monkeypatch.setattr(policy.GitHub, "collect", lambda self, number: (next(r for r in records if r["number"] == number), facts()))
+    monkeypatch.setattr(policy.GitHub, "collect", lambda self, number, **kwargs: (next(r for r in records if r["number"] == number), facts()))
     def request(self, method, path, body=None, **kwargs):
         assert method == "GET"
         return records if "/issues?" in path else [{"name": "old-bug"}]
@@ -1170,7 +1173,7 @@ def test_migration_archives_all_history_before_mutating_aliases(tmp_path, monkey
         assert len(archives) == 1
         archive = json.loads(archives[0].read_text())
         assert archive["repository"] == catalog["repository"]
-        assert len(archive["issues"]) == 2
+        assert len(archive["issues"]) == 3
         assert archive["labels"] == [{"name": "old-bug"}]
         writes.append(result)
     monkeypatch.setattr(policy.GitHub, "apply", apply)
@@ -1190,7 +1193,7 @@ def test_retirement_checks_closed_history_and_pr_assignments(tmp_path, monkeypat
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args: None)
     monkeypatch.setattr(policy.GitHub, "sync_catalog", lambda *args: None)
-    monkeypatch.setattr(policy.GitHub, "collect", lambda *args: (historical, facts()))
+    monkeypatch.setattr(policy.GitHub, "collect", lambda *args, **kwargs: (historical, facts()))
     monkeypatch.setattr(policy.GitHub, "apply", lambda *args: None)
     queried = []
     def request(self, method, path, body=None, **kwargs):
@@ -1412,3 +1415,162 @@ def test_application_feature_form_requests_only_its_own_required_fields():
     assert "proposed outcome" in result["comment"]
     assert "desired outcome" not in result["comment"]
     assert "affected component" not in result["comment"]
+
+
+@pytest.mark.parametrize("state,is_pr", [("closed", False), ("closed", True), ("open", True)])
+def test_quiet_historical_collection_uses_live_listing_without_authority_reads(monkeypatch, state, is_pr):
+    record = issue(("1-triage", "kind/feature", "hold"))
+    record.update(state=state, html_url="https://github.com/projectbluefin/common/issues/10")
+    if is_pr:
+        record["pull_request"] = {}
+    client = policy.GitHub(CATALOG["repository"], CATALOG)
+    def unnecessary_read(*args, **kwargs):
+        raise AssertionError("quiet historical label cleanup must not request grant or native PR facts")
+    monkeypatch.setattr(client, "request", unnecessary_read)
+    collected, data = client.collect(10, record=record, quiet=True)
+    result = policy.plan(collected, data, CATALOG, migrate=True)
+    assert "1-triage" in result["remove"]
+    assert "hold" not in result["remove"]
+    assert result["comment"] is None and not result["notify_reporter"] and not result["close"]
+
+
+def test_quiet_open_issue_still_reads_authorized_scope_history(monkeypatch):
+    record = issue(("kind/feature",))
+    record["html_url"] = "https://github.com/projectbluefin/common/issues/10"
+    client = policy.GitHub(CATALOG["repository"], CATALOG)
+    paths = []
+    def request(method, path, body=None, **kwargs):
+        paths.append(path)
+        if path == "graphql":
+            return {"data": {"repository": {"issue": {"lastEditedAt": None}}}}
+        return []
+    monkeypatch.setattr(client, "request", request)
+    collected, data = client.collect(10, record=record, quiet=True)
+    assert any("/timeline" in path for path in paths)
+    assert "graphql" in paths
+    assert data["last_edited_at"] is None
+
+
+def test_retirement_preview_cannot_request_action_or_close_verified_issue(tmp_path):
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification"),), comments=(reply("Confirmed fixed"),))
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(json.dumps(CATALOG))
+    snapshot_path = tmp_path / "history.json"
+    snapshot_path.write_text(json.dumps([{"record": record, "facts": data}]))
+    output_path = tmp_path / "retirement.json"
+    assert policy.main(["--catalog", str(catalog_path), "--snapshot", str(snapshot_path),
+                        "--retire-labels", "--dry-run", "--output", str(output_path)]) == 0
+    result = json.loads(output_path.read_text())[0]["plan"]
+    assert result["comment"] is None
+    assert not result["notify_reporter"]
+    assert not result["close"]
+
+
+def metadata_intake_catalog():
+    catalog = copy.deepcopy(CATALOG)
+    for label in ("area/runtime", "source:agent"):
+        catalog["labels"][label] = {"color": "ededed", "description": "Descriptive intake metadata"}
+    catalog["intake_rules"] = [{"match": {"title_prefixes": ["APP:"], "body_contains": ["intake marker"]},
+                               "labels": ["kind/task", "area/runtime", "source:agent"]}]
+    return catalog
+
+
+def test_catalog_intake_metadata_never_accepts_assigns_or_infers_consent():
+    catalog = metadata_intake_catalog()
+    record = issue(body="intake marker\n### Automation preference\nHuman interaction only\n")
+    record.update(title="app: specific task", assignees=[{"login": "existing-owner"}])
+    result = policy.plan(record, facts(), catalog)
+    assert {"kind/task", "area/runtime", "source:agent", "needs-triage", "needs-human", "human-only"} <= final_labels(record, result)
+    assert result["stage"] != "triage/accepted"
+    assert record["assignees"] == [{"login": "existing-owner"}]
+    assert not result["notify_reporter"] and not result["close"]
+    record["body"] = "intake marker"
+    assert "human-only" not in final_labels(record, policy.plan(record, facts(), catalog))
+
+
+def test_intake_rules_require_all_groups_and_preserve_existing_primary_kind():
+    catalog = metadata_intake_catalog()
+    record = issue(("kind/feature", "hold", "needs-human"), "intake marker")
+    record["title"] = "APP: classified feature"
+    result = policy.plan(record, facts(), catalog)
+    assert "kind/task" not in final_labels(record, result)
+    assert {"kind/feature", "area/runtime", "hold", "needs-human"} <= final_labels(record, result)
+    record["title"] = "unmatched title"
+    assert "area/runtime" not in final_labels(record, policy.plan(record, facts(), catalog))
+
+
+@pytest.mark.parametrize("target", ["triage/accepted", "human-only", "needs-human", "hold", "blocked", "tracking", "lgtm", "automerge", "ai-fix-requested", "hive/ready", "undefined"])
+def test_intake_rules_reject_unsupported_or_control_targets(target):
+    catalog = metadata_intake_catalog()
+    if target not in catalog["stages"] and target != "undefined":
+        catalog["labels"][target] = {"color": "ededed", "description": "Protected control"}
+    catalog["intake_rules"][0]["labels"] = [target]
+    with pytest.raises(ValueError, match="Intake targets"):
+        policy.plan(issue(), facts(), catalog)
+
+
+def test_consumer_without_intake_rules_does_not_inherit_another_apps_profile():
+    record = issue(body="Filed by guide agent")
+    record["title"] = "[guide] Documentation task"
+    result = policy.plan(record, facts(), CATALOG)
+    assert final_labels(record, result) == {"needs-triage", "needs-human", "needs-kind"}
+
+
+def test_bounded_intake_does_not_match_body_marker_outside_reviewed_window():
+    catalog = metadata_intake_catalog()
+    record = issue(body="x" * 65536 + "intake marker")
+    record["title"] = "APP: oversized report"
+    result = policy.plan(record, facts(), catalog)
+    assert "source:agent" not in final_labels(record, result)
+    assert "needs-kind" in final_labels(record, result)
+
+
+def test_conflicting_intake_rule_kinds_remain_gated_for_human_classification():
+    catalog = metadata_intake_catalog()
+    catalog["intake_rules"].append({"match": {"body_headings": ["Feature Request"]}, "labels": ["kind/feature"]})
+    record = issue(body="intake marker\n## Feature Request\nA requested outcome\n")
+    record["title"] = "APP: conflicting intake"
+    result = policy.plan(record, facts(), catalog)
+    assert {"kind/task", "kind/feature", "needs-kind", "needs-human"} <= final_labels(record, result)
+
+
+@pytest.mark.parametrize("rule", [
+    {"match": {"body_regex": [".*"]}, "labels": ["kind/task"]},
+    {"match": {}, "labels": ["kind/task"]},
+    {"match": {"title_prefixes": ["APP:"]}, "labels": ["kind/task"], "assign": ["owner"]},
+    {"match": {"title_prefixes": [0]}, "labels": ["kind/task"]},
+    {"match": {"body_contains": ["x" * 257]}, "labels": ["kind/task"]},
+])
+def test_intake_rules_reject_executable_unbounded_or_assignment_configuration(rule):
+    catalog = metadata_intake_catalog()
+    catalog["intake_rules"] = [rule]
+    with pytest.raises(ValueError):
+        policy.plan(issue(), facts(), catalog)
+
+
+def test_descriptive_intake_cannot_recreate_a_resolved_native_question_gate():
+    catalog = release_catalog()
+    catalog["intake_rules"] = [{"match": {"title_prefixes": ["question:"]}, "labels": ["kind/task"]}]
+    record = issue(("triage/accepted", "kind/task", "question", "needs-human"))
+    record["title"] = "question: a resolved concern"
+    data = facts((event("triage/accepted", time=T0), event("question", time=T0),
+                  event("needs-human", "github-actions[bot]", "Bot", time=T0)))
+    assert "needs-human" in final_labels(record, policy.plan(record, data, catalog))
+    record["labels"].remove("question")
+    data["timeline"].extend((event("question", action="unlabeled"),
+                             event("triage/accepted", action="unlabeled"),
+                             event("triage/accepted", time=T2)))
+    result = policy.plan(record, data, catalog)
+    assert "question" not in final_labels(record, result)
+    assert "needs-human" not in final_labels(record, result)
+    record["labels"] = sorted(final_labels(record, result))
+    data["timeline"].append(event("needs-human", "github-actions[bot]", "Bot", time=T2, action="unlabeled"))
+    settled = policy.plan(record, data, catalog)
+    assert settled["add"] == [] and settled["remove"] == []
+    assert settled["stage"] == "triage/accepted"
+    assert settled["comment"] == result["comment"]
+    assert not settled["notify_reporter"]
+    catalog["intake_rules"][0]["labels"].append("question")
+    with pytest.raises(ValueError, match="Intake targets"):
+        policy.plan(record, data, catalog)

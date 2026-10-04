@@ -95,6 +95,26 @@ def validate_catalog(catalog, repository=None):
         for path in workflows
     ):
         raise ValueError("main_ci_workflows must name repository-owned CI workflow paths")
+    intake_rules = catalog.get("intake_rules", [])
+    if not isinstance(intake_rules, list) or len(intake_rules) > 64:
+        raise ValueError("intake_rules must be a bounded list of descriptive metadata rules")
+    protected_intake = protected | set(retired) | set(gates) | {"ai-fix-requested"}
+    for rule in intake_rules:
+        if not isinstance(rule, dict) or set(rule) != {"match", "labels"}:
+            raise ValueError("intake_rules require match selectors and metadata labels only")
+        selectors, targets = rule["match"], rule["labels"]
+        if not isinstance(selectors, dict) or not selectors or not set(selectors) <= {"title_prefixes", "body_contains", "body_headings"}:
+            raise ValueError("Unsupported intake selector; use literal title prefixes, body text or headings")
+        for values in selectors.values():
+            if not isinstance(values, list) or not 1 <= len(values) <= 16 or any(
+                not isinstance(value, str) or not value.strip() or len(value) > 256 for value in values
+            ):
+                raise ValueError("Intake selectors must be bounded nonempty literal strings")
+        if not isinstance(targets, list) or not 1 <= len(targets) <= 8 or any(
+            not isinstance(name, str) or name not in labels or name in protected_intake
+            or name.startswith(("needs-", "hive/", "queue/", "status/")) for name in targets
+        ):
+            raise ValueError("Intake targets must be catalog metadata, never stages, consent, dispatch or independent control labels")
     return catalog
 
 
@@ -225,25 +245,21 @@ def referenced_issues(body, repository):
 
 
 def _intake_labels(record, catalog):
-    """Classify explicit intake shapes; metadata never grants implementation."""
-    title = (record.get("title") or "").strip()
-    body = (record.get("body") or "")[:100000]
+    """Apply caller-owned literal metadata rules; never grant consent or scope."""
+    title = (record.get("title") or "")[:512].strip().lower()
+    body = (record.get("body") or "")[:65536].lower()
+    fields = headings(body)
     wanted = set()
-    if re.match(r"^\[ACMM L\d+\]\s+", title, re.I) and re.search(r"\*\*Criterion ID:\*\*\s*`acmm:[^`]+`", body):
-        wanted.update({"acmm", "kind/task"})
-    if re.match(r"^\[guide\]\s+", title, re.I) or re.search(r"Filed by guide agent", body, re.I):
-        wanted.update({"agent/guide", "kind/documentation"})
-    if re.match(r"^\[quality\]\s+", title, re.I) or re.search(r"Filed by quality agent", body, re.I):
-        wanted.update({"agent/quality", "area/quality", "kind/task"})
-    if re.match(r"^(bug:|fix:|\[bug\])\s*", title, re.I):
-        wanted.add("kind/bug")
-    if re.match(r"^(docs?:|documentation:|\[(docs?|documentation)\])\s*", title, re.I) or re.search(r"^## Documentation Gap\s*$", body, re.M | re.I):
-        wanted.add("kind/documentation")
-    if re.match(r"^(feat(ure)?:|enhancement:|\[(feature|enhancement)\])\s*", title, re.I) or re.search(r"^## Feature Request\s*$", body, re.M | re.I):
-        wanted.add("kind/feature")
-    if re.match(r"^(question:|\[question\])\s*", title, re.I):
-        wanted.update({"question", "kind/task"})
-    return wanted & set(catalog["labels"])
+    for rule in catalog.get("intake_rules", []):
+        selectors = rule["match"]
+        matches = (
+            ("title_prefixes" not in selectors or any(title.startswith(value.lower()) for value in selectors["title_prefixes"]))
+            and ("body_contains" not in selectors or any(value.lower() in body for value in selectors["body_contains"]))
+            and ("body_headings" not in selectors or any(value.lower() in fields for value in selectors["body_headings"]))
+        )
+        if matches:
+            wanted.update(rule["labels"])
+    return wanted
 
 
 def plan(record, facts, catalog, *, migrate=False, labels_only=False):
@@ -543,13 +559,19 @@ class GitHub:
             self.permission_cache[login] = data.get("permission", "none")
         return self.permission_cache[login]
 
-    def collect(self, number):
+    def collect(self, number, *, record=None, quiet=False):
         root = f"repos/{self.repo}/issues/{number}"
-        record = self.request("GET", root)
+        record = record if record is not None else self.request("GET", root)
         if not record.get("html_url", "").startswith(
             f"https://github.com/{self.repo}/"
         ):
             raise ValueError("Issue transferred outside configured repository; no writes permitted")
+        if record.get("number") != number:
+            raise ValueError("Collected record number differs from the requested target")
+        if quiet and (record.get("state") == "closed" or "pull_request" in record):
+            # Quiet historical/PR plans use only state/labels; never invent grants.
+            # Preserve every list record and re-read freshness before any apply.
+            return record, {"comments": [], "timeline": [], "permissions": {}, "linked_prs": []}
         comments = self.request("GET", root + "/comments?per_page=100", pages=True)
         timeline = self.request("GET", root + "/timeline?per_page=100", pages=True)
         facts = {
@@ -875,6 +897,7 @@ def main(argv=None):
         entries = json.loads(args.snapshot.read_text())
     else:
         numbers = args.issue
+        listed_records = {}
         if args.event_file:
             event = json.loads(args.event_file.read_text())
             if event.get("repository", {}).get("full_name") != args.repo:
@@ -884,17 +907,17 @@ def main(argv=None):
             if event.get("pull_request"):
                 numbers += sorted(referenced_issues(event["pull_request"].get("body"), args.repo))
         if numbers is None:
-            numbers = [
-                i["number"]
-                for i in github.request(
-                    "GET",
-                    f"repos/{args.repo}/issues?state={'all' if args.migrate or args.retire_labels else 'open'}&per_page=100",
-                    pages=True,
-                )
-            ]
+            listed = github.request(
+                "GET",
+                f"repos/{args.repo}/issues?state={'all' if args.migrate or args.retire_labels else 'open'}&per_page=100",
+                pages=True,
+            )
+            listed_records = {record["number"]: record for record in listed}
+            numbers = list(listed_records)
         entries = []
         for number in dict.fromkeys(numbers):
-            record, facts = github.collect(number)
+            record, facts = github.collect(number, record=listed_records.get(number),
+                                          quiet=args.migrate or args.labels_only or args.retire_labels)
             entries.append({"record": record, "facts": facts})
     output = [
         {
@@ -904,7 +927,7 @@ def main(argv=None):
                 entry["facts"],
                 catalog,
                 migrate=args.migrate,
-                labels_only=args.labels_only,
+                labels_only=args.labels_only or args.retire_labels,
             ),
         }
         for entry in entries
@@ -948,7 +971,7 @@ def main(argv=None):
                 }
             )
         )
-        if args.apply:
+        if args.apply and any(result[name] for name in ("add", "remove", "comment", "close")):
             try:
                 github.apply(entry["record"], entry["facts"], result)
             except StaleRecord as error:

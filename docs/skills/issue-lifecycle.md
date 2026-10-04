@@ -42,6 +42,17 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
    clears them. Optional `prior_comment_markers` lists known historical lifecycle
    markers for transferred issues so only trusted Bot status comments can be
    reused under the new repository's marker.
+   Optional `intake_rules` are caller-owned descriptive data, not a shared
+   application's title/provenance assumptions. Each rule has `match` groups
+   (`title_prefixes`, `body_contains`, `body_headings`) and `labels`; groups
+   combine with AND and their literal values with OR, case-insensitively.
+   Matching reads at most 512 title and 65,536 body characters, without arbitrary
+   regex execution. Targets must exist in that catalog and cannot be lifecycle,
+   consent, dispatch, review, hold or other protected controls. Existing primary
+   kinds win; multiple inferred kinds retain classification/human gates. Metadata
+   never authenticates a filing agent, grants acceptance or assigns work.
+   Catalog `gate_labels` are also protected targets: an unchanged title must not
+   re-create a native question/denial after its real owner explicitly withdraws it.
 2. Prefer the shared `reusable-issue-lifecycle.yml@v1` conductor from a thin
    local caller: it checks out the trusted default branch without persisting
    credentials, serializes Prow before lifecycle, repairs after Prow failure,
@@ -80,6 +91,13 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
    records, label definitions, the catalog, and preview. Upload the composite's
    `backup-directory` output even on failure. `migrate` and `labels-only` are
    quiet: no comments, reporter mentions, or closure.
+   Quiet collection reuses the complete live listing for closed issues and PRs,
+   whose label plans need no grants/reviews. Open real issues still read full
+   authorization, edit and reply history; every actual write re-reads freshness.
+   No-op quiet plans do not require an application GET. This avoids exhausting
+   workflow-token requests on irrelevant historical facts without excluding
+   closed records. Retirement is also labels-only: definition cleanup cannot
+   mass-notify or close reports.
 6. Retire definitions only after client cutover, with both `retire-labels` and
    `confirm-client-cutover` enabled. The engine checks all history, including
    closed PRs, for remaining retired and alias assignments before deletion.
