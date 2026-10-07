@@ -1254,7 +1254,7 @@ def test_migration_archives_all_history_before_mutating_aliases(tmp_path, monkey
     backups = tmp_path / "backups"
     writes = []
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args: None)
+    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args, **kwargs: None)
     monkeypatch.setattr(policy.GitHub, "sync_catalog", lambda *args: None)
     monkeypatch.setattr(policy.GitHub, "collect", lambda self, number, **kwargs: (next(r for r in records if r["number"] == number), facts()))
     def request(self, method, path, body=None, **kwargs):
@@ -1284,7 +1284,7 @@ def test_retirement_checks_closed_history_and_pr_assignments(tmp_path, monkeypat
     historical["state"] = "closed"
     historical["pull_request"] = {}
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args: None)
+    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args, **kwargs: None)
     monkeypatch.setattr(policy.GitHub, "sync_catalog", lambda *args: None)
     monkeypatch.setattr(policy.GitHub, "collect", lambda *args, **kwargs: (historical, facts()))
     monkeypatch.setattr(policy.GitHub, "apply", lambda *args: None)
@@ -1447,6 +1447,91 @@ def test_missing_main_ci_never_authorizes_writes(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="successful main CI"):
         client.require_deployed_policy(path, workspace)
     assert not client.writes_authorized
+
+
+def _main_ci_key(client):
+    return f"repos/{client.repo}/actions/workflows/unit-tests.yml/runs?head_sha={'a' * 40}&branch=main&per_page=100"
+
+
+def _fake_clock(monkeypatch, on_sleep=None):
+    clock = {"now": 0.0, "sleeps": []}
+
+    def sleep(seconds):
+        clock["sleeps"].append(seconds)
+        clock["now"] += seconds
+        if on_sleep:
+            on_sleep(clock)
+
+    monkeypatch.setattr(policy.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(policy.time, "sleep", sleep)
+    return clock
+
+
+def _main_args(path, workspace, *extra):
+    return ["--catalog", str(path), "--workspace", str(workspace), "--apply", *extra]
+
+
+@pytest.mark.parametrize("status", ["queued", "in_progress", "waiting"])
+def test_pending_main_ci_is_not_authorization_and_is_distinct_from_failure(tmp_path, monkeypatch, status):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    responses[_main_ci_key(client)]["workflow_runs"][0].update(status=status, conclusion=None)
+    with pytest.raises(policy.MainCIPending, match="still running"):
+        client.require_deployed_policy(path, workspace)
+    assert not client.writes_authorized
+
+
+def test_main_ci_finishing_within_the_wait_authorizes_writes(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    run = responses[_main_ci_key(client)]["workflow_runs"][0]
+    run.update(status="in_progress", conclusion=None)
+
+    def finish(clock):
+        if len(clock["sleeps"]) == 2:
+            run.update(status="completed", conclusion="success")
+
+    clock = _fake_clock(monkeypatch, finish)
+    client.require_deployed_policy(path, workspace, main_ci_wait=600)
+    assert client.writes_authorized
+    assert clock["sleeps"] == [policy.MAIN_CI_POLL_SECONDS] * 2
+
+
+def test_main_ci_failing_within_the_wait_still_fails_closed(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    run = responses[_main_ci_key(client)]["workflow_runs"][0]
+    run.update(status="in_progress", conclusion=None)
+    _fake_clock(monkeypatch, lambda clock: run.update(status="completed", conclusion="failure"))
+    with pytest.raises(RuntimeError, match="successful main CI") as raised:
+        client.require_deployed_policy(path, workspace, main_ci_wait=600)
+    assert not isinstance(raised.value, policy.MainCIPending)
+    assert not client.writes_authorized
+
+
+def test_reconcile_defers_without_writes_when_main_ci_outlasts_the_wait(tmp_path, monkeypatch, capsys):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    responses[_main_ci_key(client)]["workflow_runs"][0].update(status="in_progress", conclusion=None)
+    requested = []
+
+    def request(self, method, api_path, body=None, **kwargs):
+        requested.append((method, api_path))
+        return responses[api_path]
+
+    monkeypatch.setattr(policy.GitHub, "request", request)
+    clock = _fake_clock(monkeypatch)
+    assert policy.main(_main_args(path, workspace)) == 0
+    assert clock["now"] >= policy.MAIN_CI_WAIT_SECONDS
+    assert all(method == "GET" for method, _ in requested)
+    assert not any("/issues" in api_path or "/labels" in api_path for _, api_path in requested)
+    assert "::notice::Main CI still running" in capsys.readouterr().out
+
+
+def test_authorize_only_never_waits_and_fails_closed_on_pending_main_ci(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    responses[_main_ci_key(client)]["workflow_runs"][0].update(status="in_progress", conclusion=None)
+    monkeypatch.setattr(policy.GitHub, "request", lambda self, method, api_path, body=None, **kwargs: responses[api_path])
+    clock = _fake_clock(monkeypatch)
+    with pytest.raises(policy.MainCIPending):
+        policy.main(_main_args(path, workspace, "--authorize-only"))
+    assert clock["sleeps"] == []
 
 
 def test_failed_notice_post_does_not_mark_request_delivered(monkeypatch):
@@ -1846,7 +1931,7 @@ def test_retirement_keeps_protected_definitions_and_historical_assignments(tmp_p
     historical = issue(("kind/tech-debt", "source:agent", "kind/debt"))
     historical.update(state="closed", pull_request={})
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args: None)
+    monkeypatch.setattr(policy.GitHub, "require_deployed_policy", lambda *args, **kwargs: None)
     monkeypatch.setattr(policy.GitHub, "sync_catalog", lambda *args: None)
     monkeypatch.setattr(policy.GitHub, "collect", lambda *args, **kwargs: (historical, facts()))
     writes = []

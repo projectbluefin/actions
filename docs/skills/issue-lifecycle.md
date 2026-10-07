@@ -88,8 +88,12 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
    The catalog's `main_ci_workflows` lists repository-owned native CI workflow
    paths. Apply also requires their latest push/manual runs at the actual current
    default-branch commit to be completed successfully, and requires Actions
-   unit-tests/actionlint success at the released runtime commit. Missing, pending,
-   skipped or failed runs fail closed. Grant caller `actions: read` for this check;
+   unit-tests/actionlint success at the released runtime commit. Missing,
+   skipped or failed runs fail closed. A run still in progress (the window right
+   after every merge) is polled for up to 10 minutes; if it is still running,
+   reconcile applies nothing, emits a notice and exits 0 so the event does not
+   report a false failure. `--authorize-only` (the Prow gate) never waits and
+   still fails closed on a pending run. Grant caller `actions: read` for this check;
    no new token is needed. Keep main triggers unfiltered or dispatch the actual
    CI workflow at that main commit before activation. Prow runs the same guard
    before any command or result write.

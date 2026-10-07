@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
@@ -25,10 +26,18 @@ SOURCE_FILES = ("scripts/issue_policy.py", "scripts/issue_status.py", "issue-lif
                 "scripts/prow_commands.py", "prow-labels/action.yml",
                 ".github/workflows/reusable-issue-lifecycle.yml")
 EMPTY = {"", "_no response_", "no response", "none"}
+# Default-branch CI usually finishes within minutes of a merge; the reusable
+# lifecycle job has a 15-minute timeout, so the wait must leave room for the rest.
+MAIN_CI_WAIT_SECONDS = 600
+MAIN_CI_POLL_SECONDS = 30
 
 
 class StaleRecord(RuntimeError):
     """A human changed this record; skip it rather than overwrite that work."""
+
+
+class MainCIPending(RuntimeError):
+    """Main CI is still running: nothing is authorized, and the event is deferred."""
 
 
 def protected_labels(catalog):
@@ -667,21 +676,34 @@ class GitHub:
                 facts["linked_prs"].append(pr)
         return record, facts
 
-    def require_main_ci(self, repo, branch, sha, workflows):
-        """Missing, pending, skipped, and failed main runs are not deployment evidence."""
+    def require_main_ci(self, repo, branch, sha, workflows, deadline=None):
+        """Missing, pending, skipped, and failed main runs are not deployment evidence.
+
+        A run still in progress is polled until ``deadline`` (a ``time.monotonic()``
+        value); if it is still running then, MainCIPending is raised instead of the
+        generic failure so callers can defer rather than report a broken deployment.
+        """
         if not workflows:
             raise RuntimeError("Apply requires repository-owned main_ci_workflows")
         for workflow in workflows:
             path = f"repos/{repo}/actions/workflows/{quote(workflow.rsplit('/', 1)[-1], safe='')}/runs?head_sha={sha}&branch={quote(branch, safe='')}&per_page=100"
-            runs = self.request("GET", path)["workflow_runs"]
-            candidates = [run for run in runs if run.get("head_sha") == sha
-                          and run.get("head_branch") == branch
-                          and run.get("event") in {"push", "workflow_dispatch"}]
-            latest = max(candidates, key=lambda run: (run["id"], run.get("run_attempt", 1)), default=None)
-            if not latest or latest.get("status") != "completed" or latest.get("conclusion") != "success":
+            while True:
+                runs = self.request("GET", path)["workflow_runs"]
+                candidates = [run for run in runs if run.get("head_sha") == sha
+                              and run.get("head_branch") == branch
+                              and run.get("event") in {"push", "workflow_dispatch"}]
+                latest = max(candidates, key=lambda run: (run["id"], run.get("run_attempt", 1)), default=None)
+                if latest and latest.get("status") == "completed" and latest.get("conclusion") == "success":
+                    break
+                if latest and latest.get("status") != "completed":
+                    remaining = (deadline - time.monotonic()) if deadline is not None else 0
+                    if remaining > 0:
+                        time.sleep(min(MAIN_CI_POLL_SECONDS, remaining))
+                        continue
+                    raise MainCIPending(f"Main CI still running: {repo} {workflow} at {sha}")
                 raise RuntimeError(f"Apply requires successful main CI: {repo} {workflow} at {sha}")
 
-    def require_deployed_policy(self, catalog_path, workspace):
+    def require_deployed_policy(self, catalog_path, workspace, main_ci_wait=0):
         """Refuse feature policies, fork code, mutable action substitutions and local credentials."""
         if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_REPOSITORY") != self.repo:
             raise RuntimeError("Apply requires the configured repository's GitHub Actions workflow")
@@ -742,9 +764,10 @@ class GitHub:
         for relative in SOURCE_FILES:
             if contents(ACTION_REPOSITORY, relative, released_sha) != (source_root / relative).read_bytes():
                 raise RuntimeError("Running action differs from the reviewed released source")
-        self.require_main_ci(self.repo, branch, default_sha, self.catalog.get("main_ci_workflows", []))
+        deadline = time.monotonic() + main_ci_wait
+        self.require_main_ci(self.repo, branch, default_sha, self.catalog.get("main_ci_workflows", []), deadline)
         self.require_main_ci(ACTION_REPOSITORY, action_default, released_sha,
-                             [".github/workflows/unit-tests.yml", ".github/workflows/actionlint.yml"])
+                             [".github/workflows/unit-tests.yml", ".github/workflows/actionlint.yml"], deadline)
         self.writes_authorized = True
 
     def sync_catalog(self, catalog, apply):
@@ -915,7 +938,17 @@ def main(argv=None):
     args.repo = catalog["repository"]
     github = GitHub(args.repo, catalog)
     if args.apply:
-        github.require_deployed_policy(catalog_path, args.workspace)
+        # --authorize-only gates Prow writes on exit status, so it never waits or defers.
+        try:
+            github.require_deployed_policy(
+                catalog_path, args.workspace,
+                main_ci_wait=0 if args.authorize_only else MAIN_CI_WAIT_SECONDS,
+            )
+        except MainCIPending as error:
+            if args.authorize_only:
+                raise
+            print(f"::notice::{error}; nothing applied, this event is deferred to the next reconciliation")
+            return 0
     if args.authorize_only:
         if not args.apply:
             parser.error("--authorize-only requires --apply")
