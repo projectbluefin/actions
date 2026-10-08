@@ -157,7 +157,7 @@ jobs:
       fail-fast: true
       matrix:
         variant: ${{ fromJSON(inputs.variants) }}
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@ce4f6e6158705dbce1f6165d5089a2a010bb7d19 # v1
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@da6a487ec6783490f042e1cad6841f54caf835f0 # v1
     with:
       image: ${{ format('{0}/{1}@{2}', needs.normalize-registry.outputs.registry, matrix.variant.image, fromJSON(needs.resolve.outputs.digests)[matrix.variant.image]) }}
       suites: ${{ inputs.gate_suites }}

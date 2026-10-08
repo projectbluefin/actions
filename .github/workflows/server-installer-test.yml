@@ -24,12 +24,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install just
-        uses: taiki-e/install-action@d03c2ed96f683e9e174ccb288ecb4b6489ee22e1 # just
+        uses: taiki-e/install-action@844d13d3ed6991e61a4ebc2c067073e3ed4f5ee1 # just
         with:
           tool: just
 
       - name: Download installer test artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ inputs.artifact-name }}
           path: dist
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload QEMU failure evidence
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-installer-qemu-${{ github.run_id }}
           if-no-files-found: ignore
