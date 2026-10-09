@@ -152,11 +152,13 @@ jobs:
                   churn[name]['window_start'] = TODAY
 
           for name in changed_pkgs:
-              churn.setdefault(name, {'changes': 0, 'window_start': TODAY, 'interval': 'monthly'})
+              churn.setdefault(name, {'changes': 0, 'window_start': TODAY})
               churn[name]['changes'] = churn[name].get('changes', 0) + 1
 
           for name in current:
-              churn.setdefault(name, {'changes': 0, 'window_start': TODAY, 'interval': 'monthly'})
+              # No 'interval' default: a package seen for the first time must reach
+              # bootstrap_interval() below instead of being pinned to monthly.
+              churn.setdefault(name, {'changes': 0, 'window_start': TODAY})
 
           # Bootstrap heuristics (used until 4+ weeks of data exist)
           WEEKLY_PAT    = re.compile(r'^(tailscale|bootc|distrobox|fastfetch|starship|uupd|ublue-update|topgrade)$')
@@ -185,7 +187,7 @@ jobs:
                   new_interval = derive_interval(changes)
               else:
                   new_interval = entry.get('interval') or bootstrap_interval(name)
-              if new_interval != entry.get('interval'):
+              if entry.get('interval') and new_interval != entry.get('interval'):
                   print(f"  {name}: {entry.get('interval')} → {new_interval} ({changes} changes in {weeks_of_data}w)")
                   interval_changes += 1
               entry['interval'] = new_interval
