@@ -99,7 +99,7 @@ jobs:
     name: Migration — ${{ inputs.source_image }}
     # Keep this pin identical to the testsuite e2e.yml pin in reusable-execute-release.yml
     # (same `# v1` comment) so Renovate bumps all callers together.
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@da6a487ec6783490f042e1cad6841f54caf835f0 # v1
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@99cbca938425f73385c7b646363a5d03dd6d7b46 # v1
     permissions:
       contents: read
       packages: write
