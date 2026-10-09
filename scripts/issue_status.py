@@ -223,7 +223,7 @@ def status_report(record, facts, catalog, context):
         reporter = "No action needed; reopen if the problem returns."
     elif stage == "needs-triage":
         maintainer.extend([
-            "To accept, add `triage/accepted`.",
+            "To accept, run `/triage accepted` (adds `triage/accepted`).",
             "Removing `needs-triage` or `needs-human` does not work, let the bot do it.",
             "Accepting means we want it in Bluefin - you are not committed to working on this.",
             "Need more information? Ask, then add `triage/needs-information`. To decline, close with a reason.",
@@ -404,7 +404,7 @@ def prow_report(catalog, result):
     if result.get("pull_request"):
         steps.append("Commands only work on issues. Use the PR's normal review and merge controls.")
     else:
-        steps.append("Prow only sets kind/area or pauses issues. To accept work, add `triage/accepted`.")
+        steps.append("Prow only sets kind/area or pauses issues. To accept work, run `/triage accepted` (adds `triage/accepted`).")
     return _render(
         catalog["comment_marker"].replace(" -->", ":prow -->"),
         ("Command result unconfirmed" if result.get("changes_unknown") else titles[outcome]) + f" — {catalog['display_name']}",
