@@ -181,62 +181,55 @@ class TestExtraction:
 
 
 class TestBootstrapHeuristics:
-    """The name-based bootstrap heuristics are currently unreachable.
-
-    ``bootstrap_interval`` is only consulted via
-    ``entry.get('interval') or bootstrap_interval(name)``, but every entry reaches
-    that line through ``churn.setdefault(name, {..., 'interval': 'monthly'})``, so
-    ``entry.get('interval')`` is always the truthy string ``monthly`` and the
-    right-hand side never evaluates. The WEEKLY/QUARTERLY/YEARLY patterns and the
-    function itself are therefore dead code, and a first run classifies every
-    package as ``monthly``.
-
-    These tests pin the behaviour that actually ships so the difference between it
-    and the workflow's documented intent stays visible instead of being assumed
-    away. Tracked as a defect in projectbluefin/actions#562; when that fix lands,
-    ``test_first_run_classifies_every_package_as_monthly`` must be replaced with
-    the per-pattern expectations it currently contradicts.
-    """
+    """Before four weeks of data exist, a package seen for the first time is
+    classified by name: WEEKLY_PAT, then YEARLY_PAT, then QUARTERLY_PAT, else
+    monthly. A recorded interval stands until the data window opens."""
 
     @pytest.mark.parametrize(
-        "package",
+        ("package", "expected"),
         [
-            "tailscale",              # WEEKLY_PAT would say weekly
-            "bootc",                  # WEEKLY_PAT would say weekly
-            "distrobox",              # WEEKLY_PAT would say weekly
-            "ublue-update",           # WEEKLY_PAT would say weekly
-            "google-noto-sans-fonts",  # YEARLY_PAT would say yearly
-            "liberation-mono-fonts",   # YEARLY_PAT would say yearly
-            "dejavu-sans-fonts",       # YEARLY_PAT would say yearly
-            "jetbrains-mono-fonts",    # YEARLY_PAT would say yearly
-            "linux-firmware",          # QUARTERLY_PAT would say quarterly
-            "iwlwifi-dvm-firmware",    # QUARTERLY_PAT would say quarterly
-            "atheros-firmware",        # QUARTERLY_PAT would say quarterly
-            "alsa-firmware",           # QUARTERLY_PAT would say quarterly
-            "bash",                    # no pattern matches: monthly either way
-            "systemd",                 # no pattern matches: monthly either way
+            ("tailscale", "weekly"),
+            ("bootc", "weekly"),
+            ("distrobox", "weekly"),
+            ("ublue-update", "weekly"),
+            ("google-noto-sans-fonts", "yearly"),
+            ("liberation-mono-fonts", "yearly"),
+            ("dejavu-sans-fonts", "yearly"),
+            ("jetbrains-mono-fonts", "yearly"),
+            ("linux-firmware", "quarterly"),
+            ("iwlwifi-dvm-firmware", "quarterly"),
+            ("atheros-firmware", "quarterly"),
+            ("alsa-firmware", "quarterly"),
+            ("bash", "monthly"),
+            ("systemd", "monthly"),
         ],
     )
-    def test_first_run_classifies_every_package_as_monthly(self, tmp_path, package):
+    def test_first_run_classifies_each_package_by_its_name(self, tmp_path, package, expected):
         run_classifier(tmp_path, {package: "1.0-1"})
-        assert read_intervals(tmp_path)[package] == "monthly"
+        assert read_intervals(tmp_path)[package] == expected
+
+    def test_first_sighting_is_recorded_in_churn_with_its_bootstrap_interval(self, tmp_path):
+        run_classifier(tmp_path, {"tailscale": "1.0-1"})
+        assert read_churn(tmp_path)["tailscale"]["interval"] == "weekly"
+
+    def test_new_package_beside_an_existing_one_gets_its_own_heuristic(self, tmp_path):
+        run_classifier(
+            tmp_path,
+            {"bash": "5.2-1", "tailscale": "1.0-1"},
+            churn={"bash": churn_entry(0, days_ago(7), interval="monthly")},
+        )
+        intervals = read_intervals(tmp_path)
+        assert intervals["tailscale"] == "weekly"
+        assert intervals["bash"] == "monthly"
 
     def test_first_run_reports_no_reclassifications(self, tmp_path):
+        # Assigning a first interval is not a reclassification.
         result = run_classifier(tmp_path, {"tailscale": "1.0-1", "bash": "5.2-1"})
         assert "Interval reclassifications: 0" in result.stdout
 
-    def test_bootstrap_heuristics_exist_but_are_never_consulted(self, tmp_path):
-        source = extract_classifier_source()
-        assert "def bootstrap_interval(name):" in source
-        assert "entry.get('interval') or bootstrap_interval(name)" in source
-        # The only producer of a missing 'interval' key would be a churn entry that
-        # predates the setdefault default; the setdefault runs for every package in
-        # the image before classification, so no such entry survives to this line.
-        assert "'interval': 'monthly'" in source
-
     def test_explicitly_empty_recorded_interval_falls_back_to_the_heuristic(self, tmp_path):
-        # The single input shape that still reaches bootstrap_interval: a churn file
-        # carrying an explicitly falsy interval for a package still in the image.
+        # A churn file carrying an explicitly falsy interval for a package still in
+        # the image is treated like a first sighting.
         run_classifier(
             tmp_path,
             {"tailscale": "1.0-1", "google-noto-sans-fonts": "1.0-1", "linux-firmware": "1.0-1"},
