@@ -174,11 +174,20 @@ falls below the success-rate threshold.
 
 ### Alerting behavior
 
-- Success rate = `successful completed runs / completed non-skipped runs`
+- Success rate = `successful completed runs / completed production runs`
 - Window = last 24 hours
 - Threshold = 80%
 - Minimum sample = 3 completed runs in the window (`MIN_RUNS`)
 - Escalation floor = 2 back-to-back failures (`MIN_CONSECUTIVE_FAILURES`)
+- **Success rate measures the production pipeline, not pre-merge validation.** The
+  historical rate recipe excluded only `skipped`/`in_progress`/`cancelled`/
+  `action_required` conclusions. That still counted pre-merge `pull_request` and
+  `merge_group` runs as pipeline outcomes — but those validate *in-flight* work and
+  routinely fail transiently (a failed PR run or a merge-queue collision gets fixed
+  and re-run before the branch lands), deflating the real pipeline rate and firing
+  false alerts (e.g. projectbluefin/actions#503). The recipe therefore also drops
+  `pull_request` and `merge_group` events, counting only production pipeline events
+  such as `push`, `schedule`, `workflow_dispatch`, and `workflow_run`.
 - Open issues are deduplicated by repo + pipeline title prefix and alerting bot author
   (only alerts opened by the workflow's alerting identity suppress new alerts, preventing human-filed
   issues with matching titles from muting a pipeline)
