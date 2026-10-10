@@ -57,6 +57,16 @@ inputs:
       otherwise the body advertises an auto-merge that never fires.
     required: false
     default: 'true'
+  merge_note:
+    description: >
+      Markdown that replaces the merge notice rendered above the desktop
+      screenshot. Leave empty to keep the built-in notice selected by
+      auto_merge (the bluefin/dakota/bluefin-lts weekly window when true, the
+      merged-by-a-human notice when false). Set it in repositories whose merge
+      cadence differs, for example a daily 04:00 UTC promotion. The text is
+      written verbatim; backslash sequences are not interpreted.
+    required: false
+    default: ''
   output:
     description: 'Output file path for the rendered PR body'
     required: true
@@ -86,6 +96,7 @@ runs:
         COMPARE_URL:   ${{ inputs.compare_url }}
         E2E_IMAGE:     ${{ inputs.e2e_image }}
         AUTO_MERGE:    ${{ inputs.auto_merge }}
+        MERGE_NOTE_OVERRIDE: ${{ inputs.merge_note }}
         PR_BODY_FILE:  ${{ inputs.output }}
       run: |
         set -euo pipefail
@@ -130,7 +141,11 @@ runs:
           SCREENSHOT_SLUG=$(printf '%s' "${PRIMARY_IMAGE}" | tr ':' '-')
         fi
         SCREENSHOT_URL="https://projectbluefin.github.io/testsuite/screenshots/${SCREENSHOT_SLUG}-smoke-latest.png"
-        if [[ "${AUTO_MERGE}" == "false" ]]; then
+        if [[ -n "${MERGE_NOTE_OVERRIDE//[[:space:]]/}" ]]; then
+          # Caller-supplied text: escape backslashes so the %b below prints it verbatim.
+          MERGE_NOTE="${MERGE_NOTE_OVERRIDE//\\/\\\\}"
+          MERGE_NOTE="${MERGE_NOTE%$'\n'}"$'\n'
+        elif [[ "${AUTO_MERGE}" == "false" ]]; then
           MERGE_NOTE='> [!IMPORTANT]\n> **This promotion is merged by a human.** Nothing merges it on a schedule.\n> Review the release checklist above, then merge this PR from the GitHub UI.\n'
         else
           MERGE_NOTE='> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n'
