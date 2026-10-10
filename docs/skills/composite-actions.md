@@ -322,7 +322,7 @@ jobs:
     secrets: inherit
 ```
 
-2. Run the workflow once manually (`workflow_dispatch`) to bootstrap `files/pkg-intervals.tsv`. It commits directly to `main`.
+2. Run the workflow once manually (`workflow_dispatch`) to bootstrap `files/pkg-intervals.tsv`. It opens a PR on a `cadence/update-intervals-*` branch — merge that PR. A direct push to `main` is rejected: the cadence app lacks a direct `contents:write` grant and the default branch sits behind a merge-queue ruleset (see projectbluefin/bluefin-lts#503). An optional `target_branch` input (default `main`) points the PR at your repo's default branch.
 
 3. From that point, `apply-pkg-intervals` runs automatically on every non-PR, non-testing build via `reusable-build.yml`, and the cadence workflow self-updates after each release.
 
