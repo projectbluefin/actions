@@ -135,7 +135,20 @@ runs:
         else
           MERGE_NOTE='> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n'
         fi
-        printf '\n## Desktop Screenshot\n\n%b\n![%s desktop](%s)\n' \
-          "${MERGE_NOTE}" "${PRIMARY_IMAGE}" "${SCREENSHOT_URL}" >> "${PR_BODY_FILE}"
+
+        # The testsuite pages only carry screenshots for images whose E2E runs
+        # upload them. Callers that run no E2E — personal images, forks —
+        # would otherwise render a permanently broken image link, so verify
+        # the URL before promising a screenshot. A transient outage at most
+        # hides the section until the next refresh re-renders the body.
+        if curl -fsIL -o /dev/null --max-time 10 "${SCREENSHOT_URL}"; then
+          printf '\n## Desktop Screenshot\n\n%b\n![%s desktop](%s)\n' \
+            "${MERGE_NOTE}" "${PRIMARY_IMAGE}" "${SCREENSHOT_URL}" >> "${PR_BODY_FILE}"
+        else
+          # Keep the merge note even without a screenshot: how this PR gets
+          # merged, and how to block it, must reach the body regardless.
+          printf '\n%b\n' "${MERGE_NOTE}" >> "${PR_BODY_FILE}"
+          echo "::notice::No testsuite screenshot at ${SCREENSHOT_URL}; omitting the section."
+        fi
 
         echo "pr_title=ci(promote): ${PRIMARY_IMAGE} ${SOURCE_BRANCH} → ${TARGET_BRANCH} ${DATE}" >> "$GITHUB_OUTPUT"
