@@ -280,3 +280,206 @@ def test_catalog_cannot_retire_or_sync_protected_operational_definitions(consume
     catalog["labels"]["source:agent"] = {"color": "abcdef", "description": "Guessed operator definition"}
     save(workspace, ".github/issue-policy.json", catalog)
     assert "protected_labels" in failures(consumer)
+
+
+main = runpy.run_path(str(SCRIPT))["main"]
+
+
+def test_main_reports_pass_and_failure_in_process(consumer, capsys):
+    workspace = str(consumer[0])
+    assert main(["--workspace", workspace, "--repository", "projectbluefin/example"]) == 0
+    out = capsys.readouterr()
+    assert "Onboarding preflight passed" in out.out
+    assert "not human acceptance" in out.out
+    assert out.err == ""
+    assert main(["--workspace", workspace, "--repository", "projectbluefin/different"]) == 1
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err.startswith("ERROR: ") and "repository mismatch" in out.err
+
+
+def test_main_defaults_repository_to_github_repository(consumer, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "projectbluefin/different")
+    fresh_main = runpy.run_path(str(SCRIPT))["main"]
+    assert fresh_main(["--workspace", str(consumer[0])]) == 1
+    assert "repository mismatch" in capsys.readouterr().err
+
+
+def test_catalog_without_main_ci_workflows_is_refused(consumer):
+    workspace, catalog, _, _ = consumer
+    catalog.pop("main_ci_workflows")
+    save(workspace, ".github/issue-policy.json", catalog)
+    assert "declare native main_ci_workflows" in failures(consumer)
+
+
+def test_missing_issue_forms_are_refused(consumer):
+    (consumer[0] / ".github/ISSUE_TEMPLATE/bug.yml").unlink()
+    assert "add native issue forms" in failures(consumer)
+
+
+@pytest.mark.parametrize("labels", ["kind/bug", ["kind/bug", 7]])
+def test_form_labels_must_be_list_of_names(consumer, labels):
+    workspace, _, form, _ = consumer
+    form["labels"] = labels
+    save(workspace, ".github/ISSUE_TEMPLATE/bug.yml", form)
+    errors = failures(consumer)
+    assert "labels must be a list of catalog label names" in errors
+    assert "Automation preference dropdown" not in errors
+
+
+@pytest.mark.parametrize("body", [{"type": "textarea"}, ["not a field"]])
+def test_form_body_must_be_native_fields(consumer, body):
+    workspace, _, form, _ = consumer
+    form["body"] = body
+    save(workspace, ".github/ISSUE_TEMPLATE/bug.yml", form)
+    errors = failures(consumer)
+    assert "body must contain native form fields" in errors
+    assert "Automation preference dropdown" not in errors
+
+
+def test_intake_without_bug_form_is_refused(consumer):
+    workspace, _, form, _ = consumer
+    form["labels"] = ["needs-triage", "kind/task"]
+    save(workspace, ".github/ISSUE_TEMPLATE/bug.yml", form)
+    assert "provide a native kind/bug intake form" in failures(consumer)
+
+
+def test_non_yaml_template_and_workflow_files_are_ignored(consumer):
+    workspace = consumer[0]
+    (workspace / ".github/ISSUE_TEMPLATE/README.md").write_text("not: [valid")
+    (workspace / ".github/workflows/notes.txt").write_text("not: [valid")
+    assert failures(consumer) == ""
+
+
+@pytest.mark.parametrize("links", [
+    [],
+    "not a list",
+    [{"name": "Issue lifecycle", "url": "https://github.com/projectbluefin/example/blob/main/a.md"},
+     {"name": "Other lifecycle", "url": "https://github.com/projectbluefin/example/blob/main/b.md"}],
+])
+def test_chooser_must_link_exactly_one_lifecycle_document(consumer, links):
+    save(consumer[0], ".github/ISSUE_TEMPLATE/config.yml", {"contact_links": links})
+    assert "link one target-owned lifecycle document" in failures(consumer)
+
+
+def test_unparseable_lifecycle_url_is_refused(consumer):
+    save(consumer[0], ".github/ISSUE_TEMPLATE/config.yml", {"contact_links": [{
+        "name": "Issue lifecycle", "url": "https://[github.com/projectbluefin/example/blob/main/docs/lifecycle.md"}]})
+    assert "invalid lifecycle URL" in failures(consumer)
+
+
+@pytest.mark.parametrize("url", [
+    "http://github.com/projectbluefin/example/blob/main/docs/lifecycle.md",
+    "https://example.com/projectbluefin/example/blob/main/docs/lifecycle.md",
+])
+def test_lifecycle_url_must_be_https_github(consumer, url):
+    save(consumer[0], ".github/ISSUE_TEMPLATE/config.yml", {"contact_links": [{"name": "Issue lifecycle", "url": url}]})
+    assert "must belong to the catalog repository" in failures(consumer)
+
+
+def test_lifecycle_url_must_name_a_document(consumer):
+    save(consumer[0], ".github/ISSUE_TEMPLATE/config.yml", {"contact_links": [{
+        "name": "Issue lifecycle", "url": "https://github.com/projectbluefin/example/blob/main"}]})
+    assert "lifecycle link must name a repository document" in failures(consumer)
+
+
+def test_missing_lifecycle_document_is_reported(consumer):
+    (consumer[0] / "docs/lifecycle.md").unlink()
+    assert "docs/lifecycle.md: " in failures(consumer)
+
+
+def test_percent_encoded_lifecycle_path_is_decoded(consumer):
+    workspace = consumer[0]
+    (workspace / "docs/lifecycle.md").rename(workspace / "docs/issue lifecycle.md")
+    save(workspace, ".github/ISSUE_TEMPLATE/config.yml", {"contact_links": [{
+        "name": "Issue lifecycle", "url": "https://github.com/projectbluefin/example/blob/main/docs/issue%20lifecycle.md"}]})
+    assert failures(consumer) == ""
+
+
+@pytest.mark.parametrize("target", ["traversal", "symlink"])
+def test_lifecycle_document_outside_workspace_is_refused(consumer, tmp_path_factory, target):
+    workspace = consumer[0]
+    outside = tmp_path_factory.mktemp("outside") / "lifecycle.md"
+    outside.write_text((workspace / "docs/lifecycle.md").read_text())
+    if target == "symlink":
+        (workspace / "docs/lifecycle.md").unlink()
+        (workspace / "docs/lifecycle.md").symlink_to(outside)
+        relative = "docs/lifecycle.md"
+    else:
+        relative = os.path.relpath(outside, workspace)
+    save(workspace, ".github/ISSUE_TEMPLATE/config.yml", {"contact_links": [{
+        "name": "Issue lifecycle", "url": f"https://github.com/projectbluefin/example/blob/main/{relative}"}]})
+    assert "lifecycle document resolves outside the caller workspace" in failures(consumer)
+
+
+@pytest.mark.parametrize("text", [
+    "The reporter verifies.\nImage: x\nFix revision: x\nRelease/build: x\nVerify: x\n",
+    "A maintainer records delivery.\nImage: x\nFix revision: x\nRelease/build: x\nVerify: x\n",
+])
+def test_lifecycle_document_names_human_and_reporter_responsibility(consumer, text):
+    (consumer[0] / "docs/lifecycle.md").write_text(text)
+    assert "identify human delivery responsibility" in failures(consumer)
+
+
+def test_lifecycle_document_must_list_image_receipt_fields(consumer):
+    (consumer[0] / "docs/lifecycle.md").write_text("A maintainer delivers; the reporter verifies.\nFix revision: x\nVerify: x\n")
+    errors = failures(consumer)
+    assert "image delivery receipt fields ['Image', 'Release/build']" in errors
+
+
+def test_caller_events_must_be_a_mapping(consumer):
+    workspace, _, _, caller = consumer
+    caller["on"] = "issues"
+    save(workspace, ".github/workflows/issues.yml", caller)
+    errors = failures(consumer)
+    assert "lifecycle caller must declare typed events" in errors
+    assert "issues.types" not in errors
+
+
+def test_caller_requires_scheduled_reconciliation(consumer):
+    workspace, _, _, caller = consumer
+    caller["on"].pop("schedule")
+    save(workspace, ".github/workflows/issues.yml", caller)
+    assert "add a scheduled reconciliation sweep" in failures(consumer)
+
+
+@pytest.mark.parametrize("guard", ["github.repository == 'projectbluefin/other'", "", "${{ always() }}"])
+def test_caller_job_must_guard_catalog_repository(consumer, guard):
+    workspace, _, _, caller = consumer
+    caller["jobs"]["reconcile"]["if"] = guard
+    save(workspace, ".github/workflows/issues.yml", caller)
+    assert "guard the production job with github.repository == 'projectbluefin/example'" in failures(consumer)
+
+
+def test_caller_guard_may_use_expression_syntax(consumer):
+    workspace, _, _, caller = consumer
+    caller["jobs"]["reconcile"]["if"] = "${{ github.repository == 'projectbluefin/example' }}"
+    save(workspace, ".github/workflows/issues.yml", caller)
+    assert failures(consumer) == ""
+
+
+def test_caller_job_inherits_workflow_permissions(consumer):
+    workspace, _, _, caller = consumer
+    caller["permissions"] = caller["jobs"]["reconcile"].pop("permissions")
+    save(workspace, ".github/workflows/issues.yml", caller)
+    assert failures(consumer) == ""
+
+
+@pytest.mark.parametrize("count", [0, 2])
+def test_exactly_one_production_caller_is_required(consumer, count):
+    workspace, _, _, caller = consumer
+    if count == 0:
+        (workspace / ".github/workflows/issues.yml").unlink()
+    else:
+        save(workspace, ".github/workflows/issues-copy.yml", caller)
+    assert "provide exactly one thin reusable-issue-lifecycle.yml@v1 production caller" in failures(consumer)
+
+
+def test_workflow_jobs_must_be_a_mapping(consumer):
+    save(consumer[0], ".github/workflows/odd.yml", {"on": {"push": {}}, "jobs": ["build"]})
+    assert ".github/workflows/odd.yml: jobs must be a mapping" in failures(consumer)
+
+
+def test_non_mapping_jobs_are_skipped_by_competing_writer_scan(consumer):
+    save(consumer[0], ".github/workflows/odd.yml", {"on": {"push": {}}, "jobs": {"build": "not a job"}})
+    assert failures(consumer) == ""
