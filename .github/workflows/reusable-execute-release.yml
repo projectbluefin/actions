@@ -47,6 +47,15 @@ on:
         required: false
         type: string
         default: 'smoke,common'
+      gate_extra_tags:
+        description: >
+          Behave tag expression appended to the release gate's tag filter
+          (testsuite e2e.yml extra-tags), e.g. "~@orca" to exclude a scenario
+          group the image deliberately does not ship yet. Empty runs the suites
+          unfiltered.
+        required: false
+        type: string
+        default: ''
     outputs:
       promoted_digests:
         description: JSON map of promoted digests keyed by image name
@@ -161,6 +170,7 @@ jobs:
     with:
       image: ${{ format('{0}/{1}@{2}', needs.normalize-registry.outputs.registry, matrix.variant.image, fromJSON(needs.resolve.outputs.digests)[matrix.variant.image]) }}
       suites: ${{ inputs.gate_suites }}
+      extra-tags: ${{ inputs.gate_extra_tags }}
       test_ref: v1
 
   execute:
