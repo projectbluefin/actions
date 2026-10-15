@@ -278,7 +278,7 @@ Move back to `@v1` after the branch merges. Renovate manages SHA bumps automatic
 ## Getting help
 
 - File issues at [projectbluefin/actions](https://github.com/projectbluefin/actions/issues)
-- Working examples: [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) (Path 1) and [projectbluefin/bluefin-lts](https://github.com/projectbluefin/bluefin-lts) (Path 2 à la carte)
+- Working examples: [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) (Path 1) and [projectbluefin/dakota](https://github.com/projectbluefin/dakota) (Path 2 à la carte)
 
 ## When to Use
 

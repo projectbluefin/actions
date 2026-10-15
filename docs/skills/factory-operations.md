@@ -50,7 +50,7 @@ jobs:
 
 ### Manual GitHub UI setup (environment-gated repos only)
 
-For Dakota and Bluefin LTS, after the workflow change is merged:
+For Dakota, after the workflow change is merged:
 
 1. Go to the repo → **Settings → Environments → New environment**
 2. Name: `production`
@@ -542,7 +542,7 @@ Examples: `ci(promote): bluefin testing → stable 2026-06-11`
 ## Desktop Screenshot
 
 > [!CAUTION]
-> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**
+> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota).**
 > To block this release: add the `do-not-merge` label to this PR before that time.
 > Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.
 
@@ -570,10 +570,6 @@ workflow skips auto-merge / merge-queue enrollment until the label is removed.
 |---|---|---|
 | `projectbluefin/bluefin` | `reusable-promote-squash.yml` | `testing` |
 | `projectbluefin/dakota` | `reusable-promote.yml` | `main` |
-| `projectbluefin/bluefin-lts` | not yet adopted — see [bluefin-lts#172](https://github.com/projectbluefin/bluefin-lts/issues/172) | — |
-
-**bluefin-lts** uses a different release model (weekly direct builds on `lts` branch, no promotion PR).
-Tracked in bluefin-lts#172.
 
 ---
 
@@ -758,7 +754,7 @@ Renovate keeps pins fresh automatically; the factory health monitor surfaces fai
 
 Use this skill when:
 - Setting up or auditing the machine-enforced 2-human production approval gate in consumer repositories.
-- Modifying promotion schedules, cadence, or merge-queue integration across bluefin, dakota, or bluefin-lts.
+- Modifying promotion schedules, cadence, or merge-queue integration across bluefin or dakota.
 - Investigating factory health monitoring alerts or failure issue generation in `projectbluefin/common`.
 - Debugging or configuring Renovate dependency updates and automated merge rules for first-party or third-party pins.
 - Verifying the end-to-end promotion PR format (Design C) and checklist markers.

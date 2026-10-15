@@ -63,7 +63,7 @@ like a broader exemption is a misreading.
 
 ## When NOT to Use
 
-- Image repos (`bluefin`, `bluefin-lts`, `dakota`) — their promotion path is
+- Image repos (`bluefin`, `dakota`) — their promotion path is
   automated and governed by their own workflows
 - Deciding *whether* a change is allowed to land at all — that is a gate
   question; see `common/docs/skills/human-gates.md`

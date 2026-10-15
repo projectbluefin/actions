@@ -133,7 +133,7 @@ runs:
         if [[ "${AUTO_MERGE}" == "false" ]]; then
           MERGE_NOTE='> [!IMPORTANT]\n> **This promotion is merged by a human.** Nothing merges it on a schedule.\n> Review the release checklist above, then merge this PR from the GitHub UI.\n'
         else
-          MERGE_NOTE='> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota) / Thursday 04:00 UTC (bluefin-lts).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n'
+          MERGE_NOTE='> [!CAUTION]\n> **Auto-merge scheduled for Tuesday 04:00 UTC (bluefin/dakota).**\n> To block this release: add the `do-not-merge` label to this PR before that time.\n> Remove the label when the issue is resolved -- the next weekly window will pick it up automatically.\n'
         fi
 
         # The testsuite pages only carry screenshots for images whose E2E runs

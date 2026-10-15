@@ -4,12 +4,12 @@ This guide is written for human maintainers. Agents have `AGENTS.md`; this page 
 
 ## What this repo is
 
-Shared composite GitHub Actions consumed by bluefin, aurora, bazzite, and bluefin-lts via `projectbluefin/actions/bootc-build/<name>@v1`. Four maintainers: `castrojo`, `p5`, `m2Giles`, `tulilirockz`. Two consumption paths:
+Shared composite GitHub Actions consumed by bluefin, aurora, and bazzite via `projectbluefin/actions/bootc-build/<name>@v1`. Four maintainers: `castrojo`, `p5`, `m2Giles`, `tulilirockz`. Two consumption paths:
 
 | Path | Who uses it | How |
 |---|---|---|
 | **Reusable workflow** | bluefin, aurora | Calls `reusable-build.yml@v1` + satisfies Justfile contract |
-| **À la carte** | bluefin-lts, dakota | Calls individual composite actions |
+| **À la carte** | dakota | Calls individual composite actions |
 
 ## The agentic loop
 
@@ -50,7 +50,7 @@ git push --force origin v1
 This affects every consumer repo simultaneously. Do not delegate this to an agent.
 
 ### 4. Production gate in consumer repos
-Promotion workflows in bluefin, bluefin-lts, and dakota require **2 distinct human approvers** via the `production` GitHub Environment. Repo admins can bypass — every bypass is permanently logged in the Environment deployment history and via `gh api repos/<org>/<repo>/deployments`.
+Promotion workflows in bluefin and dakota require **2 distinct human approvers** via the `production` GitHub Environment. Repo admins can bypass — every bypass is permanently logged in the Environment deployment history and via `gh api repos/<org>/<repo>/deployments`.
 
 ## The self-improving loop
 

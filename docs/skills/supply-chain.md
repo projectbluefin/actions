@@ -241,7 +241,7 @@ The `sign-and-publish` action exposes a `certificate-identity-regexp` input with
 scoped to known bluefin/aurora signing workflows:
 
 ```
-https://github.com/projectbluefin/(bluefin|bluefin-lts|aurora|actions)/.github/workflows/
+https://github.com/projectbluefin/(bluefin|dakota|common|aurora|actions)/.github/workflows/
 ```
 
 Callers outside the `projectbluefin` org must override this input with their own org prefix.

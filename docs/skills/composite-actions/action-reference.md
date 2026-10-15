@@ -197,7 +197,7 @@ rather than with podman/bootc policy.
 
 **SLSA Build L2 provenance:** `actions/attest-build-provenance` (when `push-attestation: true`) emits the `https://slsa.dev/provenance/v1` predicate automatically from the OIDC token — capturing workflow ref, git SHA, trigger event, and runner environment. This satisfies SLSA Build L2 on GitHub-hosted runners. Self-hosted runners are **explicitly out of scope** — see `docs/skills/supply-chain.md`.
 
-**Cosign verify scoping:** After the keyless image sign step, `cosign verify` runs immediately with `--certificate-identity-regexp` sourced from the `certificate-identity-regexp` input (default: `projectbluefin/(bluefin|bluefin-lts|aurora|actions)`). This is scoped to specific repos rather than the entire org to prevent a compromised org repo from passing verification. Callers outside the org must override the input with their own prefix.
+**Cosign verify scoping:** After the keyless image sign step, `cosign verify` runs immediately with `--certificate-identity-regexp` sourced from the `certificate-identity-regexp` input (default: `projectbluefin/(bluefin|dakota|common|aurora|actions)`). This is scoped to specific repos rather than the entire org to prevent a compromised org repo from passing verification. Callers outside the org must override the input with their own prefix.
 
 **Retry policy:** All four `cosign sign` invocations (image keyless, image key-based, SBOM keyless, SBOM key-based) are wrapped with `nick-fields/retry` — 3 attempts, 30s wait between attempts, 5 min timeout per attempt. This reduces unsigned-image publishes from transient Rekor/TUF connectivity failures.
 
