@@ -27,13 +27,3 @@ jobs:
     secrets:
       app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
       private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}
-
-  bluefin-lts:
-    uses: $/.github/workflows/reusable-pkg-cadence.yml
-    with:
-      image: ghcr.io/projectbluefin/bluefin:lts
-      repo: projectbluefin/bluefin-lts
-      force_reclassify: ${{ inputs.force_reclassify || false }}
-    secrets:
-      app_id: ${{ secrets.MERGERAPTOR_APP_ID }}
-      private_key: ${{ secrets.MERGERAPTOR_PRIVATE_KEY }}

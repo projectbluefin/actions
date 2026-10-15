@@ -17,7 +17,6 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 | Consumer | Org | Notified? |
 |---|---|---|
 | `projectbluefin/bluefin` | projectbluefin | ✅ Direct access |
-| `projectbluefin/bluefin-lts` | projectbluefin | ✅ Direct access |
 | `ublue-os/aurora` | ublue-os (external) | ⚠️ No CI visibility |
 | `ublue-os/bazzite` | ublue-os (external) | ⚠️ No CI visibility |
 
@@ -117,7 +116,7 @@ the hook will flag it. Either SHA-pin the reference or add an explicit exemption
 
 | Field | Accepts "N/A"? | Requirement |
 |---|---|---|
-| `Consumer PR:` | ❌ No | Must identify a real `projectbluefin/{bluefin,bluefin-lts,dakota,common,chairlift}` consumer PR |
+| `Consumer PR:` | ❌ No | Must identify a real `projectbluefin/{bluefin,dakota,common,chairlift}` consumer PR |
 | `Consumer CI run:` | ❌ No | Must identify that consumer's actual Actions run exercising the relevant change |
 | `Out-of-org consumer impact:` | ✅ Yes | Any non-empty, non-`TODO`/`TBD` explanation (including "N/A — aurora/bazzite unaffected because...") |
 
@@ -220,7 +219,7 @@ Use this skill when:
 - Creating a consumer validation PR in `projectbluefin/bluefin` (or other first-party consumer).
 - Filling out the `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields in the actions PR template.
 - Diagnosing failures in the `.github/workflows/consumer-validation.yml` CI check.
-- Assessing blast radius across bluefin, bluefin-lts, aurora, and bazzite before landing changes.
+- Assessing blast radius across bluefin, aurora, and bazzite before landing changes.
 
 ## When NOT to Use
 

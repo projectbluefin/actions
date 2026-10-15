@@ -76,12 +76,12 @@ jobs:
 
           require_line \
             "Consumer PR" \
-            '^Consumer PR:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota|common|chairlift)/pull/[0-9]+([[:space:]].*)?$' \
+            '^Consumer PR:[[:space:]]+https://github\.com/projectbluefin/(bluefin|dakota|common|chairlift)/pull/[0-9]+([[:space:]].*)?$' \
             "a projectbluefin consumer PR URL exercising the changed action"
 
           require_line \
             "Consumer CI run" \
-            '^Consumer CI run:[[:space:]]+https://github\.com/projectbluefin/(bluefin|bluefin-lts|dakota|common|chairlift)/actions/runs/[0-9]+([[:space:]].*)?$' \
+            '^Consumer CI run:[[:space:]]+https://github\.com/projectbluefin/(bluefin|dakota|common|chairlift)/actions/runs/[0-9]+([[:space:]].*)?$' \
             "a projectbluefin consumer Actions run URL"
 
           impact_line="$(printf '%s\n' "${body}" | grep -E '^Out-of-org consumer impact:' || true)"

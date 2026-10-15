@@ -240,9 +240,6 @@ jobs:
           projectbluefin/bluefin|Build|Testing Images
           projectbluefin/bluefin|E2E|Nightly E2E
           projectbluefin/bluefin|Promote|Promote testing to main
-          projectbluefin/bluefin-lts|Build|Build Bluefin LTS
-          projectbluefin/bluefin-lts|E2E|Post-Merge E2E — Testing Parity
-          projectbluefin/bluefin-lts|Promote|Promote testing to main
           projectbluefin/dakota|Build|Build Bluefin dakota
           projectbluefin/dakota|Promote|Publish Bluefin dakota
           projectbluefin/common|Build|Build

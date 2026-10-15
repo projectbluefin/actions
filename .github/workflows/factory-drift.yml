@@ -41,7 +41,6 @@ jobs:
 
           CONSUMER_REPOS=(
             projectbluefin/bluefin
-            projectbluefin/bluefin-lts
             projectbluefin/dakota
             projectbluefin/common
             projectbluefin/bonedigger
@@ -112,7 +111,6 @@ jobs:
 
           CONSUMER_REPOS=(
             projectbluefin/bluefin
-            projectbluefin/bluefin-lts
             projectbluefin/dakota
             projectbluefin/common
             projectbluefin/bonedigger
@@ -120,7 +118,6 @@ jobs:
 
           IMAGE_REPOS=(
             projectbluefin/bluefin
-            projectbluefin/bluefin-lts
             projectbluefin/dakota
           )
 

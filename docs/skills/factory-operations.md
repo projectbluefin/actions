@@ -34,7 +34,6 @@ release-window approval, and merge-queue enrollment after the gate succeeds.
 |---|---|---|
 | `projectbluefin/bluefin` | `promote-testing-to-main.yml` | E2E + cosign + Tuesday window |
 | `projectbluefin/dakota` | `weekly-testing-promotion.yml` | `production` environment |
-| `projectbluefin/bluefin-lts` | `scheduled-lts-release.yml` | `production` environment |
 
 ### Workflow snippet
 
@@ -89,7 +88,6 @@ and must not be overloaded as an on/off switch.
 | Repo | Cron (UTC) | `enqueue_promotion` | `use_merge_queue` | `run_e2e` | Notes |
 |---|---|---|---|---|---|
 | `projectbluefin/bluefin` | daily `0 4 * * *` | Tuesday schedule or manual dispatch | `true` | `true` | push and non-Tuesday runs refresh the PR without enqueueing |
-| `projectbluefin/bluefin-lts` | Tuesday `0 4 * * 2` | default `true` | `false` | `false` | direct branch builds; no squash promotion PR |
 | `projectbluefin/dakota` | Tuesday `0 4 * * 2` | schedule or manual dispatch | repository policy | repository policy | weekly release path only |
 
 ### Release-window enrollment
@@ -164,9 +162,6 @@ falls below the success-rate threshold.
 | `projectbluefin/bluefin` | Build | `Testing Images` |
 | `projectbluefin/bluefin` | E2E | `Nightly E2E` |
 | `projectbluefin/bluefin` | Promote | `Promote testing to main` |
-| `projectbluefin/bluefin-lts` | Build | `Build Bluefin LTS` |
-| `projectbluefin/bluefin-lts` | E2E | `Post-Merge E2E - Testing Parity` |
-| `projectbluefin/bluefin-lts` | Promote | `Promote testing to main` |
 | `projectbluefin/dakota` | Build | `Build Bluefin dakota` |
 | `projectbluefin/dakota` | Promote | `Publish Bluefin dakota` |
 | `projectbluefin/common` | Build | `Build` |

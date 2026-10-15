@@ -111,7 +111,6 @@ For the full skill file format and where to write things, see the org-wide:
 projectbluefin/actions  ←── shared CI building blocks
         │
         ├── projectbluefin/bluefin      (bootc desktop image, Path 1 — reusable-build.yml)
-        ├── projectbluefin/bluefin-lts  (LTS on CentOS Stream 10, Path 2 — à la carte)
         ├── projectbluefin/dakota       (BST/BuildStream image, Path 2 — à la carte, deferred)
         ├── ublue-os/aurora             (Aurora desktop image)
         └── ublue-os/bazzite            (Bazzite gaming image)
@@ -119,11 +118,11 @@ projectbluefin/actions  ←── shared CI building blocks
 
 **Path 1** (full reusable workflow): consumer calls `reusable-build.yml@v1` and satisfies the Justfile contract. Used by bluefin and aurora.
 
-**Path 2** (à la carte composite actions): consumer calls individual actions. Used by bluefin-lts (CentOS Stream 10 base, multi-arch, `chunka` not `rechunk`) and dakota (BST build engine — `create-release` and `sign-and-publish` adopted; see issue #16 for remaining actions).
+**Path 2** (à la carte composite actions): consumer calls individual actions. Used by dakota (BST build engine — `create-release` and `sign-and-publish` adopted; see issue #16 for remaining actions).
 
 Actions are referenced as `projectbluefin/actions/bootc-build/<name>@v1`. Breaking changes to an action require a version bump and coordinated update across all consuming repos.
 
-**Release path:** all three repos (bluefin, bluefin-lts, dakota) use `bootc-build/create-release` as the factory-standard release action. It reads the SPDX-JSON SBOM already produced by `sign-and-publish`/`just sbom`, diffs it against the previous release, renders a release card (light + dark PNG), and generates supply-chain release notes with CNCF verification instructions (cosign, oras, slsa-verifier). bluefin-lts is stubbed pending SBOM artifact upload — see issue bluefin-lts#74.
+**Release path:** all consumer repos (bluefin, dakota) use `bootc-build/create-release` as the factory-standard release action. It reads the SPDX-JSON SBOM already produced by `sign-and-publish`/`just sbom`, diffs it against the previous release, renders a release card (light + dark PNG), and generates supply-chain release notes with CNCF verification instructions (cosign, oras, slsa-verifier).
 
 ---
 
@@ -136,7 +135,7 @@ Agents implement autonomously **except** at these gates. Stop and request human 
 | **Design Gate** | Architecture changes, new subsystem design, behavioral changes visible to consumers |
 | **Security Gate** | Auth, signing, supply chain, secrets handling, SHA pinning for security-critical actions |
 | **Breakage Gate** | Cross-repo breaking changes — removing/renaming inputs, changing defaults that affect consuming repos |
-| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge unless they carry the `3-clanker-queue` label. An agent may merge a `3-clanker-queue` PR once all required checks pass and the PR is mergeable. Image repo (bluefin, bluefin-lts, dakota) promotion PRs are fully automated — no human approval required. |
+| **Merge Gate** | PRs in `projectbluefin/actions` require a maintainer to merge unless they carry the `3-clanker-queue` label. An agent may merge a `3-clanker-queue` PR once all required checks pass and the PR is mergeable. Image repo (bluefin, dakota) promotion PRs are fully automated — no human approval required. |
 
 **`main` is governed by a merge queue — never trust `gh pr merge`'s exit code.** Every
 **sanctioned** merge path must go through the queue, agents and humans alike. Other paths
@@ -202,11 +201,11 @@ Do not request review without evidence. Before opening a PR for review:
 
 **Consumer validation (required before merging):** For any action change, open a PR in at least one consuming repo (`projectbluefin/bluefin` is the primary) that uses `@v1` on the affected workflows. CI must pass there before merging to `main` and advancing the `@v1` tag. Note that a *draft* PR in bluefin produces **no** CI run — run `gh pr ready <n>` to get a citable run ID. The PR template's `Consumer PR`, `Consumer CI run`, and `Out-of-org consumer impact` fields are enforced by `.github/workflows/consumer-validation.yml`. See `docs/skills/consumer-validation.md` for the full protocol.
 
-**Consumer validation evidence:** `Consumer PR:` and `Consumer CI run:` require actual matching URLs in `projectbluefin/{bluefin,bluefin-lts,dakota,common,chairlift}`. Only `Out-of-org consumer impact:` accepts N/A. Path-based non-consumer changes and bot-authored PRs retain the workflow's exemptions. For new issue-policy interfaces, exercise the candidate runtime in the real consumer's read-only preview before release; production remains `@v1`.
+**Consumer validation evidence:** `Consumer PR:` and `Consumer CI run:` require actual matching URLs in `projectbluefin/{bluefin,dakota,common,chairlift}`. Only `Out-of-org consumer impact:` accepts N/A. Path-based non-consumer changes and bot-authored PRs retain the workflow's exemptions. For new issue-policy interfaces, exercise the candidate runtime in the real consumer's read-only preview before release; production remains `@v1`.
 
 **Consumer production references use `@v1`.** Read-only first-party candidate preview is the bootstrap exception described above. Native merge and successful actual main CI drive the managed publisher; consumers activate only after the released-source guard passes.
 
-**Consumer repo branches differ:** `projectbluefin/bluefin` uses `testing` as its active dev branch; `projectbluefin/bluefin-lts` uses `main`. When opening consumer validation PRs: target `testing` for bluefin, `main` for bluefin-lts. Never target `main` for bluefin — PRs opened there will need to be reverted.
+**Consumer repo branches:** `projectbluefin/bluefin` uses `testing` as its active dev branch. When opening consumer validation PRs: target `testing` for bluefin. Never target `main` for bluefin — PRs opened there will need to be reverted.
 
 **`gh run rerun` preserves old workflow code.** After a workflow fix, push a new feature-branch commit to trigger a fresh run; never bypass native reviews or queue controls to obtain a green result.
 
@@ -224,9 +223,9 @@ compare `git ls-remote origin refs/heads/main refs/tags/v1` before activating
 consumers. Do not force-tag around this gate. The lifecycle/Prow runtime
 independently verifies source bytes and actual main CI before writes.
 
-**What this affects:** every consumer workflow calling `reusable-*.yml@v1` or `bootc-build/*@v1` — currently bluefin, dakota, and bluefin-lts (once adopted). Changes take effect on the *next* workflow run in each repo; nothing is re-run automatically.
+**What this affects:** every consumer workflow calling `reusable-*.yml@v1` or `bootc-build/*@v1` — currently bluefin and dakota. Changes take effect on the *next* workflow run in each repo; nothing is re-run automatically.
 
-**SBOM alignment:** the factory standard is Syft → SPDX-JSON, attached via ORAS and stored as a GitHub Actions artifact. `sign-and-publish` handles this for Fedora-based images. BST/dakota uses `just sbom` (also SPDX-JSON). All release notes must be generated from these SBOMs — never from separate container inspection scripts. bluefin-lts is the exception until issue bluefin-lts#74 is resolved.
+**SBOM alignment:** the factory standard is Syft → SPDX-JSON, attached via ORAS and stored as a GitHub Actions artifact. `sign-and-publish` handles this for Fedora-based images. BST/dakota uses `just sbom` (also SPDX-JSON). All release notes must be generated from these SBOMs — never from separate container inspection scripts.
 
 **Production promotion in consumer repos is fully automated.** The `environment: production` gate on promotion/release workflows fires automatically once gate checks pass — no human approvals required. Admin bypasses are permanently logged in the Environment deployment history.
 
@@ -303,7 +302,6 @@ After editing a skill file, commit it in the same PR as the triggering change.
 | Repo | Role |
 |---|---|
 | [projectbluefin/bluefin](https://github.com/projectbluefin/bluefin) | Main OS image (Path 1 — reusable-build.yml) |
-| [projectbluefin/bluefin-lts](https://github.com/projectbluefin/bluefin-lts) | LTS variant on CentOS Stream 10 (Path 2 — à la carte) |
 | [projectbluefin/dakota](https://github.com/projectbluefin/dakota) | BuildStream image build (Path 2, partial adoption) |
 | [projectbluefin/actions](https://github.com/projectbluefin/actions) | **This repo** — shared CI actions + canonical skills hub |
 | [ublue-os/aurora](https://github.com/ublue-os/aurora) | KDE variant (Path 1, external — read-only) |
