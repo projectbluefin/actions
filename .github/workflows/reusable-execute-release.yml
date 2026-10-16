@@ -56,6 +56,14 @@ on:
         required: false
         type: string
         default: ''
+      gate_test_ref:
+        description: >
+          Testsuite ref (tag, branch or commit SHA) the release gate checks out
+          and runs. Defaults to the floating v1 tag; pin it to the same commit
+          your pre-release E2E validated so the gate cannot drift from it.
+        required: false
+        type: string
+        default: 'v1'
     outputs:
       promoted_digests:
         description: JSON map of promoted digests keyed by image name
@@ -171,7 +179,7 @@ jobs:
       image: ${{ format('{0}/{1}@{2}', needs.normalize-registry.outputs.registry, matrix.variant.image, fromJSON(needs.resolve.outputs.digests)[matrix.variant.image]) }}
       suites: ${{ inputs.gate_suites }}
       extra-tags: ${{ inputs.gate_extra_tags }}
-      test_ref: v1
+      test_ref: ${{ inputs.gate_test_ref }}
 
   execute:
     name: Promote release

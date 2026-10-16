@@ -313,6 +313,7 @@ Promotes one or more OCI variants (e.g. `:testing` → `:stable`) for bootc imag
 | `run_release_gate` | no | `true` | Run testsuite e2e against the candidate digest before promotion |
 | `gate_suites` | no | `smoke,common` | Comma-separated suites for the release gate |
 | `gate_extra_tags` | no | `''` | Behave tag expression appended to the gate's tag filter (testsuite `extra-tags`), e.g. `~@orca` to exclude a group the image does not ship yet |
+| `gate_test_ref` | no | `v1` | Testsuite ref the gate runs; pin to the commit your pre-release E2E validated so the gate cannot drift |
 
 ### Caller example
 
