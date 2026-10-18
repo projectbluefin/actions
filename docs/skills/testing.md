@@ -41,7 +41,6 @@ Coverage gate: `--cov-fail-under=75`
 | Script | Test file |
 |---|---|
 | `bootc-build/generate-tags/generate_tags.sh` | `tests/bats/test_generate_tags.bats` |
-| `actions/retry/retry.sh` | `tests/bats/test_retry.bats` |
 | `actions/check-token-health/check_token_health.sh` | `tests/bats/test_check_token_health.bats` |
 | `scripts/resolve_digests.sh` | `tests/bats/test_resolve_digests.bats` (10 tests) |
 | `scripts/verify_signatures.sh` | `tests/bats/test_verify_signatures.bats` (15 tests) |

@@ -46,7 +46,6 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 | [`.github/actions/render-pr-body`](.github/actions/render-pr-body/) | Render the testing-to-stable promotion PR body |
 | [`.github/actions/render-gate-section`](.github/actions/render-gate-section/) | Replace the gate checklist section of a promotion PR body in place |
 | [`actions/check-token-health`](actions/check-token-health/) | Fail fast when a token is expired, revoked, or missing required scopes |
-| [`actions/retry`](actions/retry/) | Retry a shell command with exponential backoff and optional error-pattern filtering |
 
 ## Reusable Workflows
 

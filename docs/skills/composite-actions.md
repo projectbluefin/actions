@@ -262,7 +262,6 @@ Quick reference - for full details see [`composite-actions/action-reference.md`]
 | `render-pr-body` | Render the testing-to-stable promotion PR body |
 | `render-gate-section` | Replace the gate checklist section of a promotion PR body in place |
 | `check-token-health` | Fail fast when a token is expired, revoked, or missing required scopes |
-| `retry` | Retry a shell command with exponential backoff and optional error-pattern filtering |
 
 ---
 
