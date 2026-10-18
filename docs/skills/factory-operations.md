@@ -723,7 +723,7 @@ the inputs, so any caller with a non-default branch model (main→stable) pushed
 one branch and looked up another — 404-ing before auto-merge could run. With the
 name defined once, all steps stay in lockstep.
 
-### reusable-sync-branches: optional GH_TOKEN + force-reset for diverged branches
+### reusable-sync-branches: optional GH_TOKEN; diverged branches refused unless force-reset opted in
 
 `reusable-sync-branches.yml` merges `source_branch` into `target_branch` after a promotion.
 Two patterns to know:
