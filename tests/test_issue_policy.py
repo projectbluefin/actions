@@ -1944,3 +1944,84 @@ def test_retirement_keeps_protected_definitions_and_historical_assignments(tmp_p
                         "--retire-labels", "--confirm-client-cutover", "--apply"]) == 0
     assert writes == [("DELETE", f"repos/{catalog['repository']}/labels/tech-debt", None)]
     assert set(historical["labels"]) == {"kind/tech-debt", "source:agent", "kind/debt"}
+
+
+def _refuses(client, path, workspace, message):
+    import re
+    with pytest.raises(RuntimeError, match=re.escape(message)):
+        client.require_deployed_policy(path, workspace)
+    assert not client.writes_authorized
+
+
+@pytest.mark.parametrize("key,value", [("GITHUB_ACTIONS", "false"), ("GITHUB_REPOSITORY", "projectbluefin/actions")])
+def test_apply_outside_the_configured_repositorys_actions_run_is_refused(tmp_path, monkeypatch, key, value):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv(key, value)
+    _refuses(client, path, workspace, "Apply requires the configured repository's GitHub Actions workflow")
+
+
+@pytest.mark.parametrize("workflow", ["scripts/issue-lifecycle.yml", ".github/workflows/sub/issue-lifecycle.yml", ".github/workflows/issue-lifecycle.sh"])
+def test_caller_workflow_outside_github_workflows_is_refused(tmp_path, monkeypatch, workflow):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv("GITHUB_WORKFLOW_REF", f"projectbluefin/common/{workflow}@refs/heads/main")
+    _refuses(client, path, workspace, "Invalid caller workflow path")
+
+
+def test_catalog_outside_the_caller_checkout_is_refused(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    outside = tmp_path / "issue-policy.json"
+    outside.write_bytes(path.read_bytes())
+    _refuses(client, outside, workspace, "Catalog must come from the trusted caller checkout")
+
+
+def test_catalog_outside_dot_github_is_refused(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    loose = workspace / "issue-policy.json"
+    loose.write_bytes(path.read_bytes())
+    _refuses(client, loose, workspace, "Caller catalog must live under .github")
+
+
+@pytest.mark.parametrize("sha", ["", "main", "A" * 40, "a" * 39])
+def test_missing_or_malformed_caller_workflow_sha_is_refused(tmp_path, monkeypatch, sha):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    monkeypatch.setenv("GITHUB_WORKFLOW_SHA", sha)
+    _refuses(client, path, workspace, "Caller workflow revision is unavailable")
+
+
+def _older_caller_revision(monkeypatch, responses, status, workflow_text=None):
+    import base64
+    older, default = "c" * 40, "a" * 40
+    monkeypatch.setenv("GITHUB_WORKFLOW_SHA", older)
+    responses[f"repos/projectbluefin/common/compare/{older}...{default}"] = {"status": status}
+    current = responses[f"repos/projectbluefin/common/contents/.github/workflows/issue-lifecycle.yml?ref={default}"]
+    responses[f"repos/projectbluefin/common/contents/.github/workflows/issue-lifecycle.yml?ref={older}"] = (
+        dict(current) if workflow_text is None
+        else {"encoding": "base64", "content": base64.b64encode(workflow_text.encode()).decode()}
+    )
+
+
+@pytest.mark.parametrize("status", ["behind", "diverged"])
+def test_caller_revision_not_merged_on_default_branch_is_refused(tmp_path, monkeypatch, status):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    _older_caller_revision(monkeypatch, responses, status)
+    _refuses(client, path, workspace, "Caller workflow revision is not merged on the default branch")
+
+
+def test_merged_older_caller_revision_with_unchanged_workflow_authorizes(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    _older_caller_revision(monkeypatch, responses, "ahead")
+    client.require_deployed_policy(path, workspace)
+    assert client.writes_authorized
+
+
+def test_caller_workflow_edited_since_the_running_revision_is_refused(tmp_path, monkeypatch):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    _older_caller_revision(monkeypatch, responses, "ahead", workflow_text="name: superseded caller\n")
+    _refuses(client, path, workspace, "Caller workflow changed; start a new default-branch run")
+
+
+@pytest.mark.parametrize("payload", [{"encoding": "none", "content": ""}, {"encoding": "base64"}, {"encoding": "base64", "content": None}])
+def test_unverifiable_policy_source_bytes_are_refused(tmp_path, monkeypatch, payload):
+    client, path, workspace, responses = trusted_source_fixture(tmp_path, monkeypatch)
+    responses[f"repos/projectbluefin/common/contents/.github/issue-policy.json?ref={'a' * 40}"] = payload
+    _refuses(client, path, workspace, "Cannot verify trusted policy source bytes")
