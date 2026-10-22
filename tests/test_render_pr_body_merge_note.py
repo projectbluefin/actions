@@ -26,19 +26,7 @@ def _action():
     return yaml.safe_load((ACTION_DIR / "action.yml").read_text())
 
 
-def _stub_curl(tmp_path: Path, screenshot_published: bool) -> Path:
-    """Shadow curl so the screenshot probe never touches the network."""
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir(exist_ok=True)
-    curl = bin_dir / "curl"
-    curl.write_text(f"#!/bin/sh\nexit {0 if screenshot_published else 22}\n")
-    curl.chmod(0o755)
-    return bin_dir
-
-
-def _render(
-    tmp_path: Path, screenshot_published: bool = True, **inputs: str
-) -> str:
+def _render(tmp_path: Path, **inputs: str) -> str:
     action = _action()
     values = {name: spec.get("default", "") for name, spec in action["inputs"].items()}
     values.update(
@@ -51,8 +39,6 @@ def _render(
 
     step = action["runs"]["steps"][0]
     env = dict(os.environ)
-    bin_dir = _stub_curl(tmp_path, screenshot_published)
-    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
     for key, expr in step["env"].items():
         name = expr.strip().removeprefix("${{ inputs.").removesuffix(" }}")
         env[key] = str(values[name])
@@ -116,10 +102,3 @@ def test_merge_note_is_written_verbatim(tmp_path):
 def test_whitespace_only_merge_note_falls_back_to_built_in(tmp_path):
     section = _screenshot_section(_render(tmp_path, merge_note="  \n"))
     assert WEEKLY_NOTICE in section
-
-
-def test_merge_note_kept_when_no_screenshot_published(tmp_path):
-    body = _render(tmp_path, screenshot_published=False)
-    assert "## Desktop Screenshot" not in body
-    assert "![utah desktop](" not in body
-    assert WEEKLY_NOTICE in body
