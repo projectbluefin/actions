@@ -521,7 +521,9 @@ configured required heading groups. Announcement and repair comments use hidden
 markers so reruns remain idempotent. Label replacement is strict: every
 non-canonical metadata label is removed. Normal PR transitions become
 `4-review`; an explicit `3-clanker-queue` added during a `labeled` event is
-preserved as a request for Clanker review.
+preserved as a request for Clanker review. Linked issues named in a PR body
+(`Closes #N`) are only relabeled when the PR head lives in the same repository;
+a fork's body never selects which issues the `issues: write` token touches.
 
 ## Self-repository composition
 

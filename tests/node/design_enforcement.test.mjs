@@ -5,6 +5,7 @@ import {
   hasValidOptIn,
   chooseState,
   canonicalLabels,
+  isSameRepositoryHead,
   targetNumbers,
   desiredState,
   buildAnnouncement,
@@ -46,12 +47,32 @@ test('canonical labels remove all metadata and retain only state overlays', () =
   assert.deepEqual(canonicalLabels(['kind/bug', '1-triage', 'blocked', 'hold']), ['1-triage', 'blocked']);
 });
 
+const sameRepo = { head: { repo: { full_name: 'org/repo' } }, base: { repo: { full_name: 'org/repo' } } };
+const forkRepo = { head: { repo: { full_name: 'someone/repo' } }, base: { repo: { full_name: 'org/repo' } } };
+
 test('PR processing targets the PR itself and linked issues', () => {
-  const event = { pull_request: { number: 77, body: 'Closes #12' } };
+  const event = { pull_request: { number: 77, body: 'Closes #12', ...sameRepo } };
   assert.deepEqual(targetNumbers('pull_request', event), [
     { number: 77, pullRequest: true },
     { number: 12, pullRequest: false },
   ]);
+});
+
+test('fork pull requests cannot steer linked-issue relabeling through their body', () => {
+  const fork = { pull_request: { number: 77, body: 'Closes #12 fixes #13', ...forkRepo } };
+  assert.deepEqual(targetNumbers('pull_request_target', fork), [{ number: 77, pullRequest: true }]);
+  const deletedFork = { pull_request: { number: 77, body: 'Closes #12', head: { repo: null }, base: sameRepo.base } };
+  assert.deepEqual(targetNumbers('pull_request_target', deletedFork), [{ number: 77, pullRequest: true }]);
+  assert.deepEqual(targetNumbers('pull_request_target', { pull_request: { number: 77, body: 'Closes #12' } }), [
+    { number: 77, pullRequest: true },
+  ]);
+});
+
+test('same-repository head detection is exact and fail-closed', () => {
+  assert.equal(isSameRepositoryHead(sameRepo), true);
+  assert.equal(isSameRepositoryHead({ ...forkRepo }), false);
+  assert.equal(isSameRepositoryHead({ head: { repo: { full_name: 'ORG/repo' } }, base: sameRepo.base }), true);
+  assert.equal(isSameRepositoryHead({}), false);
 });
 
 test('explicit Clanker PR label survives labeled events but not normal review transitions', () => {

@@ -55,14 +55,25 @@ function canonicalLabels(labels, state) {
   return [desired, overlay].filter(Boolean);
 }
 
+function isSameRepositoryHead(pullRequest) {
+  const head = pullRequest.head?.repo?.full_name;
+  const base = pullRequest.base?.repo?.full_name;
+  return Boolean(head && base && head.toLowerCase() === base.toLowerCase());
+}
+
 function targetNumbers(eventName, event) {
   if (eventName !== 'pull_request' && eventName !== 'pull_request_target') {
     return event.issue?.number ? [{ number: event.issue.number, pullRequest: false }] : [];
   }
   const pullRequest = event.pull_request || {};
+  // Only a same-repository head may steer which issues get relabeled: callers run on
+  // pull_request_target, so a fork author otherwise picks arbitrary issue numbers.
+  const linked = isSameRepositoryHead(pullRequest)
+    ? parseIssueNumbers(pullRequest.body || '').map((number) => ({ number, pullRequest: false }))
+    : [];
   return [
     { number: pullRequest.number, pullRequest: true },
-    ...parseIssueNumbers(pullRequest.body || '').map((number) => ({ number, pullRequest: false })),
+    ...linked,
   ].filter((target, index, all) => target.number && all.findIndex((item) => item.number === target.number) === index);
 }
 
@@ -163,6 +174,7 @@ module.exports = {
   hasValidOptIn,
   chooseState,
   canonicalLabels,
+  isSameRepositoryHead,
   targetNumbers,
   desiredState,
   buildAnnouncement,
