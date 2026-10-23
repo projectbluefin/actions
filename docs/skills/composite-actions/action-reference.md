@@ -511,6 +511,7 @@ calling workflow
 | `badge-label` | | `Stable` | Badge text on the card (e.g. `LTS`, `Alpha`) |
 | `docs-url` | | `https://docs.projectbluefin.io/changelogs` | Footer and supply chain link |
 | `sbom-filename` | | basename of `sbom-path` | Asset filename attached to the release |
+| `enable-desktop-screenshot` | | `true` | Include testsuite desktop screenshot section |
 | `draft` | | `false` | Create as draft |
 | `prerelease` | | `false` | Mark as pre-release |
 

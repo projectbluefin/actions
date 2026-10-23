@@ -108,8 +108,10 @@ def _screenshot_slug(image: str) -> str:
     return slug
 
 
-def _section_screenshot(image: str, tag: str, project_name: str) -> str:
+def _section_screenshot(image: str, tag: str, project_name: str, skip: bool = False) -> str:
     """Render desktop screenshot section with HTML img tag and caption."""
+    if skip:
+        return ""
     slug = _screenshot_slug(image)
     url = (
         f"https://projectbluefin.github.io/testsuite/screenshots/"
@@ -464,6 +466,8 @@ def main() -> None:
                     help="Hard cap on release body (GitHub limit is 125 000)")
     ap.add_argument("--overflow-file",    default="release-notes-full.md",
                     help="Path to write full notes when truncation occurs")
+    ap.add_argument("--skip-screenshot",  action="store_true",
+                    help="Omit desktop screenshot section from release notes")
     args = ap.parse_args()
 
     for path, label in [(args.versions, "--versions"), (args.sbom, "--sbom")]:
@@ -503,7 +507,7 @@ def main() -> None:
         "",
         _section_pr_changelog(github_parsed["prs"]),
         "",
-        _section_screenshot(args.image, args.tag, args.project_name),
+        _section_screenshot(args.image, args.tag, args.project_name, skip=args.skip_screenshot),
         "",
         _section_supply_chain(
             image=args.image,
@@ -550,7 +554,7 @@ def main() -> None:
             "",
             _section_pr_changelog(github_parsed["prs"]),
             "",
-            _section_screenshot(args.image, args.tag, args.project_name),
+            _section_screenshot(args.image, args.tag, args.project_name, skip=args.skip_screenshot),
             "",
             _section_supply_chain(
                 image=args.image,

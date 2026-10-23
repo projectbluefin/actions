@@ -72,6 +72,13 @@ inputs:
       Appended to the Key Components table after SBOM-derived notable packages.
     required: false
     default: ""
+  enable-desktop-screenshot:
+    description: >
+      Include testsuite desktop screenshot section in release notes. Set to
+      false to omit the section (e.g. for streams where e2e screenshots are not
+      actively maintained or automated).
+    required: false
+    default: "true"
   draft:
     description: "Create the release as a draft"
     default: "false"
@@ -267,8 +274,13 @@ runs:
         DOCS_URL:      ${{ inputs.docs-url }}
         SBOM_FILENAME: ${{ inputs.sbom-filename }}
         ACTION_PATH:   ${{ github.action_path }}
+        ENABLE_SCREENSHOT: ${{ inputs.enable-desktop-screenshot }}
       run: |
         set -euo pipefail
+        SCREENSHOT_ARG=()
+        if [[ "${ENABLE_SCREENSHOT}" == "false" ]]; then
+          SCREENSHOT_ARG=(--skip-screenshot)
+        fi
         VARIANTS_ARG=()
         [[ -f "_variants.json" ]]          && VARIANTS_ARG=(--variants _variants.json)
         EXTRA_ARG=()
@@ -292,7 +304,8 @@ runs:
           --output         release-notes.md \
           "${VARIANTS_ARG[@]}" \
           "${EXTRA_ARG[@]}" \
-          "${GITHUB_NOTES_ARG[@]}"
+          "${GITHUB_NOTES_ARG[@]}" \
+          "${SCREENSHOT_ARG[@]}"
 
     # ── Resolve SBOM asset filename ───────────────────────────────────────────
     - name: Resolve SBOM filename

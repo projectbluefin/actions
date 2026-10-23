@@ -158,6 +158,12 @@ class TestSectionScreenshot:
         )
         assert "github.com/projectbluefin/testsuite" in md
 
+    def test_skip_returns_empty(self):
+        md = render_notes._section_screenshot(
+            "ghcr.io/projectbluefin/bluefin", "stable-20260621", "Bluefin", skip=True
+        )
+        assert md == ""
+
 
 # ── _section_supply_chain ─────────────────────────────────────────────────────
 

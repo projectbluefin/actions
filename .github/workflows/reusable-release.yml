@@ -61,6 +61,11 @@ on:
         default: https://docs.projectbluefin.io/changelogs
         required: false
         type: string
+      enable_desktop_screenshot:
+        description: "Include testsuite desktop screenshot section in release notes"
+        default: true
+        required: false
+        type: boolean
       cert_identity_regexp:
         description: "cosign certificate identity regexp used in release instructions"
         default: ""
@@ -394,6 +399,7 @@ jobs:
           variants-json: ${{ inputs.variants_json }}
           extra-components-json: ${{ inputs.extra_components_json }}
           github-token: ${{ github.token }}
+          enable-desktop-screenshot: ${{ inputs.enable_desktop_screenshot }}
 
   semver-release:
     name: Create release ${{ inputs.tag }}
@@ -419,7 +425,7 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Append desktop screenshot to release notes
-        if: needs.normalize-image.outputs.image != ''
+        if: needs.normalize-image.outputs.image != '' && inputs.enable_desktop_screenshot
         env:
           IMAGE: ${{ needs.normalize-image.outputs.image }}
           TAG: ${{ inputs.tag }}
