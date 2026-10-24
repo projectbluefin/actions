@@ -50,6 +50,7 @@ Coverage gate: `--cov-fail-under=75`
 | `sign-and-publish` keyless/key validation + SBOM attach/cache/path guards | `tests/bats/test_sign_and_publish.bats` (19 tests) |
 | `setup-runner` native-overlay setup & podman source selection | `tests/bats/test_setup_runner.bats` (16 tests) |
 | `chunka` config temp-file creation + `fs.protected_regular` drift guard | `tests/bats/test_chunka.bats` (4 tests) |
+| `chunka` chunkah pull retry loop (must fail closed, not fall through on the last attempt) | `tests/bats/test_chunka_retry.bats` (6 tests) |
 | `factory-health.yml` pipeline status classification (threshold, sample floor, failure streak) | `tests/bats/test_factory_health_status.bats` (12 tests), kept in sync with the workflow by `tests/test_factory_health_classify_sync.py` |
 | `reusable-renovate-automerge.yml` check-rollup classification | `tests/bats/test_renovate_automerge_checks.bats` (8 tests) |
 | `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests) |
@@ -217,6 +218,14 @@ set -euo pipefail
 
 **When the action has `sudo` calls:** add a pass-through `sudo` mock so tests run without
 privilege. The mock just calls `"$@"`, then mock the real tool (`buildah`, `podman`) separately.
+
+**Testing a retry loop that must fail closed (not fall through):** a loop whose last iteration ends
+in `[[ "$cond" ]] && sleep N` returns non-zero without triggering `errexit`, so execution runs on
+past the loop as if it succeeded — the classic silent-failure bug. Running the extracted loop on
+its own is not enough: when the loop is the final statement the script exits non-zero anyway,
+coincidentally "passing" the buggy version. Append a sentinel line (e.g. `echo PAST_LOOP`) after the
+loop and assert it does **not** appear when the loop is exhausted — that proves the loop stops
+instead of falling through. See `tests/bats/test_chunka_retry.bats`.
 
 **Quoting pitfall:** embedding single-quoted shell inside a double-quoted heredoc requires
 escaping with `'"'"'`. Use `'"'"'` to produce a literal `'` inside the shell snippet string:
