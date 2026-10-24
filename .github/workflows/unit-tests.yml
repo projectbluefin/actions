@@ -26,6 +26,7 @@ on:
       - ".github/workflows/reusable-execute-release.yml"
       - ".github/workflows/reusable-pkg-cadence.yml"
       - ".github/workflows/reusable-promote-squash.yml"
+      - ".github/workflows/reusable-sync-branches.yml"
       - ".github/workflows/reusable-release-gate.yml"
       - ".github/workflows/reusable-release.yml"
       - ".github/workflows/reusable-renovate-automerge.yml"
