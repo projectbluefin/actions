@@ -232,18 +232,15 @@ jobs:
           echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Free disk space for SBOM generation
-        if: inputs.generate_sbom_inline == true
         run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
 
       - name: Install Syft
         id: setup-syft
-        if: inputs.generate_sbom_inline == true
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           syft-version: ${{ inputs.syft_version }}
 
       - name: Generate SBOM inline from promoted image
-        if: inputs.generate_sbom_inline == true
         id: generate-sbom
         env:
           IMAGE: ${{ needs.normalize-image.outputs.image }}
