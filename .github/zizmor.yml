@@ -7,7 +7,13 @@
 # finding on new code without a reason next to it.
 #
 # Regenerate the list of current findings with:
-#   zizmor --offline --min-severity=medium --min-confidence=medium .
+#   zizmor --offline --no-config --min-severity=medium --min-confidence=medium .
+#
+# (--no-config is required: zizmor auto-discovers this file, so without it
+# every baselined finding is suppressed and the command reports nothing.)
+#
+# Bare filenames ignore a rule for the whole file. Prefer filename:line so
+# that a new finding elsewhere in the same file still fails the check.
 
 rules:
   dangerous-triggers:
@@ -27,17 +33,21 @@ rules:
       # TEMPORARY: github.actor / inputs.* expanded inside run:. Values are
       # not attacker-controlled today. Each site is a mechanical move into
       # env:; drop the entry when that lands.
-      - reusable-execute-release.yml
-      - reusable-release-gate.yml
-      - reusable-release.yml
-      - reusable-vulnerability-scan.yml
+      - reusable-execute-release.yml:142
+      - reusable-execute-release.yml:213
+      - reusable-release-gate.yml:114
+      - reusable-release.yml:381
+      - reusable-vulnerability-scan.yml:80
+      - reusable-vulnerability-scan.yml:88
+      - reusable-vulnerability-scan.yml:94
+      - reusable-vulnerability-scan.yml:137
 
   excessive-permissions:
     ignore:
       # TEMPORARY: workflow-level packages: write also reaches the echo-only
       # report job. The migration-test job already declares it at job level;
       # drop the entry once the workflow-level block is deleted.
-      - migration-test.yml
+      - migration-test.yml:95
 
   github-app:
     ignore:
@@ -45,14 +55,15 @@ rules:
       # callers need cross-repository access to consumer repos by design
       # (factory drift reads consumer workflows; cadence and automerge act on
       # the calling consumer repo).
-      - factory-drift.yml
-      - reusable-pkg-cadence.yml
-      - reusable-renovate-automerge.yml
+      - factory-drift.yml:31
+      - reusable-pkg-cadence.yml:89
+      - reusable-pkg-cadence.yml:93
+      - reusable-renovate-automerge.yml:103
 
   secrets-inherit:
     ignore:
       # Both call first-party reusable workflows in this repository, which
       # need the signing/App credentials of the caller; an explicit secret
       # list is a follow-up, not a regression.
-      - promote-bluefin-stable.yml
-      - reusable-promote-squash.yml
+      - promote-bluefin-stable.yml:21
+      - reusable-promote-squash.yml:521
