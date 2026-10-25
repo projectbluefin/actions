@@ -186,7 +186,7 @@ def test_release_inline_sbom_scans_normalized_image(tmp_path):
     mock_dir, calls = _write_syft_mock(tmp_path)
 
     subprocess.run(
-        ["bash", "-c", _step("release", "image-release", "generate-sbom")["run"]],
+        ["bash", "-c", _step("release", "inline-sbom", "generate-sbom")["run"]],
         check=True,
         cwd=tmp_path,
         env={
@@ -252,7 +252,9 @@ def test_release_consumers_use_the_normalized_image_output():
 
     assert _step("release", "image-release", "image_name")["env"]["IMAGE"] == normalized
     assert _step("release", "image-release", "digest")["env"]["IMAGE"] == normalized
-    assert _step("release", "image-release", "generate-sbom")["env"]["IMAGE"] == normalized
+    assert "normalize-image" in release["inline-sbom"]["needs"]
+    assert _step("release", "inline-sbom", "image_name")["env"]["IMAGE"] == normalized
+    assert _step("release", "inline-sbom", "generate-sbom")["env"]["IMAGE"] == normalized
     assert _step("release", "image-release", "Create release")["with"]["image"] == normalized
     assert (
         _step("release", "semver-release", "Append desktop screenshot to release notes")["env"][
@@ -260,6 +262,22 @@ def test_release_consumers_use_the_normalized_image_output():
         ]
         == normalized
     )
+
+
+def test_inline_sbom_failure_cannot_cost_the_release():
+    """Syft runs in its own job; image-release still runs if that job dies (#681)."""
+    release = _workflow("release")["jobs"]
+    sbom = release["inline-sbom"]
+    assert sbom["continue-on-error"] is True
+    assert "inputs.generate_sbom_inline == true" in sbom["if"]
+    assert "inline-sbom" in release["image-release"]["needs"]
+    assert "!cancelled()" in release["image-release"]["if"]
+    image_steps = release["image-release"]["steps"]
+    assert not any(step.get("id") == "generate-sbom" for step in image_steps)
+    download = _step("release", "image-release", "download-inline-sbom")
+    assert download["continue-on-error"] is True
+    fallback = _step("release", "image-release", "Create minimal SBOM fallback if generation failed")
+    assert "steps.download-inline-sbom.outcome == 'failure'" in fallback["if"]
 
 
 def test_release_confines_raw_image_input_to_preparation_jobs():
