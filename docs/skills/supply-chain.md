@@ -425,7 +425,22 @@ Policy doc: [projectbluefin/common/docs/secrets-policy.md](https://github.com/pr
 
 ### CI enforcement
 
-`pat-ban.yml` blocks any PR to `actions` that introduces a `secrets.XXX` reference not in the approved list above.
+`pat-ban.yml` scans added YAML lines for `secrets.NAME`, `secrets['NAME']`,
+and `secrets["NAME"]`, including lower-case and mixed-case spellings. Names
+are normalized to upper case before exact allowlist comparison. Dynamic bracket
+expressions are rejected because their secret names cannot be checked statically.
+
+The workflow also explicitly allows the existing reusable-workflow pass-through
+inputs `TOKEN`, `APP_ID`, `PRIVATE_KEY`, and `RENOVATE_TOKEN`; these are
+caller-provided inputs rather than new repository credentials. Keep this exception
+list explicit and reviewed instead of exempting every newly declared input.
+
+Run `python3 -m pytest tests/test_pat_ban.py` after editing the guard. These tests
+execute its actual shell step against temporary Git histories, covering rejected
+spellings, dynamic lookups, approved names, and ignored full-line comments.
+The unit-test path filter includes the guard so workflow-only edits run the tests.
+
+Reference: [GitHub context access syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#available-contexts).
 
 **When writing new workflows or composite actions that contain `secrets.XXX` patterns in comments:**
 - Avoid the literal string `secrets.ANYTHING_UPPERCASE` in YAML comments — the scanner reads diff output including comment lines

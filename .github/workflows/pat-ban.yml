@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Approved secrets — exact names only
+          # Approved secrets — compare normalized upper-case names
           APPROVED=(
             GITHUB_TOKEN
             MERGERAPTOR_APP_ID
@@ -57,19 +57,38 @@ jobs:
             CASD_CLIENT_KEY
             SIGNING_SECRET
             DISCORD_RELEASES_WEBHOOK
+            # Existing workflow_call pass-through inputs, not repository PATs.
+            TOKEN
+            APP_ID
+            PRIVATE_KEY
+            RENOVATE_TOKEN
           )
 
           # Build grep pattern from approved list
           APPROVED_PATTERN=$(IFS='|'; echo "${APPROVED[*]}")
 
-          # Scan added YAML lines — skip diff headers (+++) and comment lines
-          NEW_SECRETS=$(git diff "${BASE_SHA}...HEAD" -- '*.yml' '*.yaml' \
-            | grep '^+' \
-            | grep -v '^+++\|^+[[:space:]]*#' \
-            | grep -oE 'secrets\.[A-Z0-9_]+' \
+          # Scan added YAML lines; comments and diff headers are not references.
+          ADDED=$(git diff "${BASE_SHA}...HEAD" -- '*.yml' '*.yaml' \
+            | grep '^+' | grep -v '^+++\|^+[[:space:]]*#' || true)
+
+          # Normalize dot and quoted bracket notation before exact comparison.
+          NEW_SECRETS=$(printf '%s\n' "$ADDED" \
+            | grep -oiE "secrets(\.[A-Z0-9_]+|\[[[:space:]]*['\"][A-Z0-9_]+['\"][[:space:]]*\])" \
+            | sed -E "s/^secrets\.?\[?[[:space:]]*['\"]?([A-Za-z0-9_]+)['\"]?[[:space:]]*\]?$/secrets.\1/I" \
+            | tr '[:lower:]' '[:upper:]' | sed 's/^SECRETS\./secrets./' \
             | sort -u \
             | grep -vE "^secrets\.(${APPROVED_PATTERN})$" \
             || true)
+
+          # Remove literal lookups first; reject every remaining bracket lookup,
+          # including computed expressions that begin with a quoted string.
+          DYNAMIC=$(printf '%s\n' "$ADDED" \
+            | sed -E "s/secrets\[[[:space:]]*'([A-Za-z0-9_]+)'[[:space:]]*\]//Ig; s/secrets\[[[:space:]]*\"([A-Za-z0-9_]+)\"[[:space:]]*\]//Ig" \
+            | grep -oiE 'secrets\[' || true)
+          if [ -n "$DYNAMIC" ]; then
+            echo "::error::Dynamic secrets[...] index found; secret references must be literal."
+            exit 1
+          fi
 
           if [ -z "$NEW_SECRETS" ]; then
             echo "✅ No unapproved secret references introduced."
