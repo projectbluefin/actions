@@ -86,7 +86,7 @@ jobs:
             | sed -E "s/secrets\[[[:space:]]*'([A-Za-z0-9_]+)'[[:space:]]*\]//Ig; s/secrets\[[[:space:]]*\"([A-Za-z0-9_]+)\"[[:space:]]*\]//Ig" \
             | grep -oiE 'secrets\[' || true)
           if [ -n "$DYNAMIC" ]; then
-            echo "::error::Dynamic secrets[...] index found; secret references must be literal."
+            echo "::error::Dynamic secret index found (a computed name in brackets); secret references must be literal."
             exit 1
           fi
 

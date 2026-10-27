@@ -48,6 +48,13 @@ def test_ignored_content(tmp_path, content, filename):
     assert run_check(tmp_path, content, filename).returncode == 0
 
 
+def test_guard_passes_its_own_workflow(tmp_path):
+    # The guard scans added YAML lines, so its own messages and patterns must not
+    # read as secret references when pat-ban.yml itself is edited.
+    text = (ROOT / ".github/workflows/pat-ban.yml").read_text()
+    result = run_check(tmp_path, text, "pat-ban.yml")
+    assert result.returncode == 0, result.stdout + result.stderr
+
 def run_check(directory, content, filename="check.yml"):
     def git(*args):
         return subprocess.check_output(

@@ -435,6 +435,10 @@ inputs `TOKEN`, `APP_ID`, `PRIVATE_KEY`, and `RENOVATE_TOKEN`; these are
 caller-provided inputs rather than new repository credentials. Keep this exception
 list explicit and reviewed instead of exempting every newly declared input.
 
+`reusable-sync-branches.yml` also passes an upper-case `GH_TOKEN` secret through
+(`secrets.GH_TOKEN || github.token`). `GH_TOKEN` is not on the approved list, so a PR
+that edits that line fails the guard until the name is approved here or renamed to `token`.
+
 Run `python3 -m pytest tests/test_pat_ban.py` after editing the guard. These tests
 execute its actual shell step against temporary Git histories, covering rejected
 spellings, dynamic lookups, approved names, and ignored full-line comments.
