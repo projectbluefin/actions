@@ -125,13 +125,16 @@ jobs:
         if: >-
           steps.check.outputs.sync_needed == 'true' &&
           steps.diverge.outputs.strategy == 'merge'
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           set -euo pipefail
-          git checkout "${{ inputs.target_branch }}"
-          git merge --ff-only "origin/${{ inputs.source_branch }}" \
+          git checkout "${TARGET_BRANCH}"
+          git merge --ff-only "origin/${SOURCE_BRANCH}" \
             --no-edit
-          git push origin "${{ inputs.target_branch }}"
-          echo "✅ Merged ${{ inputs.source_branch }} → ${{ inputs.target_branch }}"
+          git push origin "${TARGET_BRANCH}"
+          echo "✅ Merged ${SOURCE_BRANCH} → ${TARGET_BRANCH}"
 
       - name: Refuse to discard diverged history
         if: >-
@@ -152,13 +155,16 @@ jobs:
         if: >-
           steps.check.outputs.sync_needed == 'true' &&
           steps.diverge.outputs.strategy == 'force-reset'
+        env:
+          AHEAD: ${{ steps.diverge.outputs.ahead }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
           set -euo pipefail
-          AHEAD="${{ steps.diverge.outputs.ahead }}"
-          TARGET_SHA=$(git rev-parse "origin/${{ inputs.target_branch }}")
-          echo "::warning::Force-resetting ${{ inputs.target_branch }} to origin/${{ inputs.source_branch }} — dropping ${AHEAD} diverged commit(s). Verify no human work was on this branch."
+          echo "::warning::Force-resetting ${TARGET_BRANCH} to origin/${SOURCE_BRANCH} — dropping ${AHEAD} diverged commit(s). Verify no human work was on this branch."
           echo "Expected: automated (Renovate digests, prior sync commits)"
-          git checkout "${{ inputs.target_branch }}"
-          git reset --hard "origin/${{ inputs.source_branch }}"
-          git push origin "${{ inputs.target_branch }}" --force-with-lease="${{ inputs.target_branch }}:${TARGET_SHA}"
-          echo "✅ Force-reset ${{ inputs.target_branch }} → ${{ inputs.source_branch }} (dropped ${AHEAD} diverged commits)"
+          git checkout "${TARGET_BRANCH}"
+          git reset --hard "origin/${SOURCE_BRANCH}"
+          TARGET_SHA=$(git rev-parse "origin/${TARGET_BRANCH}")
+          git push origin "${TARGET_BRANCH}" --force-with-lease="${TARGET_BRANCH}:${TARGET_SHA}"
+          echo "✅ Force-reset ${TARGET_BRANCH} → ${SOURCE_BRANCH} (dropped ${AHEAD} diverged commits)"
