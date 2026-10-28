@@ -135,8 +135,9 @@ window.
 The built-in `true` notice names the bluefin/dakota (Tuesday) and bluefin-lts
 (Thursday) 04:00 UTC windows. A consumer with a different cadence passes
 `merge_note` to `render-pr-body`; any non-blank value replaces the built-in
-notice verbatim, whatever `auto_merge` is. `reusable-promote-squash.yml` does
-not forward a `merge_note` input yet (projectbluefin/actions#646).
+notice verbatim, whatever `auto_merge` is. `reusable-promote-squash.yml`
+forwards its own optional `merge_note` input (default empty) to the render step,
+so consumers set it on the reusable-workflow call.
 
 ### E2E policy
 
