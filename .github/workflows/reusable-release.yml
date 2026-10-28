@@ -208,10 +208,80 @@ jobs:
           image="${INPUT_IMAGE#docker://}"
           echo "image=${image,,}" >> "$GITHUB_OUTPUT"
 
+  # Syft runs in its own job, on its own runner. On large bootc images the scan
+  # can exhaust the runner and get the VM shut down, which no step-level
+  # continue-on-error survives; isolated here, that loses only the SBOM, and
+  # image-release still creates the release with the minimal fallback (#681).
+  inline-sbom:
+    name: Generate ${{ inputs.stream_name }} SBOM
+    needs: [validate, normalize-image]
+    if: needs.validate.outputs.mode == 'image' && inputs.generate_sbom_inline == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve image basename
+        id: image_name
+        env:
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
+        run: |
+          set -euo pipefail
+          IMAGE_NAME="$(basename "${IMAGE}")"
+          echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Free disk space for SBOM generation
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      - name: Install Syft
+        id: setup-syft
+        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          syft-version: ${{ inputs.syft_version }}
+
+      - name: Generate SBOM inline from promoted image
+        id: generate-sbom
+        env:
+          IMAGE: ${{ needs.normalize-image.outputs.image }}
+          STREAM_NAME: ${{ inputs.stream_name }}
+          IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
+          SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
+          # Cap Go heap well below the 7 GB runner limit to leave headroom for OS + docker layers.
+          # 3 GiB triggers GC much earlier than 6 GiB; prevents runner VM shutdown on OOM.
+          GOMEMLIMIT: "3GiB"
+          GOGC: "25"
+        run: |
+          set -euo pipefail
+          mkdir -p sbom-current
+          # Scan directly from the registry — avoids skopeo copy to oci-dir which
+          # OOM-kills standard ubuntu-24.04 runners on large desktop images (exit 137).
+          # --override-default-catalogers rpm-db-cataloger replaces all default
+          # catalogers (binary, java, python, etc.) with only the RPM database reader.
+          # All notable packages in Fedora-based images are RPMs; this gives complete
+          # release-note data at <50 MB RAM vs. multi-GB for the full filesystem scan.
+          # --parallelism 1 prevents concurrent cataloger memory spikes.
+          "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" \
+            --scope squashed \
+            --parallelism 1 \
+            --override-default-catalogers rpm-db-cataloger \
+            -o "spdx-json=sbom-current/${IMAGE_NAME}.sbom.json"
+          echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
+
+      - name: Upload inline SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: inline-sbom-${{ inputs.stream_name }}
+          path: sbom-current/${{ steps.image_name.outputs.image_name }}.sbom.json
+          if-no-files-found: error
+          retention-days: 7
+
   image-release:
     name: Create ${{ inputs.stream_name }} image release
-    needs: [validate, normalize-image]
-    if: needs.validate.outputs.mode == 'image'
+    needs: [validate, normalize-image, inline-sbom]
+    # Runs whether inline-sbom succeeded, failed or was skipped: a lost SBOM
+    # must never cost the release.
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.normalize-image.result == 'success' && needs.validate.outputs.mode == 'image' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -298,50 +368,17 @@ jobs:
           fi
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
-      - name: Free disk space for SBOM generation
+      - name: Download inline SBOM
+        id: download-inline-sbom
         if: inputs.generate_sbom_inline == true
-        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-
-      - name: Install Syft
-        id: setup-syft
-        if: inputs.generate_sbom_inline == true
-        uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          syft-version: ${{ inputs.syft_version }}
-
-      - name: Generate SBOM inline from promoted image
-        if: inputs.generate_sbom_inline == true
-        continue-on-error: true  # Syft is memory-intensive on large images; SBOM must never block the release
-        timeout-minutes: 8  # Ensures graceful step failure (and fallback) instead of OOM-killing the runner VM
-        id: generate-sbom
-        env:
-          IMAGE: ${{ needs.normalize-image.outputs.image }}
-          STREAM_NAME: ${{ inputs.stream_name }}
-          IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
-          SYFT_CMD: ${{ steps.setup-syft.outputs.cmd }}
-          # Cap Go heap well below the 7 GB runner limit to leave headroom for OS + docker layers.
-          # 3 GiB triggers GC much earlier than 6 GiB; prevents runner VM shutdown on OOM.
-          GOMEMLIMIT: "3GiB"
-          GOGC: "25"
-        run: |
-          set -euo pipefail
-          mkdir -p sbom-current
-          # Scan directly from the registry — avoids skopeo copy to oci-dir which
-          # OOM-kills standard ubuntu-24.04 runners on large desktop images (exit 137).
-          # --override-default-catalogers rpm-db-cataloger replaces all default
-          # catalogers (binary, java, python, etc.) with only the RPM database reader.
-          # All notable packages in Fedora-based images are RPMs; this gives complete
-          # release-note data at <50 MB RAM vs. multi-GB for the full filesystem scan.
-          # --parallelism 1 prevents concurrent cataloger memory spikes.
-          "${SYFT_CMD}" "registry:${IMAGE}:${STREAM_NAME}" \
-            --scope squashed \
-            --parallelism 1 \
-            --override-default-catalogers rpm-db-cataloger \
-            -o "spdx-json=sbom-current/${IMAGE_NAME}.sbom.json"
-          echo "SBOM: $(wc -c < "sbom-current/${IMAGE_NAME}.sbom.json") bytes"
+          name: inline-sbom-${{ inputs.stream_name }}
+          path: sbom-current
 
       - name: Create minimal SBOM fallback if generation failed
-        if: inputs.generate_sbom_inline == true && steps.generate-sbom.outcome == 'failure'
+        if: inputs.generate_sbom_inline == true && steps.download-inline-sbom.outcome == 'failure'
         env:
           IMAGE_NAME: ${{ steps.image_name.outputs.image_name }}
           IMAGE: ${{ needs.normalize-image.outputs.image }}

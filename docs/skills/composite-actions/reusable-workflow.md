@@ -264,7 +264,7 @@ where `<slug>` is the image ref with the registry/org prefix removed and `:` rep
 
 ### Image inline-SBOM mode (promote-from-testing path)
 
-Use `generate_sbom_inline: true` when promotion retags a testing image directly (no intermediate build run with a SBOM artifact to download). The workflow scans the promoted image straight from the registry with Syft (`registry:<image>:<stream>`, `--scope squashed`, `--parallelism 1`, `--override-default-catalogers rpm-db-cataloger`). It does not `skopeo copy` to a local OCI archive — that path OOM-killed standard runners on large desktop images. The Syft step is `continue-on-error: true` and falls back to a minimal valid SPDX document, so a scan failure never blocks the release. The digest used in release instructions comes from `skopeo inspect`, not from the SBOM.
+Use `generate_sbom_inline: true` when promotion retags a testing image directly (no intermediate build run with a SBOM artifact to download). The workflow scans the promoted image straight from the registry with Syft (`registry:<image>:<stream>`, `--scope squashed`, `--parallelism 1`, `--override-default-catalogers rpm-db-cataloger`). It does not `skopeo copy` to a local OCI archive — that path OOM-killed standard runners on large desktop images. Syft runs on a separate runner in the `inline-sbom` job (`continue-on-error: true`, 20-minute timeout, `contents: read`) and uploads the result as the `inline-sbom-<stream>` artifact. `image-release` downloads it with `continue-on-error: true` and falls back to a minimal valid SPDX document when the download fails, so a scan failure — even one that kills the scan runner — never blocks the release. The digest used in release instructions comes from `skopeo inspect`, not from the SBOM.
 
 ```yaml
     with:
