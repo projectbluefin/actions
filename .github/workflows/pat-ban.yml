@@ -72,19 +72,24 @@ jobs:
             | grep '^+' | grep -v '^+++\|^+[[:space:]]*#' || true)
 
           # Normalize dot and quoted bracket notation before exact comparison.
+          # GitHub's expression lexer allows whitespace around the access
+          # operator (secrets ['X'], secrets . X), so accept it here too.
           NEW_SECRETS=$(printf '%s\n' "$ADDED" \
-            | grep -oiE "secrets(\.[A-Z0-9_]+|\[[[:space:]]*['\"][A-Z0-9_]+['\"][[:space:]]*\])" \
-            | sed -E "s/^secrets\.?\[?[[:space:]]*['\"]?([A-Za-z0-9_]+)['\"]?[[:space:]]*\]?$/secrets.\1/I" \
+            | grep -oiE "secrets[[:space:]]*(\.[[:space:]]*[A-Z0-9_]+|\[[[:space:]]*['\"][A-Z0-9_]+['\"][[:space:]]*\])" \
+            | sed -E "s/^secrets[[:space:]]*\.?[[:space:]]*\[?[[:space:]]*['\"]?([A-Za-z0-9_]+)['\"]?[[:space:]]*\]?$/secrets.\1/I" \
             | tr '[:lower:]' '[:upper:]' | sed 's/^SECRETS\./secrets./' \
             | sort -u \
             | grep -vE "^secrets\.(${APPROVED_PATTERN})$" \
             || true)
 
+          # Only ${{ }} expressions are evaluated, so look for computed indexes
+          # there and nowhere else (a shell "${SECRETS[@]}" is not a lookup).
           # Remove literal lookups first; reject every remaining bracket lookup,
           # including computed expressions that begin with a quoted string.
           DYNAMIC=$(printf '%s\n' "$ADDED" \
-            | sed -E "s/secrets\[[[:space:]]*'([A-Za-z0-9_]+)'[[:space:]]*\]//Ig; s/secrets\[[[:space:]]*\"([A-Za-z0-9_]+)\"[[:space:]]*\]//Ig" \
-            | grep -oiE 'secrets\[' || true)
+            | grep -oP '\$\{\{.*?\}\}' \
+            | sed -E "s/secrets[[:space:]]*\[[[:space:]]*'([A-Za-z0-9_]+)'[[:space:]]*\]//Ig; s/secrets[[:space:]]*\[[[:space:]]*\"([A-Za-z0-9_]+)\"[[:space:]]*\]//Ig" \
+            | grep -oiE 'secrets[[:space:]]*\[' || true)
           if [ -n "$DYNAMIC" ]; then
             echo "::error::Dynamic secret index found (a computed name in brackets); secret references must be literal."
             exit 1

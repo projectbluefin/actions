@@ -427,8 +427,12 @@ Policy doc: [projectbluefin/common/docs/secrets-policy.md](https://github.com/pr
 
 `pat-ban.yml` scans added YAML lines for `secrets.NAME`, `secrets['NAME']`,
 and `secrets["NAME"]`, including lower-case and mixed-case spellings. Names
-are normalized to upper case before exact allowlist comparison. Dynamic bracket
-expressions are rejected because their secret names cannot be checked statically.
+are normalized to upper case before exact allowlist comparison. Whitespace
+between `secrets` and the access operator (`secrets ['NAME']`, `secrets . NAME`)
+is valid expression syntax and is matched too. Dynamic bracket expressions inside
+`${{ }}` are rejected because their secret names cannot be checked statically;
+shell arrays outside an expression (`"${SECRETS[@]}"`) are not lookups and are
+ignored.
 
 The workflow also explicitly allows the existing reusable-workflow pass-through
 inputs `TOKEN`, `APP_ID`, `PRIVATE_KEY`, and `RENOVATE_TOKEN`; these are

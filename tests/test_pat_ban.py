@@ -32,6 +32,12 @@ CHECK = WORKFLOW["jobs"]["check-no-new-pats"]["steps"][1]["run"]
     ("secrets['MY_PAT' || 'GITHUB_TOKEN']", False),
     ("secrets.github_token || secrets['my_pat']", False),
     ("secrets['github_token'] || secrets[env.NAME]", False),
+    # Whitespace before the access operator is valid expression syntax.
+    ("secrets ['MY_PAT']", False),
+    ("secrets . MY_PAT", False),
+    ("secrets ['github_token']", True),
+    ('secrets [ "GITHUB_TOKEN" ]', True),
+    ("secrets [env.NAME]", False),
 ])
 def test_secret_references(tmp_path, reference, allowed):
     result = run_check(tmp_path, "token: ${{ " + reference + " }}\n")
@@ -43,6 +49,9 @@ def test_secret_references(tmp_path, reference, allowed):
     ("name: harmless\n", "check.yaml"),
     ("token: ${{ secrets.my_pat }}\n", "notes.txt"),
     ("", "check.yml"),
+    # A shell array outside ${{ }} is not a secrets lookup.
+    ('run: printf "%s" "${SECRETS[@]}"\n', "check.yml"),
+    ('token: ${{ secrets.GITHUB_TOKEN }}\nrun: echo "${SECRETS[0]}"\n', "check.yml"),
 ])
 def test_ignored_content(tmp_path, content, filename):
     assert run_check(tmp_path, content, filename).returncode == 0
