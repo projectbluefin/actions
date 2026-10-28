@@ -82,8 +82,9 @@ jobs:
             | grep -vE "^secrets\.(${APPROVED_PATTERN})$" \
             || true)
 
-          # Only ${{ }} expressions are evaluated, so look for computed indexes
-          # there and nowhere else (a shell "${SECRETS[@]}" is not a lookup).
+          # Only GitHub expressions (dollar sign plus double braces) are evaluated,
+          # so look for computed indexes there and nowhere else; a shell array
+          # such as "${SECRETS[@]}" is not a lookup.
           # Remove literal lookups first; reject every remaining bracket lookup,
           # including computed expressions that begin with a quoted string.
           DYNAMIC=$(printf '%s\n' "$ADDED" \

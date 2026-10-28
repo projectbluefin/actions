@@ -64,6 +64,11 @@ def test_guard_passes_its_own_workflow(tmp_path):
     result = run_check(tmp_path, text, "pat-ban.yml")
     assert result.returncode == 0, result.stdout + result.stderr
 
+def test_guard_script_has_no_expression_markers():
+    # GitHub evaluates ${{ }} anywhere in a run: block, shell comments included,
+    # and an empty or malformed one makes the whole workflow file invalid.
+    assert "${{" not in CHECK
+
 def run_check(directory, content, filename="check.yml"):
     def git(*args):
         return subprocess.check_output(
