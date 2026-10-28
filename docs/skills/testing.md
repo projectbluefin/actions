@@ -51,10 +51,10 @@ Coverage gate: `--cov-fail-under=75`
 | `setup-runner` native-overlay setup & podman source selection | `tests/bats/test_setup_runner.bats` (16 tests) |
 | `chunka` config temp-file creation + `fs.protected_regular` drift guard | `tests/bats/test_chunka.bats` (4 tests) |
 | `factory-health.yml` pipeline status classification (threshold, sample floor, failure streak) | `tests/bats/test_factory_health_status.bats` (12 tests), kept in sync with the workflow by `tests/test_factory_health_classify_sync.py` |
-| `reusable-renovate-automerge.yml` check-rollup classification | `tests/bats/test_renovate_automerge_checks.bats` (8 tests) |
-| `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests) |
+| `reusable-renovate-automerge.yml` check-rollup classification + head-moved stop | `tests/bats/test_renovate_automerge_checks.bats` (12 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
+| `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | `renovate-automerge-wiring.yml` wiring assertion (`scripts/renovate-automerge-wiring-check.sh`) | `tests/bats/test_renovate_automerge_wiring_check.bats` (10 tests) |
-| `reusable-renovate-automerge.yml` merge step + `gh pr view --json state` outcome reporting | `tests/bats/test_renovate_automerge_merge.bats` (8 tests) |
+| `reusable-renovate-automerge.yml` merge step: `--match-head-commit` pin, 409 skip, `gh pr view --json state` outcome reporting | `tests/bats/test_renovate_automerge_merge.bats` (13 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 
 The Node suite runs in the `node` job in `unit-tests.yml`:
 

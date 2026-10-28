@@ -26,6 +26,11 @@
 #   - a stable merge failure (unrelated error) exits non-zero
 #   - the advisory/exit-code are never the basis of the report: the real PR
 #     state is queried afterwards
+#   - every merge attempt, including the strategy-less retry, is pinned to the
+#     qualified commit with --match-head-commit "$HEAD_SHA" (#649), so a push
+#     after the check-rollup gate can never be merged unreviewed
+#   - a 409 (head moved after qualification) is a clean skip: exit 0, no retry,
+#     no outcome report
 
 # --- Verbatim run block from reusable-renovate-automerge.yml (id: merge) ---
 MERGE_LOGIC=$(cat <<'EOF'
@@ -58,13 +63,22 @@ report_outcome() {
   esac
 }
 
-if gh pr merge "$PR_NUMBER" "${flags[@]}" --repo "$GITHUB_REPOSITORY" 2>merge.err; then
+if gh pr merge "$PR_NUMBER" "${flags[@]}" --match-head-commit "$HEAD_SHA" --repo "$GITHUB_REPOSITORY" 2>merge.err; then
   cat merge.err >&2
   report_outcome
   exit 0
 fi
 
 cat merge.err >&2
+
+# A moved head is rejected with HTTP 409. That is a normal,
+# non-failing outcome here (Renovate retries; a later workflow_run
+# re-evaluates the PR), so log it and succeed rather than failing
+# the job on a branch the gate never qualified.
+if grep -qi "409" merge.err; then
+  echo "PR #$PR_NUMBER head moved after qualification; merge skipped, Renovate will retry"
+  exit 0
+fi
 
 # Already enqueued by an earlier attempt — that is success. Note this
 # message does NOT contain the substring "merge queue".
@@ -77,7 +91,7 @@ fi
 # when a strategy flag is passed on a queued branch. Retry with none.
 if [ "${#flags[@]}" -ne 0 ] && grep -qi "merge queue" merge.err; then
   echo "Base branch uses a merge queue; retrying without an explicit strategy"
-  if gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" 2>retry.err; then
+  if gh pr merge "$PR_NUMBER" --match-head-commit "$HEAD_SHA" --repo "$GITHUB_REPOSITORY" 2>retry.err; then
     cat retry.err >&2
     report_outcome
     exit 0
@@ -108,11 +122,16 @@ setup() {
 
   export PR_NUMBER=123
   export GITHUB_REPOSITORY="projectbluefin/test"
+  export HEAD_SHA="0123456789abcdef0123456789abcdef01234567"
+  export MERGE_ARGS_FILE="${TEST_TMP}/merge_args"
+  : > "$MERGE_ARGS_FILE"
 
   # gh mock:
   #   gh pr merge  -> exit code and stderr are scripted per call via
   #                   ${SCRIPT_DIR}/merge_<N>.exit and merge_<N>.err
-  #                   (default: exit 0, empty stderr).
+  #                   (default: exit 0, empty stderr). Each call's
+  #                   arguments are appended to $MERGE_ARGS_FILE, one line
+  #                   per call.
   #   gh pr view   -> prints the scripted state for view call N, or
   #                   PR_VIEW_STATE_DEFAULT if no per-char state is staged.
   cat > "${MOCK_DIR}/gh" <<'EOF'
@@ -120,6 +139,7 @@ setup() {
 case "$1 $2" in
   "pr merge")
     n=$(cat "$MERGE_CALL_FILE"); n=$((n + 1)); echo "$n" > "$MERGE_CALL_FILE"
+    printf '%s\n' "$*" >> "$MERGE_ARGS_FILE"
     e="${SCRIPT_DIR}/merge_${n}.exit"; [ -f "$e" ] || e="${SCRIPT_DIR}/merge_default.exit"
     [ -f "$e" ] || echo 0 > "$e"
     err="${SCRIPT_DIR}/merge_${n}.err"; [ -f "$err" ] || err="${SCRIPT_DIR}/merge_default.err"
@@ -160,6 +180,15 @@ script_view_state() {
 
 merge_calls() {
   cat "$MERGE_CALL_FILE"
+}
+
+# Arguments of the Nth `gh pr merge` call.
+merge_args() {
+  sed -n "${1}p" "$MERGE_ARGS_FILE"
+}
+
+view_calls() {
+  cat "$VIEW_CALL_FILE"
 }
 
 # Run the merge logic from an isolated dir: the step writes merge.err /
@@ -247,4 +276,61 @@ run_logic() {
   run run_logic
   [ "$status" -eq 0 ]
   [[ "$output" == *"state is UNKNOWN"* ]]
+}
+
+@test "the merge is pinned to the qualified head commit" {
+  export MERGE_METHOD=squash
+  script_view_state 1 MERGED
+  run run_logic
+  [ "$status" -eq 0 ]
+  [ "$(merge_calls)" = "1" ]
+  [[ "$(merge_args 1)" == *"--squash"* ]]
+  [[ "$(merge_args 1)" == *"--match-head-commit $HEAD_SHA"* ]]
+}
+
+@test "queue method still pins the head commit without a strategy flag" {
+  export MERGE_METHOD=queue
+  run run_logic
+  [ "$status" -eq 0 ]
+  [[ "$(merge_args 1)" == *"--match-head-commit $HEAD_SHA"* ]]
+  [[ "$(merge_args 1)" != *"--squash"* ]]
+  [[ "$(merge_args 1)" != *"--merge "* ]]
+  [[ "$(merge_args 1)" != *"--rebase"* ]]
+}
+
+@test "the strategy-less merge-queue retry keeps the head-commit pin" {
+  export MERGE_METHOD=rebase
+  script_merge 1 1 "the base branch uses a merge queue"
+  script_merge 2 0 ""
+  script_view_state 1 OPEN
+  run run_logic
+  [ "$status" -eq 0 ]
+  [ "$(merge_calls)" = "2" ]
+  [[ "$(merge_args 1)" == *"--rebase"* ]]
+  [[ "$(merge_args 2)" != *"--rebase"* ]]
+  [[ "$(merge_args 2)" == *"--match-head-commit $HEAD_SHA"* ]]
+}
+
+@test "a 409 for a head that moved after qualification is a clean skip" {
+  export MERGE_METHOD=squash
+  script_merge 1 1 "HTTP 409: Head branch was modified. Review and try the merge again."
+  run run_logic
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"head moved after qualification; merge skipped"* ]]
+  [ "$(merge_calls)" = "1" ]
+  [ "$(view_calls)" = "0" ]
+  [[ "$output" != *"Merged PR"* ]]
+  [[ "$output" != *"Enqueued PR"* ]]
+}
+
+@test "a 409 that mentions the merge queue is still a skip, not a retry" {
+  # The 409 check runs before the merge-queue retry: a moved head must never
+  # be retried without the strategy flag.
+  export MERGE_METHOD=squash
+  script_merge 1 1 "HTTP 409: head moved; base branch uses a merge queue"
+  run run_logic
+  [ "$status" -eq 0 ]
+  [ "$(merge_calls)" = "1" ]
+  [[ "$output" == *"merge skipped"* ]]
+  [[ "$output" != *"retrying without an explicit strategy"* ]]
 }
