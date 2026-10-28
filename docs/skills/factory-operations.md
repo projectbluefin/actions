@@ -441,6 +441,15 @@ gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json state --jq .state
 # MERGED = landed; OPEN = enqueued, the queue lands it ~60s later
 ```
 
+**Gotcha — `gh pr merge --match-head-commit` never fails with an HTTP 409.** `gh` sends the pin as `expectedHeadOid` on the GraphQL `mergePullRequest` mutation, not to the REST merge endpoint. A head that moved since qualification is refused as a GraphQL error on HTTP 200, printed as `GraphQL: <message> (mergePullRequest)`, so `grep "409"` on stderr does not see it. Decide "head moved" by reading the PR's current head after a failed merge, and treat it as a skip, not a failure:
+
+```bash
+gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid
+# differs from the qualified SHA = moved; empty (query failed) = unknown, not moved
+```
+
+Apply the same check after every merge attempt, including the strategy-less merge-queue retry.
+
 **Gotcha — the `secrets` context is unavailable in step-level `if:`.** To conditionally mint an app token in a reusable workflow, mirror credential presence into job-level `env` first (`HAS_APP_CREDS: ${{ secrets.app_id != '' && secrets.private_key != '' }}`) and branch on `env.HAS_APP_CREDS`.
 
 **Consumer-validation exemption:** Renovate PRs (author login ending in `[bot]` or starting with `app/`) are automatically exempt from the consumer PR + CI run evidence requirement, even when they touch action files. See `docs/skills/consumer-validation.md`.
