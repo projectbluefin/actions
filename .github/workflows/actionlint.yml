@@ -40,7 +40,7 @@ jobs:
         run: python3 scripts/check-self-repository-references.py
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@48e36f54d8da326b83ab061aee2cc5e01b5ca46f # v1.80.6
+        uses: reviewdog/action-actionlint@cfa6a621f27735ccc88d35af9d0608692fd9b9f7 # v1.80.8
         with:
           # Push and merge_group have no PR context; both produce native check evidence.
           reporter: ${{ github.event_name == 'pull_request' && 'github-pr-check' || 'github-check' }}

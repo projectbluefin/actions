@@ -84,7 +84,7 @@ jobs:
     name: Upgrade & rollback — ${{ inputs.image }}
     # Keep this pin identical to the testsuite e2e.yml pin in reusable-execute-release.yml
     # (same `# v1` comment) so Renovate bumps all callers together.
-    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@2db153ebbd515116bfe3c519f632cd06abd16808 # v1
+    uses: projectbluefin/testsuite/.github/workflows/e2e.yml@f077951d8315871542264e385305880ed05c3460 # v1
     permissions:
       contents: read
       packages: write
