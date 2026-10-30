@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/actionlint.yml"
+      - ".github/workflows/pat-ban.yml"
       - ".github/workflows/reusable-design-enforcement.yml"
       - "actions/**"
       - "bootc-build/**"

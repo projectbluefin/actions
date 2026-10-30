@@ -426,7 +426,30 @@ Policy doc: [projectbluefin/common/docs/secrets-policy.md](https://github.com/pr
 
 ### CI enforcement
 
-`pat-ban.yml` blocks any PR to `actions` that introduces a `secrets.XXX` reference not in the approved list above.
+`pat-ban.yml` scans added YAML lines for `secrets.NAME`, `secrets['NAME']`,
+and `secrets["NAME"]`, including lower-case and mixed-case spellings. Names
+are normalized to upper case before exact allowlist comparison. Whitespace
+between `secrets` and the access operator (`secrets ['NAME']`, `secrets . NAME`)
+is valid expression syntax and is matched too. Dynamic bracket expressions inside
+`${{ }}` are rejected because their secret names cannot be checked statically;
+shell arrays outside an expression (`"${SECRETS[@]}"`) are not lookups and are
+ignored.
+
+The workflow also explicitly allows the existing reusable-workflow pass-through
+inputs `TOKEN`, `APP_ID`, `PRIVATE_KEY`, and `RENOVATE_TOKEN`; these are
+caller-provided inputs rather than new repository credentials. Keep this exception
+list explicit and reviewed instead of exempting every newly declared input.
+
+`reusable-sync-branches.yml` also passes an upper-case `GH_TOKEN` secret through
+(`secrets.GH_TOKEN || github.token`). `GH_TOKEN` is not on the approved list, so a PR
+that edits that line fails the guard until the name is approved here or renamed to `token`.
+
+Run `python3 -m pytest tests/test_pat_ban.py` after editing the guard. These tests
+execute its actual shell step against temporary Git histories, covering rejected
+spellings, dynamic lookups, approved names, and ignored full-line comments.
+The unit-test path filter includes the guard so workflow-only edits run the tests.
+
+Reference: [GitHub context access syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#available-contexts).
 
 **When writing new workflows or composite actions that contain `secrets.XXX` patterns in comments:**
 - Avoid the literal string `secrets.ANYTHING_UPPERCASE` in YAML comments — the scanner reads diff output including comment lines
