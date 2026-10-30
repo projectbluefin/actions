@@ -62,8 +62,7 @@ rules:
 
   secrets-inherit:
     ignore:
-      # Both call first-party reusable workflows in this repository, which
-      # need the signing/App credentials of the caller; an explicit secret
+      # Calls a first-party reusable workflow in this repository, which
+      # needs the signing/App credentials of the caller; an explicit secret
       # list is a follow-up, not a regression.
-      - promote-bluefin-stable.yml:21
       - reusable-promote-squash.yml:521
