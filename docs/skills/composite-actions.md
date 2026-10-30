@@ -159,6 +159,8 @@ run: |
 
 This applies to **all** expression types in `run:` blocks: inputs, matrix values, context values (`github.actor`, `github.event_name`), step outputs, and especially secrets. The only safe place to reference `${{ ... }}` in shell is via env vars.
 
+This rule covers **reusable workflows** (`.github/workflows/reusable-*.yml`) as well as composite actions: a `workflow_call` step's `run:` block interpolates its caller's `inputs` the same way, so branch inputs in `reusable-sync-branches.yml` are passed through `env:` and referenced as `${SOURCE_BRANCH}` / `${TARGET_BRANCH}` rather than expanded inline.
+
 **Glob inputs:** when an input is a shell glob (e.g. `shellcheck-glob`), pass it via env and expand it unquoted:
 
 ```yaml
