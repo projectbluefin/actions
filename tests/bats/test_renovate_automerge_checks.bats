@@ -20,6 +20,11 @@
 #   - In-flight workflow runs keep an all-success rollup waiting
 #   - An unreadable run list is treated as still-settling, never as idle
 #   - An empty rollup keeps waiting instead of merging
+#   - A PR head that moved away from the qualified HEAD_SHA (#649) stops the
+#     wait at once with ready=false, before the rollup is even read, whether
+#     it moved before the first poll or while waiting
+#   - An unreadable head (gh pr view failed) does not by itself block; the
+#     merge step's --match-head-commit pin still guards the commit
 
 # --- Verbatim run block from reusable-renovate-automerge.yml (id: checks) ---
 
@@ -49,6 +54,17 @@ deadline=$(( SECONDS + CHECK_TIMEOUT_SECONDS ))
 ready=false
 
 while :; do
+  # If the branch head moved since the bump gate qualified it, stop
+  # waiting now instead of burning through the timeout on a commit
+  # this workflow would reject at merge time anyway.
+  headRefOid=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+    --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
+  if [ -n "$headRefOid" ] && [ "$headRefOid" != "$HEAD_SHA" ]; then
+    echo "PR #$PR_NUMBER head moved to $headRefOid since qualification ($HEAD_SHA); not merging"
+    ready=false
+    break
+  fi
+
   checks=$(gh pr checks "$PR_NUMBER" \
     --repo "$GITHUB_REPOSITORY" \
     --json name,state 2>/dev/null || true)
@@ -131,18 +147,36 @@ setup() {
   export RUN_LIST_RESPONSE=0
   export RUN_LIST_FAILS=0
   export CALL_COUNT_FILE="${TEST_TMP}/gh_pr_checks_calls"
+  echo 0 > "$CALL_COUNT_FILE"
+  # `gh pr view --json headRefOid` reports HEAD_SHA (head unchanged) unless a
+  # test stages PR_HEAD_SEQ (one OID per poll, last one repeats) or sets
+  # PR_VIEW_FAILS=1.
+  export PR_HEAD_SEQ=""
+  export PR_VIEW_FAILS=0
+  export VIEW_COUNT_FILE="${TEST_TMP}/gh_pr_view_calls"
+  echo 0 > "$VIEW_COUNT_FILE"
 
   # gh mock: `gh pr checks` emits the staged JSON rollup (or the next file in
   # CHECKS_SEQ_DIR for multi-poll scenarios); `gh run list` emits the staged
-  # count of in-flight runs (already --jq-filtered, as the real CLI would).
+  # count of in-flight runs (already --jq-filtered, as the real CLI would);
+  # `gh pr view` emits the PR head OID (already --jq-filtered).
   cat > "${MOCK_DIR}/gh" <<'EOF'
 #!/usr/bin/env bash
 case "$1 $2" in
+  "pr view")
+    [ "${PR_VIEW_FAILS:-0}" = "1" ] && exit 1
+    n=$(cat "$VIEW_COUNT_FILE"); n=$((n + 1)); echo "$n" > "$VIEW_COUNT_FILE"
+    if [ -n "${PR_HEAD_SEQ:-}" ]; then
+      read -r -a heads <<<"$PR_HEAD_SEQ"
+      i=$(( n <= ${#heads[@]} ? n - 1 : ${#heads[@]} - 1 ))
+      printf '%s\n' "${heads[$i]}"
+    else
+      printf '%s\n' "$HEAD_SHA"
+    fi
+    ;;
   "pr checks")
+    n=$(cat "$CALL_COUNT_FILE"); n=$((n + 1)); echo "$n" > "$CALL_COUNT_FILE"
     if [ -n "${CHECKS_SEQ_DIR:-}" ]; then
-      n=$(cat "$CALL_COUNT_FILE" 2>/dev/null || echo 0)
-      n=$((n + 1))
-      echo "$n" > "$CALL_COUNT_FILE"
       f="${CHECKS_SEQ_DIR}/${n}.json"
       [ -f "$f" ] || f="${CHECKS_SEQ_DIR}/last.json"
       cat "$f"
@@ -173,6 +207,10 @@ EOF
 
 teardown() {
   rm -rf "$TEST_TMP"
+}
+
+checks_calls() {
+  cat "$CALL_COUNT_FILE"
 }
 
 get_output() {
@@ -289,4 +327,50 @@ write_checks_sequence() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"no checks reported yet"* ]]
   [ "$(get_output ready)" = "false" ]
+}
+
+@test "a head that moved before the first poll stops at once without reading checks" {
+  export CHECK_TIMEOUT_SECONDS=900
+  export PR_HEAD_SEQ="fedcba9876543210fedcba9876543210fedcba98"
+  write_checks SUCCESS
+  run bash -c "$CHECKS_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"head moved to fedcba9876543210fedcba9876543210fedcba98 since qualification ($HEAD_SHA); not merging"* ]]
+  [[ "$output" != *"checks succeeded"* ]]
+  [ "$(checks_calls)" = "0" ]
+  [ "$(get_output ready)" = "false" ]
+}
+
+@test "a head that moves while checks are pending stops the wait" {
+  export CHECK_TIMEOUT_SECONDS=900
+  export PR_HEAD_SEQ="$HEAD_SHA fedcba9876543210fedcba9876543210fedcba98"
+  # The second poll would be all-green; the moved head must win.
+  write_checks_sequence "SUCCESS,QUEUED" "SUCCESS,SUCCESS"
+  run bash -c "$CHECKS_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"not settled (1 pending check(s), 0 in-flight run(s))"* ]]
+  [[ "$output" == *"head moved to fedcba9876543210fedcba9876543210fedcba98"* ]]
+  [[ "$output" != *"checks succeeded"* ]]
+  [ "$(checks_calls)" = "1" ]
+  [ "$(get_output ready)" = "false" ]
+}
+
+@test "an unchanged head is re-read on every poll" {
+  export CHECK_TIMEOUT_SECONDS=900
+  write_checks_sequence "SUCCESS,QUEUED" "SUCCESS,QUEUED" "SUCCESS,SUCCESS"
+  run bash -c "$CHECKS_LOGIC"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$VIEW_COUNT_FILE")" = "3" ]
+  [ "$(checks_calls)" = "3" ]
+  [ "$(get_output ready)" = "true" ]
+}
+
+@test "an unreadable PR head does not block an all-green rollup" {
+  export PR_VIEW_FAILS=1
+  write_checks SUCCESS
+  run bash -c "$CHECKS_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"head moved"* ]]
+  [[ "$output" == *"All 1 checks succeeded"* ]]
+  [ "$(get_output ready)" = "true" ]
 }

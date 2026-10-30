@@ -31,6 +31,7 @@
 FIND_PR_LOGIC=$(cat <<'EOF'
 set -euo pipefail
 
+# shellcheck disable=SC2016  # $owner/$repo/$base are GraphQL variables, not shell
 nodes=$(gh api graphql \
   -f owner="${GITHUB_REPOSITORY%/*}" \
   -f repo="${GITHUB_REPOSITORY#*/}" \
@@ -52,6 +53,9 @@ nodes=$(gh api graphql \
     }' \
   --jq '.data.repository.pullRequests.nodes')
 
+# GraphQL reports a GitHub App author as the bare slug ("mergeraptor"),
+# while the REST/`gh pr list` view reports "app/mergeraptor" and a
+# legacy bot user as "renovate[bot]". Match every spelling.
 pr_number=$(jq -r \
   --arg head "$HEAD_SHA" \
   --arg require "$REQUIRE_AUTO_MERGE" '
