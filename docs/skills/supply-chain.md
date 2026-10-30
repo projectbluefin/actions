@@ -248,6 +248,19 @@ Callers outside the `projectbluefin` org must override this input with their own
 
 ---
 
+## Pattern: gate the job on the image signature, not the whole composite
+
+`reusable-build.yml` pushes the image before signing it, and wraps `sign-and-publish` in
+`continue-on-error: true` so SBOM and attestation hiccups never block publishing. That flag
+also masks `cosign sign` / `cosign verify` failures, which would leave a mutable release tag
+pointing at an unsigned digest with a green run (#598).
+
+The composite therefore exposes `image-signed` (set only after sign → verify → legacy `.sig`
+assertion succeed, before any SBOM step). The workflow gives the step `id: sign` and follows it
+with a `Fail if the pushed image is not signed` step that exits non-zero unless
+`steps.sign.outputs.image-signed == 'true'`. SBOM/attestation stay best-effort; the signature
+does not. Any new caller that wraps `sign-and-publish` in `continue-on-error` must add the same gate.
+
 ## Policy: cosign install is intentionally upstream-pinned
 
 Cosign is installed in this repository with **exactly one mechanism**: the upstream

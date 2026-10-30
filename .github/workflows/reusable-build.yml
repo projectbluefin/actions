@@ -569,8 +569,9 @@ jobs:
         run: sudo chown -R "$(id -u):$(id -g)" "${HOME}/.sigstore" 2>/dev/null || true
 
       - name: Sign, publish SBOM, and attest
+        id: sign
         if: github.event_name != 'pull_request'
-        continue-on-error: true  # Never block image publishing — signing/SBOM failures are non-fatal
+        continue-on-error: true  # SBOM/attestation failures are non-fatal; image signing is gated below
         uses: $/bootc-build/sign-and-publish
         with:
           image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -580,6 +581,14 @@ jobs:
           push-attestation: "true"
           github-token: ${{ secrets.GITHUB_TOKEN }}
           image-name: ${{ env.IMAGE_NAME }}
+
+      - name: Fail if the pushed image is not signed
+        if: github.event_name != 'pull_request' && steps.sign.outputs.image-signed != 'true'
+        run: |
+          echo "::error::${IMAGE_REGISTRY}/${IMAGE_NAME}@${DIGEST} was pushed but has no verified signature — see the sign-and-publish step above. Unsigned images must not stay at a release tag."
+          exit 1
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
 
       - name: Verify rechunk metadata preserved
         if: github.event_name != 'pull_request' && (inputs.stream_name != 'testing' || inputs.rechunk == 'true')
