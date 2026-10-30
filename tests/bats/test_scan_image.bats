@@ -15,6 +15,7 @@
 #   - Severity normalization from CVSS numeric scores
 #   - Empty vulnerabilities array
 #   - Multiple Result blocks are merged
+#   - Unsupported OS (Trivy family "none", e.g. Hummingbird) → OS-packages-not-scanned warning
 
 # ── Shared summarize logic (verbatim from action.yml summarize-cves step) ────
 
@@ -94,6 +95,16 @@ for result in trivy.get("Results", []) or []:
         seen.add(key)
         critical_entries.append(entry)
 
+# Trivy reports family "none" (or no OS at all) when it cannot identify the
+# distro from /etc/os-release, e.g. Hummingbird-based images. It then skips the
+# rpmdb entirely and only scans language packages, so an empty result is not
+# a clean result. Trivy has no flag to force an OS family, so say so loudly.
+os_family = str(((trivy.get("Metadata") or {}).get("OS") or {}).get("Family") or "").strip()
+has_os_pkgs = any(
+    (result.get("Class") or "") == "os-pkgs" for result in trivy.get("Results", []) or []
+)
+os_packages_scanned = has_os_pkgs or os_family.lower() not in ("", "none")
+
 total_cves = sum(counts.values())
 highest_severity = next((name for name in severity_order if counts.get(name, 0) > 0), threshold)
 issue_title = f"fix(security): critical CVE detected in {ref_name} build"
@@ -122,6 +133,24 @@ with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
     output.write(f"critical-cves-found={"true" if critical_entries else "false"}\n")
     output.write(f"issue-title={issue_title}\n")
     output.write(f"findings-file={findings_path}\n")
+    output.write(f"os-packages-scanned={"true" if os_packages_scanned else "false"}\n")
+
+if not os_packages_scanned:
+    family_label = os_family or "not detected"
+    print(
+        f"::warning::OS packages not scanned: unsupported OS (Trivy OS family: {family_label}). "
+        "Only language packages were checked; this result is not a clean OS package scan."
+    )
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with Path(summary_path).open("a", encoding="utf-8") as summary:
+            summary.write(
+                "### :warning: OS packages not scanned: unsupported OS\n\n"
+                f"Trivy could not identify the operating system of `{display_ref}` "
+                f"(OS family: `{family_label}`), so no OS packages (RPMs) were checked for CVEs. "
+                "Only language packages were scanned. An empty CVE list here does **not** mean "
+                "the image is clean.\n"
+            )
 
 if total_cves:
     print(f"::warning::{total_cves} CVE(s) detected in {display_ref}")
@@ -484,4 +513,63 @@ EOF
   local findings
   findings=$(cat "$FINDINGS_FILE")
   [[ "$(echo "$findings" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['ref_name'])")" = "unknown-ref" ]]
+}
+
+@test "OS family none (Hummingbird) → warns OS packages not scanned, job summary says so" {
+  export GITHUB_STEP_SUMMARY="${TEST_TMP}/step_summary"
+  cat > trivy-results.json <<'EOF2'
+{
+  "Metadata": {"OS": {"Family": "none", "Name": ""}},
+  "Results": [
+    {"Target": "usr/bin/podman", "Class": "lang-pkgs", "Type": "gobinary"}
+  ]
+}
+EOF2
+  run bash -c "$SUMMARIZE_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::OS packages not scanned: unsupported OS"* ]]
+  [[ "$output" == *"OS family: none"* ]]
+  [ "$(get_output os-packages-scanned)" = "false" ]
+  grep -q "OS packages not scanned: unsupported OS" "$GITHUB_STEP_SUMMARY"
+  grep -q "does \*\*not\*\* mean" "$GITHUB_STEP_SUMMARY"
+}
+
+@test "no OS metadata at all → warns OS packages not scanned" {
+  cat > trivy-results.json <<'EOF2'
+{"Results": []}
+EOF2
+  unset GITHUB_STEP_SUMMARY
+  run bash -c "$SUMMARIZE_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OS packages not scanned"* ]]
+  [[ "$output" == *"OS family: not detected"* ]]
+  [ "$(get_output os-packages-scanned)" = "false" ]
+}
+
+@test "supported OS (Fedora) → no unsupported-OS warning, summary untouched" {
+  export GITHUB_STEP_SUMMARY="${TEST_TMP}/step_summary"
+  cat > trivy-results.json <<'EOF2'
+{
+  "Metadata": {"OS": {"Family": "fedora", "Name": "42"}},
+  "Results": [
+    {"Target": "localhost/bluefin:latest (fedora 42)", "Class": "os-pkgs", "Type": "fedora"}
+  ]
+}
+EOF2
+  run bash -c "$SUMMARIZE_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"OS packages not scanned"* ]]
+  [[ "$output" == *"No CVEs detected"* ]]
+  [ "$(get_output os-packages-scanned)" = "true" ]
+  [ ! -s "$GITHUB_STEP_SUMMARY" ]
+}
+
+@test "os-pkgs result present without OS metadata → treated as scanned" {
+  cat > trivy-results.json <<'EOF2'
+{"Results": [{"Target": "image (centos 10)", "Class": "os-pkgs", "Type": "centos"}]}
+EOF2
+  run bash -c "$SUMMARIZE_LOGIC"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"OS packages not scanned"* ]]
+  [ "$(get_output os-packages-scanned)" = "true" ]
 }

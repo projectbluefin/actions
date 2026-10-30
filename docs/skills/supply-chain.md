@@ -307,6 +307,12 @@ ensures scan infrastructure failures are visible in CI rather than silently mask
 `continue-on-error: true` on both the Trivy steps and the caller means the overall build is
 never blocked — but the scan step is visibly red. See [trivy-db#435](https://github.com/aquasecurity/trivy-db/issues/435).
 
+**Unsupported OS is not a clean scan:** if Trivy cannot identify the distro (OS family
+`none`, e.g. Hummingbird-based images), it scans no OS packages at all. The summarize step
+detects this from the JSON report and writes "OS packages not scanned: unsupported OS" to
+the job summary plus a `::warning::` annotation. When adding a new base OS, check the scan
+log for `Detected OS family=` before trusting an empty CVE report.
+
 Wire it into `reusable-build.yml` between `Tag Images` and `Push to GHCR`:
 
 ```yaml

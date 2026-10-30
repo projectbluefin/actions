@@ -31,6 +31,11 @@ inputs:
     required: false
     default: ""
 
+outputs:
+  os-packages-scanned:
+    description: "false when Trivy could not identify the OS family and scanned no OS packages (RPMs); true otherwise."
+    value: ${{ steps.summarize-cves.outputs.os-packages-scanned }}
+
 runs:
   using: "composite"
   steps:
@@ -187,6 +192,16 @@ runs:
                 seen.add(key)
                 critical_entries.append(entry)
 
+        # Trivy reports family "none" (or no OS at all) when it cannot identify the
+        # distro from /etc/os-release, e.g. Hummingbird-based images. It then skips the
+        # rpmdb entirely and only scans language packages, so an empty result is not
+        # a clean result. Trivy has no flag to force an OS family, so say so loudly.
+        os_family = str(((trivy.get("Metadata") or {}).get("OS") or {}).get("Family") or "").strip()
+        has_os_pkgs = any(
+            (result.get("Class") or "") == "os-pkgs" for result in trivy.get("Results", []) or []
+        )
+        os_packages_scanned = has_os_pkgs or os_family.lower() not in ("", "none")
+
         total_cves = sum(counts.values())
         highest_severity = next((name for name in severity_order if counts.get(name, 0) > 0), threshold)
         issue_title = f"fix(security): critical CVE detected in {ref_name} build"
@@ -215,6 +230,24 @@ runs:
             output.write(f"critical-cves-found={'true' if critical_entries else 'false'}\n")
             output.write(f"issue-title={issue_title}\n")
             output.write(f"findings-file={findings_path}\n")
+            output.write(f"os-packages-scanned={'true' if os_packages_scanned else 'false'}\n")
+
+        if not os_packages_scanned:
+            family_label = os_family or "not detected"
+            print(
+                f"::warning::OS packages not scanned: unsupported OS (Trivy OS family: {family_label}). "
+                "Only language packages were checked; this result is not a clean OS package scan."
+            )
+            summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+            if summary_path:
+                with Path(summary_path).open("a", encoding="utf-8") as summary:
+                    summary.write(
+                        "### :warning: OS packages not scanned: unsupported OS\n\n"
+                        f"Trivy could not identify the operating system of `{display_ref}` "
+                        f"(OS family: `{family_label}`), so no OS packages (RPMs) were checked for CVEs. "
+                        "Only language packages were scanned. An empty CVE list here does **not** mean "
+                        "the image is clean.\n"
+                    )
 
         if total_cves:
             print(f"::warning::{total_cves} CVE(s) detected in {display_ref}")

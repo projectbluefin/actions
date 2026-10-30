@@ -430,6 +430,8 @@ Wraps `aquasecurity/trivy-action` to scan a locally built OCI image for CVEs **b
 
 `scan-image` is now **always non-blocking** for CVE findings: it forces Trivy `exit-code: 0`, uploads SARIF, parses Trivy JSON output for CRITICAL findings, and can optionally open a GitHub issue summarizing the affected packages, CVE IDs, and fixed versions. When Trivy crashes and produces no results file, the summarize step **fails closed** (exit 1) with a `::error::` annotation — scan infrastructure failures are visible in CI, never silently masked as "no CVEs".
 
+**Unsupported OS (e.g. Hummingbird-based images):** Trivy identifies the distro from `/etc/os-release`. When it cannot (it logs `Detected OS family="none"` / `Unsupported os`), it skips the rpmdb and scans only language packages, so the CVE list is silently missing every RPM. Trivy has no flag to force an OS family. The summarize step detects this from the JSON report (`Metadata.OS.Family` empty or `none` and no `os-pkgs` result), emits a `::warning::` and writes **"OS packages not scanned: unsupported OS"** to the job summary so an empty result is never read as clean. The action output `os-packages-scanned` is `false` in that case; give the `uses:` step an `id:` to read it as `steps.<id>.outputs.os-packages-scanned`. Fedora/CentOS-based images are unaffected.
+
 Inputs:
 
 | Input | Default | Description |
