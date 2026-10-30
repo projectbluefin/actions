@@ -1,7 +1,7 @@
 # Default: any one maintainer approves
-* @castrojo @p5 @m2Giles @tulilirockz
+* @projectbluefin/maintainers @p5 @m2Giles
 
 # Sensitive paths — require maintainer review
-bootc-build/        @castrojo @p5 @m2Giles @tulilirockz
-.github/workflows/  @castrojo @p5 @m2Giles @tulilirockz
-docs/               @castrojo @p5 @m2Giles @tulilirockz
+bootc-build/        @projectbluefin/maintainers @p5 @m2Giles
+.github/workflows/  @projectbluefin/maintainers @p5 @m2Giles
+docs/               @projectbluefin/maintainers @p5 @m2Giles
