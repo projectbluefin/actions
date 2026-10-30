@@ -105,6 +105,11 @@ def test_pr_body_merge_note_is_policy_not_release_window_state():
     assert "enqueue_promotion" not in forwarded
 
 
+def test_merge_note_is_forwarded_to_render_step():
+    assert _call_inputs()["merge_note"]["default"] == ""
+    assert _render_step()["with"]["merge_note"] == "${{ inputs.merge_note }}"
+
+
 def test_e2e_status_context_is_forwarded_to_release_gate():
     gate_inputs = _jobs()["gate"]["with"]
     assert gate_inputs["e2e_status_context"] == "${{ inputs.e2e_status_context }}"

@@ -106,6 +106,15 @@ on:
         required: false
         type: boolean
         default: true
+      merge_note:
+        description: >
+          Markdown that replaces the merge notice in the promotion PR body.
+          Leave empty for the built-in notice chosen by auto_merge (the
+          bluefin/dakota/bluefin-lts weekly windows). Set it where the merge
+          cadence differs, e.g. Utah's daily 04:00 UTC promotion.
+        required: false
+        type: string
+        default: ''
       request_reviewer:
         description: >
           Request a reviewer for the promotion PR. When true and reviewer is empty,
@@ -411,6 +420,7 @@ jobs:
           compare_url:       ${{ steps.gitlog.outputs.compare_url }}
           e2e_image:         ${{ inputs.e2e_image }}
           auto_merge:        ${{ inputs.auto_merge }}
+          merge_note:        ${{ inputs.merge_note }}
           output:            ${{ runner.temp }}/promotion-pr-body.md
 
       - name: Upsert promotion PR
