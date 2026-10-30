@@ -55,7 +55,7 @@ Coverage gate: `--cov-fail-under=75`
 | `reusable-renovate-automerge.yml` check-rollup classification + head-moved stop | `tests/bats/test_renovate_automerge_checks.bats` (12 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | `renovate-automerge-wiring.yml` wiring assertion (`scripts/renovate-automerge-wiring-check.sh`) | `tests/bats/test_renovate_automerge_wiring_check.bats` (10 tests) |
-| `reusable-renovate-automerge.yml` merge step: `--match-head-commit` pin, 409 skip, `gh pr view --json state` outcome reporting | `tests/bats/test_renovate_automerge_merge.bats` (13 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
+| `reusable-renovate-automerge.yml` merge step: `--match-head-commit` pin, moved-head skip (409 or changed `headRefOid`), `gh pr view --json state` outcome reporting | `tests/bats/test_renovate_automerge_merge.bats` (19 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 
 The Node suite runs in the `node` job in `unit-tests.yml`:
 

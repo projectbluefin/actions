@@ -309,11 +309,21 @@ jobs:
 
           cat merge.err >&2
 
-          # A moved head is rejected with HTTP 409. That is a normal,
-          # non-failing outcome here (Renovate retries; a later workflow_run
-          # re-evaluates the PR), so log it and succeed rather than failing
-          # the job on a branch the gate never qualified.
-          if grep -qi "409" merge.err; then
+          # A moved head is refused because of --match-head-commit. gh sends
+          # the pin as expectedHeadOid on the GraphQL mergePullRequest
+          # mutation, so the refusal arrives as a "GraphQL: ..." error on
+          # HTTP 200, not as an HTTP 409. Read the PR's current head instead
+          # of parsing the message. This is a normal, non-failing outcome
+          # (Renovate retries; a later workflow_run re-evaluates the PR), so
+          # log it and succeed rather than failing the job on a branch the
+          # gate never qualified. An unreadable head is not treated as moved.
+          head_moved() {
+            local current
+            current=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json headRefOid --jq .headRefOid 2>/dev/null || echo "")
+            [ -n "$current" ] && [ "$current" != "$HEAD_SHA" ]
+          }
+          if grep -qi "409" merge.err || head_moved; then
             echo "PR #$PR_NUMBER head moved after qualification; merge skipped, Renovate will retry"
             exit 0
           fi
@@ -335,6 +345,10 @@ jobs:
               exit 0
             fi
             cat retry.err >&2
+            if grep -qi "409" retry.err || head_moved; then
+              echo "PR #$PR_NUMBER head moved after qualification; merge skipped, Renovate will retry"
+              exit 0
+            fi
             if grep -qi "queued to merge" retry.err; then
               report_outcome
               exit 0
