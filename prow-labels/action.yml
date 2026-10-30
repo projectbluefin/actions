@@ -40,7 +40,7 @@ runs:
       id: prow
       if: steps.prepare.outputs.execute == 'true'
       continue-on-error: true
-      uses: cncf/prow-github-actions@187c5e3cd95a329c43448e1bdb3b1f5249232e44 # v3.0.1
+      uses: cncf/prow-github-actions@ed3bb424a5475f42b5d699048faa4a469a68b9ef # v3.4.0
       with:
         github-token: ${{ inputs.github-token }}
         prow-commands: ${{ steps.prepare.outputs.command }}
