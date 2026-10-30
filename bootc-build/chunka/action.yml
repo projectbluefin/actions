@@ -122,10 +122,19 @@ runs:
           # is the accepted resolution — no libc fallback will land in chunkah.
 
           # Pull chunkah with retries (transient registry 5xx errors are common).
+          # Fail explicitly once attempts are exhausted: a bare `[[ ... -lt 3 ]] &&
+          # sleep` returns non-zero on the last attempt, which does not trigger
+          # errexit, so the loop falls through and the build continues as if the
+          # pull had succeeded (#663). Fail closed like the sibling loops in
+          # push-image and create-manifest.
           for attempt in 1 2 3; do
             sudo podman pull "${CHUNKAH_REF}" && break
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "::error::chunkah pull failed after 3 attempts"
+              exit 1
+            fi
             echo "==> chunkah pull attempt ${attempt} failed, retrying in 10s..."
-            [[ "${attempt}" -lt 3 ]] && sleep 10
+            sleep 10
           done
 
           LOWER=$(sudo podman image mount "${SOURCE}")

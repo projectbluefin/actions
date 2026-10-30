@@ -270,6 +270,13 @@ Key design decisions:
   should pass an explicit timestamp. See `docs/skills/determinism.md`.
 - `force-compression` input is optional and defaults to `false` (preserves existing compression). Use `true` for images that must migrate from existing registry compression (e.g. CentOS Stream bases transitioning from gzip to zstd:chunked).
 - v0.6.0 uses `--output oci:/run/src/out` + `FROM oci:out` (avoids tar/untar round-trip). v0.5.0 used `> /run/src/out.ociarchive` + `FROM oci-archive:out.ociarchive`. Consumer repos must NOT vendor their own Containerfile.splitter.
+- **The chunkah pull retry loop fails closed.** It retries `podman pull` three times and `exit 1`s
+  with an `::error::` line once attempts are exhausted. Do **not** rewrite the last-iteration guard
+  as `[[ "${attempt}" -lt 3 ]] && sleep 10`: under `set -euo pipefail` that `&&` list returns
+  non-zero on the final attempt without triggering errexit, so the loop falls through and the build
+  continues as if the pull had succeeded — the next `podman run` then fails with a misleading error
+  (#663). Keep the explicit `if [[ "${attempt}" -eq 3 ]]; then exit 1; fi` that mirrors the
+  `push-image` and `create-manifest` retry loops.
 
 **Workarounds carried from consuming repos:**
 
