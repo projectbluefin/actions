@@ -22,6 +22,15 @@
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["pinDigest"]
     },
+    // reusable-validate-renovate.yml installs the renovate CLI, whose
+    // engines.node is pinned to a single major (currently ^24). Hold Node
+    // there until renovate itself supports the next major.
+    {
+      "matchFileNames": [".github/workflows/reusable-validate-renovate.yml"],
+      "matchDepNames": ["node"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
     // First-party self-references must stay on the floating @v1 tag, which this
     // repo's release process advances deliberately. config:best-practices pulls in
     // helpers:pinGitHubActionDigests, which would otherwise pin and then bump
