@@ -53,6 +53,7 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 |--------|---------|
 | [`.github/workflows/reusable-build.yml`](.github/workflows/reusable-build.yml) | Full Fedora bootc image build pipeline (Path 1) |
 | [`.github/workflows/reusable-release.yml`](.github/workflows/reusable-release.yml) | Image stable-release orchestration and Conventional Commits GitHub Release creation |
+| [`.github/workflows/reusable-pinned-fetches.yml`](.github/workflows/reusable-pinned-fetches.yml) | "Pinned fetches" supply-chain gate: fail builds that download tools/source by a mutable reference with no checksum (utah#902) |
 | [`.github/workflows/reusable-design-enforcement.yml`](.github/workflows/reusable-design-enforcement.yml) | Enforce the seven-label issue and review workflow |
 | [`.github/workflows/server-installer-test.yml`](.github/workflows/server-installer-test.yml) | Install and boot exported Bluefin Server artifacts with QEMU/KVM |
 

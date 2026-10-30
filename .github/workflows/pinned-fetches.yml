@@ -1,0 +1,38 @@
+name: Pinned Fetches
+# The actions repo's own pull-request gate for projectbluefin/utah#902 (Option A).
+#
+# This repo cannot call its own reusable workflow with `uses:` — the
+# check-self-repository-references.py gate rejects implementation-time
+# self-references so a repo never depends on a not-yet-released @v1 of itself.
+# So, exactly as factory-drift.yml runs the canonical scripts/validate_thin_caller.py
+# directly instead of via reusable-thin-caller-gate.yml, this workflow runs
+# scripts/check-pinned-fetches.sh directly. Consumers that CAN call the reusable
+# add .github/workflows/reusable-pinned-fetches.yml@v1 instead.
+#
+# Roll-out: warn-only for the baseline cycle (records findings, never fails),
+# with an allowlist for deliberate exceptions. Flip --mode to fail in this file
+# once the baseline is clean or allowlisted.
+
+on:
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-fetches:
+    name: Pinned fetches (warn baseline)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the code under scan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the pinned-fetches gate
+        run: |
+          ./scripts/check-pinned-fetches.sh --root . --mode warn --allowlist .github/pinned-fetches-allowlist.txt

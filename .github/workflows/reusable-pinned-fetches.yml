@@ -1,0 +1,79 @@
+name: reusable-pinned-fetches
+# Shared "pinned fetches" supply-chain gate (projectbluefin/utah#902, Option A).
+#
+# Flags tools and source that a build or test pipeline downloads from the
+# internet by a mutable reference — a moving tag, a branch head, `latest`, or a
+# bare clone with no commit — and then uses those bytes without first proving it
+# is exactly what the author intended (a checksum, a commit SHA, or a digest).
+# If the download site were tampered with, the altered file runs inside the
+# build and can end up in a signed release or forge a test result.
+#
+# The gate is a grep scan, not a full parser: it reports the common download
+# shapes that carry no immutable marker on the same line. See
+# scripts/check-pinned-fetches.sh for the rules and the known limit (multi-line
+# verified downloads are not cross-checked line to line).
+#
+# Callers: any projectbluefin image repo's pull-request CI, via
+#   projectbluefin/actions/.github/workflows/reusable-pinned-fetches.yml@v1
+#
+# Roll-out: the default `mode` is `warn` (records findings, never fails) for one
+# baseline cycle with an allowlist for deliberate exceptions, then a consumer
+# flips `mode: fail` once the baseline is clean or allowlisted.
+
+on:
+  workflow_call:
+    # requires: any
+    inputs:
+      mode:
+        description: >
+          "warn" records findings without failing (the baseline cycle);
+          "fail" fails the run on any non-allowlisted finding.
+        type: string
+        default: warn
+        required: false
+      allowlist:
+        description: >
+          Path, inside the scanned repository, to the plain-text allowlist of
+          rule ids or substrings to skip.
+        type: string
+        default: .github/pinned-fetches-allowlist.txt
+        required: false
+      actions_ref:
+        description: >
+          The ref of projectbluefin/actions to take the gate script from.
+          Defaults to the managed @v1 tag, which is exactly the release the
+          caller already trusted to run this workflow.
+        type: string
+        default: v1
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-fetches:
+    name: Pinned fetches (${{ inputs.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the code under scan
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out the gate script from projectbluefin/actions
+        # A second checkout keeps the gate in one shared place: fixing a rule
+        # here fixes it for every consumer, instead of one copy per repo.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: projectbluefin/actions
+          ref: ${{ inputs.actions_ref }}
+          path: pinned-fetches-gate
+          persist-credentials: false
+
+      - name: Run the pinned-fetches gate
+        env:
+          MODE: ${{ inputs.mode }}
+          ALLOWLIST: ${{ inputs.allowlist }}
+        run: |
+          ./pinned-fetches-gate/scripts/check-pinned-fetches.sh --root . --mode "${MODE}" --allowlist "${ALLOWLIST}"

@@ -1,0 +1,19 @@
+# Pinned-fetches allowlist (projectbluefin/utah#902, Option A).
+#
+# One entry per line, checked by scripts/check-pinned-fetches.sh. Comments start
+# with '#'. Two kinds of entry:
+#
+#   * A bare rule id disables that rule for the whole scan:
+#       unpinned-image
+#     Rule ids: mutable-url, pipe-download, unpinned-clone,
+#       unpinned-image, unpinned-ostree
+#
+#   * Any other line suppresses one finding whose printed text (summary line OR
+#     the reported source line) contains it — use the URL, image ref, or path
+#     that is actually unique to the case:
+#       ghcr.io/tuna-os/tacklebox:latest   # signed and re-verified upstream
+#
+# This gate is warn-only for one baseline cycle. Populate this file with the
+# findings you have reviewed and deliberately kept (with a reason), or fix the
+# fetch instead. Once the baseline is clean or fully allowlisted, flip the gate
+# to --mode fail.
