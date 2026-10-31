@@ -33,8 +33,16 @@ inputs:
     description: 'HTML URL of last stable release'
     required: false
     default: ''
+  diff_json:
+    description: >
+      JSON tree diff of the promotion against the current target tip:
+      {"files_changed", "insertions", "deletions", "files": [{"path",
+      "insertions", "deletions"}]}. When set, the body describes these changes
+      instead of commit_count/commits_json.
+    required: false
+    default: ''
   commit_count:
-    description: 'Number of commits testing is ahead of main/stable'
+    description: 'Number of commits testing is ahead of main/stable (ignored when diff_json is set)'
     required: false
     default: '0'
   commits_json:
@@ -93,6 +101,7 @@ runs:
         LAST_URL:      ${{ inputs.last_release_url }}
         COMMIT_COUNT:  ${{ inputs.commit_count }}
         COMMITS_JSON:  ${{ inputs.commits_json }}
+        DIFF_JSON:     ${{ inputs.diff_json }}
         COMPARE_URL:   ${{ inputs.compare_url }}
         E2E_IMAGE:     ${{ inputs.e2e_image }}
         AUTO_MERGE:    ${{ inputs.auto_merge }}
@@ -106,6 +115,8 @@ runs:
 
         DAYS_ARGS=()
         [[ -n "${DAYS_AGO}" ]] && DAYS_ARGS+=(--days-since-stable "${DAYS_AGO}")
+        DIFF_ARGS=()
+        [[ -n "${DIFF_JSON}" ]] && DIFF_ARGS+=(--diff-json "${DIFF_JSON}")
         TAG_ARGS=()
         [[ -n "${LAST_TAG}" ]] && TAG_ARGS+=(--last-release-tag "${LAST_TAG}" --last-release-url "${LAST_URL}")
 
@@ -128,6 +139,7 @@ runs:
           "${TAG_ARGS[@]}" \
           --commit-count  "${COMMIT_COUNT}" \
           --commits-json  "${COMMITS_JSON}" \
+          "${DIFF_ARGS[@]}" \
           --compare-url   "${COMPARE_URL}" \
           --source-branch "${SOURCE_BRANCH}" \
           --target-branch "${TARGET_BRANCH}" \

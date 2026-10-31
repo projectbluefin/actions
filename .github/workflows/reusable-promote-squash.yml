@@ -370,31 +370,43 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Collect git log for PR body
+      # Describe the tree difference against the current target tip, not the
+      # commit distance. On a squash-only target the source shares no history
+      # with what was already promoted, so a rev-list count reported every
+      # commit since the branches forked ("446 commits ahead") while the
+      # promotion itself was a two-line digest bump (#691). The squash commit
+      # carries exactly origin/SOURCE's tree on top of origin/TARGET, so this
+      # diff matches the PR's own "Files changed" tab.
+      - name: Collect tree diff for PR body
         if: steps.compare.outputs.sync_needed == 'true' && steps.rebuild.outputs.promoted != 'false'
-        id: gitlog
+        id: treediff
         env:
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
           set -euo pipefail
-          COUNT=$(git rev-list --count "origin/${TARGET_BRANCH}..origin/${SOURCE_BRANCH}" 2>/dev/null || echo 0)
-          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
-
-          # Build commits JSON safely — split on tab, never rely on shell JSON escaping
-          COMMITS_JSON=$(git log "origin/${TARGET_BRANCH}..origin/${SOURCE_BRANCH}" \
-            --pretty=format:'%H%x09%s' \
-            --max-count=20 \
+          DIFF_JSON=$(git diff --numstat -z --no-renames \
+            "origin/${TARGET_BRANCH}" "origin/${SOURCE_BRANCH}" \
             | python3 -c '
           import sys, json
-          rows = []
-          for line in sys.stdin:
-              sha, _, subject = line.rstrip("\n").partition("\t")
-              rows.append({"sha": sha, "subject": subject})
-          print(json.dumps(rows))
-          ' 2>/dev/null || echo '[]')
-          echo "commits_json=${COMMITS_JSON}" >> "$GITHUB_OUTPUT"
-          echo "compare_url=https://github.com/${{ github.repository }}/compare/${TARGET_BRANCH}...${SOURCE_BRANCH}" >> "$GITHUB_OUTPUT"
+          files, ins, dels = [], 0, 0
+          for rec in sys.stdin.buffer.read().decode("utf-8", "replace").split("\0"):
+              if not rec:
+                  continue
+              added, deleted, path = rec.split("\t", 2)
+              a = None if added == "-" else int(added)
+              d = None if deleted == "-" else int(deleted)
+              ins += a or 0
+              dels += d or 0
+              files.append({"path": path, "insertions": a, "deletions": d})
+          # Cap the list so the step output stays small; files_changed keeps the total.
+          print(json.dumps({"files_changed": len(files), "insertions": ins,
+                            "deletions": dels, "files": files[:50]}))
+          ')
+          echo "diff_json=${DIFF_JSON}" >> "$GITHUB_OUTPUT"
+          # Compare against the squash branch: its parent is the target tip, so
+          # GitHub's three-dot compare shows the same delta as the counts above.
+          echo "compare_url=https://github.com/${{ github.repository }}/compare/${TARGET_BRANCH}...${PROMOTION_BRANCH}" >> "$GITHUB_OUTPUT"
 
       # auto_merge, not enqueue_promotion: the body states how this PR gets
       # merged at all, and this step reruns on every refresh event. In the
@@ -415,9 +427,8 @@ jobs:
           days_since_stable: ${{ steps.last-release.outputs.days }}
           last_release_tag:  ${{ steps.last-release.outputs.tag }}
           last_release_url:  ${{ steps.last-release.outputs.url }}
-          commit_count:      ${{ steps.gitlog.outputs.count }}
-          commits_json:      ${{ steps.gitlog.outputs.commits_json }}
-          compare_url:       ${{ steps.gitlog.outputs.compare_url }}
+          diff_json:         ${{ steps.treediff.outputs.diff_json }}
+          compare_url:       ${{ steps.treediff.outputs.compare_url }}
           e2e_image:         ${{ inputs.e2e_image }}
           auto_merge:        ${{ inputs.auto_merge }}
           merge_note:        ${{ inputs.merge_note }}

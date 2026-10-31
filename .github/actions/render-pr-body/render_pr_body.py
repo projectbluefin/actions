@@ -10,7 +10,7 @@ reusable-promote.yml (digest workflow).  The body contains HTML marker
 comments around the gate section so the gate job can do a targeted
 replacement without touching the rest of the body.
 
-Usage (squash workflow — has git log, no digests yet):
+Usage (squash workflow — has the tree diff, no digests yet):
     python3 render_pr_body.py \\
         --project-name        "Bluefin" \\
         --primary-image       "bluefin" \\
@@ -21,9 +21,8 @@ Usage (squash workflow — has git log, no digests yet):
         --days-since-stable   12 \\
         --last-release-tag    "stable-20260530-abc1234" \\
         --last-release-url    "https://github.com/.../releases/tag/stable-20260530-abc1234" \\
-        --commit-count        54 \\
-        --commits-json        '[{"sha":"abc1234def5","subject":"feat: stuff"}]' \\
-        --compare-url         "https://github.com/.../compare/main...testing" \\
+        --diff-json           '{"files_changed":2,"insertions":2,"deletions":2,"files":[...]}' \\
+        --compare-url         "https://github.com/.../compare/main...auto/promote-testing-to-main" \\
         --output              /tmp/pr-body.md
 
 Usage (digest workflow — variants include resolved digests, no git log):
@@ -161,6 +160,69 @@ def _section_commits(
     return "### Changes since last stable\n\n" + intro + "\n" + details + "\n"
 
 
+DIFF_FILES_SHOWN = 50
+
+
+def _section_diff(
+    diff: dict,
+    compare_url: str | None,
+    source_branch: str = "testing",
+    target_branch: str = "stable",
+) -> str:
+    """Describe what the promotion actually changes against the target tip.
+
+    ``diff`` is the tree difference between the target tip and the source tip:
+    ``{"files_changed": int, "insertions": int, "deletions": int,
+    "files": [{"path": str, "insertions": int | None, "deletions": int | None}]}``
+    (``None`` marks a binary file). The squash commit carries exactly this
+    difference, so the counts match the PR's own "Files changed" tab. A commit
+    count would not: on a squash-only target the source shares no history with
+    what was already promoted, so it counts every commit since the fork (#691).
+    """
+    total = int(diff.get("files_changed", 0))
+    if total == 0:
+        return ""
+
+    files = diff.get("files", [])
+    insertions = int(diff.get("insertions", 0))
+    deletions = int(diff.get("deletions", 0))
+    compare_link = (
+        f" · [Compare {target_branch}…{source_branch} ↗]({compare_url})"
+        if compare_url
+        else ""
+    )
+    noun = "file" if total == 1 else "files"
+    intro = (
+        f"**{total} {noun} changed** (+{insertions} / −{deletions})"
+        f" against the current {target_branch} tip{compare_link}\n"
+    )
+
+    if not files:
+        return "### Changes in this promotion\n\n" + intro
+
+    def _count(value: int | None) -> str:
+        return "bin" if value is None else str(value)
+
+    shown = files[:DIFF_FILES_SHOWN]
+    rows = "\n".join(
+        f"| `{f['path'].replace('|', chr(92) + '|')}` "
+        f"| {_count(f.get('insertions'))} | {_count(f.get('deletions'))} |"
+        for f in shown
+    )
+    more = total - len(shown)
+    more_line = f"\n_…and {more} more_\n" if more > 0 else ""
+    details = (
+        "<details>\n"
+        f"<summary>Changed files ({total})</summary>\n\n"
+        "| File | + | − |\n"
+        "|---|---|---|\n"
+        f"{rows}\n"
+        f"{more_line}\n"
+        "</details>"
+    )
+    return "### Changes in this promotion\n\n" + intro + "\n" + details + "\n"
+
+
 def _section_footer(repo: str = "") -> str:
     repo_flag = f" --repo {repo}" if repo else ""
     pr_placeholder = "<pr-number>"
@@ -207,6 +269,10 @@ def main() -> None:
                     help="Number of commits testing is ahead of main/stable")
     ap.add_argument("--commits-json",       default="[]",
                     help="JSON array of {sha, subject} objects (recent commits)")
+    ap.add_argument("--diff-json",          default="",
+                    help="JSON tree diff against the target tip "
+                         "({files_changed, insertions, deletions, files}); "
+                         "replaces the commit section when given")
     ap.add_argument("--compare-url",        default="",
                     help="GitHub compare URL: .../compare/main...testing")
     ap.add_argument("--source-tag",         default="testing",
@@ -238,7 +304,11 @@ def main() -> None:
         "",
         _section_variants(variants, args.source_tag),
         "",
-        _section_commits(
+        _section_diff(
+            json.loads(args.diff_json), args.compare_url or None,
+            source_branch=args.source_branch,
+            target_branch=args.target_branch,
+        ) if args.diff_json.strip() else _section_commits(
             args.commit_count, commits, args.compare_url or None,
             source_branch=args.source_branch,
             target_branch=args.target_branch,
