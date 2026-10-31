@@ -25,9 +25,6 @@ rules:
 
   template-injection:
     ignore:
-      # inputs.* are caller literals in every consumer; held PR #544 touches
-      # these lines, so the move into env: waits for that PR
-      - reusable-sync-branches.yml
       # inputs.* are caller literals in every consumer (audited 2026-10-21)
       - reusable-pkg-cadence.yml
       # TEMPORARY: github.actor / inputs.* expanded inside run:. Values are
@@ -65,4 +62,4 @@ rules:
       # Calls a first-party reusable workflow in this repository, which
       # needs the signing/App credentials of the caller; an explicit secret
       # list is a follow-up, not a regression.
-      - reusable-promote-squash.yml:521
+      - reusable-promote-squash.yml:531
