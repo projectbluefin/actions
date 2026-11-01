@@ -66,14 +66,17 @@ severity; the gate fails on any non-allowlisted finding in `fail` mode.
 | Rule | Severity | Flags |
 |---|---|---|
 | `mutable-url` | high | a URL pinned to a moving target: `/releases/latest/download/`, `@Main`, `@master`, `@stable`, or `:latest` — unless the same line also carries an `@sha256:` digest (`name:latest@sha256:<hex>`), which makes the tag informational |
-| `pipe-download` | high | `curl`/`wget` piped straight into an interpreter (`| bash`, `| sh`, `| zsh`) with no checksum/verify on the same line |
+| `pipe-download` | high | `curl`/`wget` piped straight into an interpreter (`| bash`, `| sh`, `| zsh`) or `| tar` with no checksum/verify on the same line; a command continued with trailing backslashes counts as one line |
 | `unpinned-clone` | medium | `git clone` with no immutable commit SHA (`--branch <40-hex>`) |
 | `unpinned-image` | medium | a `FROM` image referenced by tag with no `@sha256:` digest |
 | `unpinned-ostree` | high | `bootc switch`/`ostree rebase` to a tag with no container signature policy (`--sigpolicy` / `--enforce-policy-path`) |
 
 The gate is a **grep scan, not a parser**: it looks for a mutable reference and
-the absence of a marker *on the same line*. It does not cross-check a verified
-download across lines (a `curl` on one line and `sha256sum -c` on the next are
+the absence of a marker *on the same line*. The one concession to shell layout
+is that a command continued with trailing backslashes is read as a single line,
+so a `curl … \` / `| tar xz` pipe split for readability is still a pipe. It does
+not cross-check a verified
+download across separate commands (a `curl` on one line and `sha256sum -c` on the next are
 each judged alone), and it does not resolve whether a bare URL is truly mutable.
 That limit is intentional — a parser would be far larger and would false-positive
 on templated refs — and is documented in the script header and in the reusable

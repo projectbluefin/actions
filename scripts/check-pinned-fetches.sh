@@ -10,10 +10,13 @@
 #
 # It is intentionally a grep gate, not a full parser: it looks at the common
 # download shapes (curl|sh, git clone, image refs, bootc/ostree rebases) and
-# reports the ones that carry no immutable marker on the same line. Multi-line
-# steps are not cross-checked line to line, so a verified download split across
-# several lines can still be reported; the allowlist covers deliberate cases,
-# and this is the known limit until a real YAML/AST parser is wanted.
+# reports the ones that carry no immutable marker on the same line. A shell
+# line continued with a trailing backslash is treated as one line, so a
+# `curl ... \` / `| tar` pipe split for readability is still seen as a pipe.
+# Beyond that, multi-line steps are not cross-checked line to line, so a
+# verified download split across several commands can still be reported; the
+# allowlist covers deliberate cases, and this is the known limit until a real
+# YAML/AST parser is wanted.
 #
 # Files scanned: *.yml / *.yaml under .github, plus *.sh, Justfile*,
 # Containerfile*, *.container.in and *.toml. Comment lines (first
@@ -139,6 +142,24 @@ record() {
 
 MUTABLE_URL_RE='/releases/latest/download/|@[Mm]ain/?|@[Mm]aster/?|@[Ss]table/?|:latest[^a-zA-Z]'
 
+# Print FILE as "lineno:text" with backslash-continued lines joined onto the
+# line that starts them, so a pipe written as
+#     curl -sSfL \
+#       "https://example.com/tool.tar.gz" \
+#       | tar xz
+# is matched as the single command it is. lineno is the first physical line.
+logical_lines() {
+  awk '
+    {
+      line = $0
+      if (buf == "") { start = NR; buf = line } else { sub(/^[[:space:]]+/, "", line); buf = buf " " line }
+      if (buf ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", buf); next }
+      print start ":" buf; buf = ""
+    }
+    END { if (buf != "") print start ":" buf }
+  ' "$1"
+}
+
 # --- file discovery -----------------------------------------------------------
 scanned=0
 while IFS= read -r f; do
@@ -176,7 +197,7 @@ while IFS= read -r f; do
     fi
     record pipe-download "${SEVERITY[pipe-download]}" "$f:$lineno" \
       "download is piped into an interpreter with no checksum/verify on this line" "$content"
-  done < <(grep -nE '(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh\b|(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?python[0-9.]*\b|(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?tar\b' "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+  done < <(logical_lines "$f" 2>/dev/null | grep -E '^[0-9]+:.*((curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?(ba)?sh\b|(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?python[0-9.]*\b|(curl|wget)[^|]*\|[[:space:]]*(sudo[[:space:]]+)?tar\b)' | grep -vE '^[0-9]+:[[:space:]]*#' || true)
 
   # unpinned-clone: git clone with no immutable commit ------------------------
   while IFS= read -r match; do
