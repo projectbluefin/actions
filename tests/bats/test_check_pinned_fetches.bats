@@ -65,6 +65,14 @@ YAML
   [[ $output == *"pipe-download"* ]]
 }
 
+@test "mutable-url rule does NOT flag a :latest tag that carries a @sha256 digest" {
+  printf 'FROM ghcr.io/projectbluefin/common:latest@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa AS common\n' > "$ROOT/Containerfile"
+  printf 'export bib_image := env("BIB_IMAGE", "ghcr.io/osbuild/bootc-image-builder:latest@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")\n' > "$ROOT/Justfile"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 0 ]
+  [[ $output != *"mutable-url"* ]]
+}
+
 @test "pipe-download rule does NOT flag a curl download verified with sha256sum -c" {
   printf 'curl -fsSL https://get.example.com -o t.tgz\n' > "$ROOT/install.sh"
   printf 'echo "$SHA  t.tgz" | sha256sum -c -\n' >> "$ROOT/install.sh"

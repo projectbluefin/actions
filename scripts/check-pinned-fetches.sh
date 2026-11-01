@@ -152,6 +152,12 @@ while IFS= read -r f; do
   while IFS= read -r match; do
     [ -n "$match" ] || continue
     lineno="${match%%:*}"; content="${match#*:}"
+    # A tag followed by a digest (the "name:latest@sha256:<hex>" form Renovate
+    # writes for pinDigests) resolves to the digest, so the tag is informational
+    # and the reference is immutable — the same exemption unpinned-image applies.
+    if grep -q '@sha256:' <<<"$content"; then
+      continue
+    fi
     record mutable-url "${SEVERITY[mutable-url]}" "$f:$lineno" \
       "download URL is pinned to a moving target" "$content"
   done < <(grep -nE '/releases/latest/download/|@[Mm]ain/?|@[Mm]aster/?|@[Ss]table/?|:latest[^a-zA-Z]' "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' || true)
