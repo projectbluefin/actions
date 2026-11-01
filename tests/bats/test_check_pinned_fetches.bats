@@ -73,6 +73,20 @@ YAML
   [[ $output != *"mutable-url"* ]]
 }
 
+@test "mutable-url rule still flags a releases/latest download on a line that also carries a digest" {
+  printf 'RUN curl -fsSL https://github.com/o/r/releases/latest/download/x -o x # built from ghcr.io/o/b:latest@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\n' > "$ROOT/Containerfile"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -ne 0 ]
+  [[ $output == *"mutable-url"* ]]
+}
+
+@test "mutable-url rule still flags a :latest tag when the digest is not a full sha256" {
+  printf 'FROM ghcr.io/o/b:latest@sha256:abc\n' > "$ROOT/Containerfile"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -ne 0 ]
+  [[ $output == *"mutable-url"* ]]
+}
+
 @test "pipe-download rule does NOT flag a curl download verified with sha256sum -c" {
   printf 'curl -fsSL https://get.example.com -o t.tgz\n' > "$ROOT/install.sh"
   printf 'echo "$SHA  t.tgz" | sha256sum -c -\n' >> "$ROOT/install.sh"

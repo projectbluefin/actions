@@ -137,6 +137,8 @@ record() {
   findings+=("${text}"$'\n'"$(printf '%s' "$detail" | sed 's/^/      /')")
 }
 
+MUTABLE_URL_RE='/releases/latest/download/|@[Mm]ain/?|@[Mm]aster/?|@[Ss]table/?|:latest[^a-zA-Z]'
+
 # --- file discovery -----------------------------------------------------------
 scanned=0
 while IFS= read -r f; do
@@ -155,12 +157,15 @@ while IFS= read -r f; do
     # A tag followed by a digest (the "name:latest@sha256:<hex>" form Renovate
     # writes for pinDigests) resolves to the digest, so the tag is informational
     # and the reference is immutable — the same exemption unpinned-image applies.
-    if grep -q '@sha256:' <<<"$content"; then
+    # Only that token is exempt: strip it and re-test, so a release/branch URL
+    # elsewhere on the same line is still reported.
+    stripped=$(sed -E 's/:latest@sha256:[0-9a-f]{64}//g' <<<"$content")
+    if ! grep -qE "$MUTABLE_URL_RE" <<<"$stripped"; then
       continue
     fi
     record mutable-url "${SEVERITY[mutable-url]}" "$f:$lineno" \
       "download URL is pinned to a moving target" "$content"
-  done < <(grep -nE '/releases/latest/download/|@[Mm]ain/?|@[Mm]aster/?|@[Ss]table/?|:latest[^a-zA-Z]' "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+  done < <(grep -nE "$MUTABLE_URL_RE" "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' || true)
 
   # pipe-download: curl|wget piped into an interpreter ------------------------
   while IFS= read -r match; do
