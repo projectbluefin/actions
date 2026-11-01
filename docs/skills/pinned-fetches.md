@@ -65,7 +65,7 @@ severity; the gate fails on any non-allowlisted finding in `fail` mode.
 
 | Rule | Severity | Flags |
 |---|---|---|
-| `mutable-url` | high | a URL pinned to a moving target: `/releases/latest/download/`, `@Main`, `@master`, `@stable`, or `:latest` |
+| `mutable-url` | high | a URL pinned to a moving target: `/releases/latest/download/`, `@Main`, `@master`, `@stable`, or `:latest` — unless the same line also carries an `@sha256:` digest (`name:latest@sha256:<hex>`), which makes the tag informational |
 | `pipe-download` | high | `curl`/`wget` piped straight into an interpreter (`| bash`, `| sh`, `| zsh`) with no checksum/verify on the same line |
 | `unpinned-clone` | medium | `git clone` with no immutable commit SHA (`--branch <40-hex>`) |
 | `unpinned-image` | medium | a `FROM` image referenced by tag with no `@sha256:` digest |
