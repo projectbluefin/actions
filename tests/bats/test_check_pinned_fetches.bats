@@ -94,6 +94,35 @@ YAML
   [ "$status" -eq 0 ]
 }
 
+@test "pipe-download rule flags a curl | tar pipe split across backslash-continued lines" {
+  cat > "$ROOT/.github/workflows/publish.yml" <<'YAML'
+name: publish
+on: push
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: install tool
+        run: |
+          TOOL_VERSION="1.2.0"
+          curl -sSfL \
+            "https://github.com/example/tool/releases/download/v${TOOL_VERSION}/tool_${TOOL_VERSION}_linux_amd64.tar.gz" \
+            | tar xz tool
+YAML
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 1 ]
+  [[ $output == *"pipe-download"* ]]
+  # reported at the line the command starts on, not the line holding the pipe
+  [[ $output == *"publish.yml:10:"* ]]
+}
+
+@test "pipe-download rule does NOT flag a backslash-continued pipe whose last line verifies a checksum" {
+  printf 'curl -fsSL https://get.example.com/t.tgz \\\n' > "$ROOT/install.sh"
+  printf '  | tee t.tgz | sha256sum -c expected.sha256\n' >> "$ROOT/install.sh"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 0 ]
+}
+
 @test "unpinned-clone rule flags a git clone with no commit SHA" {
   printf 'git clone https://git.sr.ht/~emersion/grim\n' > "$ROOT/.github/workflows/w.yml"
   run bash "$SCRIPT" --root "$ROOT" --mode fail
