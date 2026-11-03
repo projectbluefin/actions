@@ -74,7 +74,8 @@ severity; the gate fails on any non-allowlisted finding in `fail` mode.
 The gate is a **grep scan, not a parser**: it looks for a mutable reference and
 the absence of a marker *on the same line*. The one concession to shell layout
 is that a command continued with trailing backslashes is read as a single line,
-so a `curl … \` / `| tar xz` pipe split for readability is still a pipe. It does
+so a `curl … \` / `| tar xz` pipe split for readability is still a pipe. A
+comment line never continues the line after it, matching the shell. It does
 not cross-check a verified
 download across separate commands (a `curl` on one line and `sha256sum -c` on the next are
 each judged alone), and it does not resolve whether a bare URL is truly mutable.

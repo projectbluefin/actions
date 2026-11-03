@@ -123,6 +123,17 @@ YAML
   [ "$status" -eq 0 ]
 }
 
+@test "pipe-download rule still flags a curl | tar pipe that follows a comment ending in a backslash" {
+  printf '#!/bin/bash\n' > "$ROOT/install.sh"
+  printf '# fetch helper \\\n' >> "$ROOT/install.sh"
+  printf 'curl -sSfL https://example.com/x.tar.gz | tar xz\n' >> "$ROOT/install.sh"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 1 ]
+  [[ $output == *"pipe-download"* ]]
+  # the comment does not swallow the command; it is reported at its own line
+  [[ $output == *"install.sh:3:"* ]]
+}
+
 @test "unpinned-clone rule flags a git clone with no commit SHA" {
   printf 'git clone https://git.sr.ht/~emersion/grim\n' > "$ROOT/.github/workflows/w.yml"
   run bash "$SCRIPT" --root "$ROOT" --mode fail

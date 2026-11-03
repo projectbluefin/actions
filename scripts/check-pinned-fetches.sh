@@ -148,12 +148,15 @@ MUTABLE_URL_RE='/releases/latest/download/|@[Mm]ain/?|@[Mm]aster/?|@[Ss]table/?|
 #       "https://example.com/tool.tar.gz" \
 #       | tar xz
 # is matched as the single command it is. lineno is the first physical line.
+# A comment line never continues: in shell a comment runs to end of line and
+# its trailing backslash joins nothing, so the command after it must stay its
+# own line or the comment filter would hide it.
 logical_lines() {
   awk '
     {
       line = $0
       if (buf == "") { start = NR; buf = line } else { sub(/^[[:space:]]+/, "", line); buf = buf " " line }
-      if (buf ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", buf); next }
+      if (buf !~ /^[[:space:]]*#/ && buf ~ /\\[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", buf); next }
       print start ":" buf; buf = ""
     }
     END { if (buf != "") print start ":" buf }
