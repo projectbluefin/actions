@@ -202,13 +202,13 @@ runs:
 
     - name: Install just
       if: contains(fromJSON(inputs.install-tools), 'just')
-      uses: taiki-e/install-action@a058860aaa8db7b0a781c0fbe50b6716c4a40f47 # just
+      uses: taiki-e/install-action@859dfda2225e25c12478e3c7796d19fd3735881f # just
       with:
         tool: just
 
     - name: Install cosign
       if: contains(fromJSON(inputs.install-tools), 'cosign')
-      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
     - name: Install ORAS
       if: contains(fromJSON(inputs.install-tools), 'oras')
