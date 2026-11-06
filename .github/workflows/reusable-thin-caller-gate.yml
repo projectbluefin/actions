@@ -9,12 +9,12 @@ name: reusable-thin-caller-gate
 # it reaches that repo's main, instead of only being caught by the weekly
 # factory-drift backstop.
 #
-# Single source of truth: the validator source is an explicit input
-# (actions_repository/actions_ref), defaulting to projectbluefin/actions@v1,
-# instead of a value baked into the checkout step. A consumer that pins a
-# future @v2 of this reusable inherits that version's own defaults; nothing
-# here silently drifts to whatever @v1 happens to point at independently of
-# the ref the consumer actually invoked. Opt in from a consumer repo by
+# Single source of truth: the validator script is checked out from the same
+# commit as this reusable workflow (job.workflow_sha), so a consumer that pins
+# this workflow by SHA or tag runs exactly that version of the script. The
+# actions_repository/actions_ref inputs exist only to validate a fork or
+# branch of this reusable itself.
+#
 # adding a job (reusable workflows can only be called at the job level, not
 # as a step):
 #
@@ -36,9 +36,11 @@ on:
       actions_ref:
         description: >-
           Ref of actions_repository to check out the validator script from.
-          Override only to validate a fork or branch of this reusable itself.
+          Empty (the default) uses the exact commit of this reusable workflow
+          the caller pinned. Override only to validate a fork or branch of
+          this reusable itself.
         type: string
-        default: v1
+        default: ''
 
 permissions: {}
 
@@ -57,7 +59,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.actions_repository }}
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ inputs.actions_ref || job.workflow_sha }}
           path: thin-caller-gate
 
       - name: Set up Python
