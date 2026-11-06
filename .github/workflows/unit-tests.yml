@@ -17,6 +17,8 @@ on:
       - "scripts/**"
       - ".github/actions/**"
       - "tests/**"
+      # test_zizmor_baseline_pins.py checks the line pins in this file.
+      - ".github/zizmor.yml"
       - ".github/workflows/factory-drift.yml"
       - ".github/workflows/factory-health.yml"
       - ".github/workflows/ghcr-cleanup.yml"
