@@ -239,6 +239,15 @@ YAML
   [[ $output == *"mutable-url"* ]]
 }
 
+@test "the gate's own pinned-fetches-gate/ checkout is not scanned" {
+  mkdir -p "$ROOT/pinned-fetches-gate/scripts"
+  cat > "$ROOT/pinned-fetches-gate/scripts/helper.sh" <<'SH'
+curl -fsSL https://example.com/latest/tool.sh | bash
+SH
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 0 ]
+}
+
 # --- usage --------------------------------------------------------------------
 
 @test "unknown mode exits 2" {
