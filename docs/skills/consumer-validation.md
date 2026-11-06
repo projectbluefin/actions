@@ -16,7 +16,8 @@ Any change to this repo affects ALL consumers simultaneously via the `@v1` float
 
 | Consumer | Org | Notified? |
 |---|---|---|
-| `projectbluefin/bluefin` | projectbluefin | ✅ Direct access |
+| `projectbluefin/bluefin` | projectbluefin | Archived (read-only): a consumer PR can no longer be opened there |
+| `projectbluefin/utah` | projectbluefin | ✅ Direct access; calls `reusable-build.yml` (pinned by SHA), so a consumer PR pins it to the actions PR head |
 | `ublue-os/aurora` | ublue-os (external) | ⚠️ No CI visibility |
 | `ublue-os/bazzite` | ublue-os (external) | ⚠️ No CI visibility |
 
