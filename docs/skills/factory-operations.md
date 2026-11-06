@@ -561,8 +561,8 @@ Examples: `ci(promote): bluefin testing → stable 2026-06-11`
 ### Variants being promoted
 (variants table with digests when available)
 
-### Changes since last stable
-(commit count + collapsible commit log — squash workflow only)
+### Changes in this promotion
+(files changed, +/- lines against the current target tip, collapsible file list — squash workflow only)
 
 ## Desktop Screenshot
 
@@ -573,6 +573,12 @@ Examples: `ci(promote): bluefin testing → stable 2026-06-11`
 
 ![bluefin desktop](https://projectbluefin.github.io/testsuite/screenshots/bluefin-smoke-latest.png)
 ```
+
+The changes section describes the tree diff between the target tip and the
+source tip — exactly what the squash commit carries. It deliberately does not
+count commits: on a squash-only target the source shares no history with what
+was already promoted, so a commit count reports every commit since the fork
+(hundreds) even when the promotion is a two-line digest bump (#691).
 
 The gate checklist starts with ⏳ placeholders written by the promote job,
 then the gate job replaces only the `<!-- gate-section-start/end -->` block

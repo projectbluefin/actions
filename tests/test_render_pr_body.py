@@ -522,3 +522,109 @@ class TestPromotedBranchPair:
         assert "Finpilot main → stable" in body
         assert "`promote-main-to-stable.yml`" in body
         assert "promote-testing-to-main.yml" not in body
+
+
+# ── Tree diff section (#691) ─────────────────────────────────────────────────
+
+DIFF = {
+    "files_changed": 2,
+    "insertions": 2,
+    "deletions": 2,
+    "files": [
+        {"path": "image-versions.yml", "insertions": 1, "deletions": 1},
+        {"path": "Containerfile", "insertions": 1, "deletions": 1},
+    ],
+}
+
+
+class TestSectionDiff:
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_returns_empty_when_nothing_changed(self, module):
+        assert module._section_diff({"files_changed": 0}, None) == ""
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_reports_file_and_line_counts(self, module):
+        md = module._section_diff(DIFF, None, target_branch="stable")
+        assert "**2 files changed** (+2 / −2)" in md
+        assert "against the current stable tip" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_does_not_mention_commits(self, module):
+        md = module._section_diff(DIFF, None)
+        assert "commit" not in md.lower()
+        assert "ahead of" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_singular_file(self, module):
+        one = {"files_changed": 1, "insertions": 1, "deletions": 0, "files": DIFF["files"][:1]}
+        assert "**1 file changed**" in module._section_diff(one, None)
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_lists_changed_files(self, module):
+        md = module._section_diff(DIFF, None)
+        assert "<details>" in md and "</details>" in md
+        assert "Changed files (2)" in md
+        assert "| `image-versions.yml` | 1 | 1 |" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_binary_file_marked(self, module):
+        diff = {"files_changed": 1, "insertions": 0, "deletions": 0,
+                "files": [{"path": "logo.png", "insertions": None, "deletions": None}]}
+        assert "| `logo.png` | bin | bin |" in module._section_diff(diff, None)
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_pipe_in_path_escaped(self, module):
+        diff = {"files_changed": 1, "insertions": 1, "deletions": 0,
+                "files": [{"path": "a|b", "insertions": 1, "deletions": 0}]}
+        assert "a\\|b" in module._section_diff(diff, None)
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_truncated_list_notes_remainder(self, module):
+        files = [{"path": f"f{i}", "insertions": 1, "deletions": 0} for i in range(50)]
+        diff = {"files_changed": 75, "insertions": 75, "deletions": 0, "files": files}
+        md = module._section_diff(diff, None)
+        assert "Changed files (75)" in md
+        assert "_…and 25 more_" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_compare_link_follows_branches(self, module):
+        md = module._section_diff(
+            DIFF, "https://example.com/compare/stable...auto/promote-main-to-stable",
+            source_branch="main", target_branch="stable",
+        )
+        assert "[Compare stable…main ↗](https://example.com/compare/stable...auto/promote-main-to-stable)" in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_no_files_list_renders_intro_only(self, module):
+        md = module._section_diff({"files_changed": 3, "insertions": 3, "deletions": 0}, None)
+        assert "**3 files changed**" in md
+        assert "<details>" not in md
+
+    @pytest.mark.parametrize("module", TEST_MODULES)
+    def test_cli_diff_json_replaces_commit_section(self, module, tmp_path):
+        out = tmp_path / "pr-body.md"
+        old = sys.argv
+        sys.argv = [
+            "render_pr_body.py",
+            "--project-name",  "Finpilot",
+            "--primary-image", "finpilot",
+            "--variants-json", json.dumps([{"image": "finpilot"}]),
+            "--repo",          "projectbluefin/finpilot",
+            "--run-url",       "https://github.com/projectbluefin/finpilot/actions/runs/1",
+            "--date",          "2026-10-28",
+            "--source-branch", "main",
+            "--target-branch", "stable",
+            "--commit-count",  "446",
+            "--commits-json",  json.dumps(COMMITS),
+            "--diff-json",     json.dumps(DIFF),
+            "--output",        str(out),
+        ]
+        try:
+            module.main()
+        finally:
+            sys.argv = old
+        body = out.read_text()
+        assert "### Changes in this promotion" in body
+        assert "**2 files changed**" in body
+        assert "446" not in body
+        assert "commits** ahead" not in body
