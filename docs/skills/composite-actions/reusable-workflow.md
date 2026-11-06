@@ -112,6 +112,47 @@ Use `$/` only for same-repository implementation references. Keep third-party ac
 
 Do not migrate references in comments, documentation examples, or shell commands that inspect consumer-facing `projectbluefin/actions/...@v1` calls. A focused regression test (`tests/test_self_repository_references.py`) scans active implementation YAML under `.github/`, `actions/`, and `bootc-build/`; run it after changing composition refs. Validate both the focused test and YAML/actionlint checks; the repository's pinned actionlint 1.7.7 needs the scoped `.github/actionlint.yaml` compatibility ignores until native `$/` parsing support lands.
 
+> **actionlint quirk — read before trusting a local failure on `job.workflow_sha`.** The
+> CI does not run the official `rhysd/actionlint`: it runs the forked
+> `kjanat/actionlint` v1.17.0 through `reviewdog/action-actionlint` v1.81.1. That fork
+> knows `job.workflow_sha`; the official actionlint (through 1.7.12) rejects it with
+> `property "workflow_sha" is not defined in object type`. A local official-actionlint
+> error on `job.workflow_sha` is a schema gap, not a real defect — verify against the CI
+> fork and do **not** "fix" it by dropping the fallback.
+
+### Script-checkout reusables pin their script to `job.workflow_sha`
+
+Some reusable workflows take a second `actions/checkout` for their own implementation
+script from `projectbluefin/actions`. If that checkout's `ref` defaults to the moving
+`v1` tag, the workflow YAML a caller pinned by SHA and the script it runs can come from
+different commits: the YAML from the pinned digest, the script from wherever `v1` points
+today. A consumer can approve one version of a gate and silently run a newer script
+(issue #707). The supply-chain gate itself (`reusable-pinned-fetches.yml`) is exactly the
+moving-tag download it exists to flag.
+
+Pin the second checkout to the reusable workflow's own commit. Keep the input and its
+name (additive, backward compatible); only change the default to empty and fall back to
+`job.workflow_sha`:
+
+```yaml
+      actions_ref:
+        type: string
+        default: ''   # empty falls through to job.workflow_sha in the checkout below
+```
+
+```yaml
+      - uses: actions/checkout@<sha> # v7.0.1
+        with:
+          repository: projectbluefin/actions
+          ref: ${{ inputs.actions_ref || job.workflow_sha }}
+```
+
+`job.workflow_sha` (available in `steps.with` and `steps.env` for jobs in a reusable
+workflow) is the commit of the reusable workflow file the caller pinned, so the workflow
+and its script never diverge. An explicit `actions_ref` still overrides it for fork or
+branch previews. This pattern is used by `reusable-pinned-fetches.yml`,
+`reusable-thin-caller-gate.yml`, and `reusable-issue-policy-preview.yml`.
+
 **Commit-bound E2E evidence:** `reusable-release-gate.yml` reads the latest status whose context matches `e2e_status_context` from the source commit named by `head_sha`. A producer workflow triggered through `workflow_run` must publish that status explicitly on `github.event.workflow_run.head_sha`; the producer run's own `head_sha` belongs to the default-branch workflow definition and does not identify the tested source commit.
 
 Pin GitHub-hosted Linux jobs to explicit runner labels (`ubuntu-24.04` / `ubuntu-24.04-arm`) instead of `ubuntu-latest`, and set `timeout-minutes` on every lightweight helper job (`preflight`, `check`, `collect-digests`, release/validation/report jobs). The build matrix itself gets the longer explicit timeout because it can otherwise hold a runner indefinitely when podman or registry operations hang.
