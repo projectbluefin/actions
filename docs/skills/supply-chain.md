@@ -178,6 +178,12 @@ cryptographically signed shell with **no payload** and does not satisfy SLSA Bui
 No additional secrets are required beyond the existing `id-token: write` +
 `attestations: write` permissions already present in `reusable-build.yml`.
 
+Keep the provenance step ahead of any optional step (SBOM, ORAS) in a
+composite. A failed composite step skips every step after it, and callers run
+`sign-and-publish` with `continue-on-error`, so a later provenance step can
+vanish while the build stays green. projectbluefin/utah lost a week of
+`:testing` promotions to exactly this (utah#1117).
+
 For **GitHub-native SBOM attestation** (discoverable via `gh attestation verify`), use
 `actions/attest` with `sbom-path` pointing to the Syft-generated SPDX-JSON file. This is
 **complementary to** the ORAS referrer attachment — both are needed (ORAS for OCI-native consumers,
