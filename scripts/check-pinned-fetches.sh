@@ -247,7 +247,7 @@ done < <(find "$ROOT" -type f \
        -name '*.toml' \) \
     -not -path '*/.git/*' \
     -not -path '*/node_modules/*' \
-    -not -path '*/pinned-fetches-gate/*' \
+    -not -path "${ROOT%/}/pinned-fetches-gate/*" \
     2>/dev/null | sort)
 
 # --- report -------------------------------------------------------------------
