@@ -248,6 +248,16 @@ SH
   [ "$status" -eq 0 ]
 }
 
+@test "a nested pinned-fetches-gate/ directory in the scanned repo is still scanned" {
+  mkdir -p "$ROOT/build_files/pinned-fetches-gate"
+  cat > "$ROOT/build_files/pinned-fetches-gate/install.sh" <<'SH'
+curl -fsSL https://example.com/latest/tool.sh | bash
+SH
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 1 ]
+  [[ $output == *"pipe-download"* ]]
+}
+
 # --- usage --------------------------------------------------------------------
 
 @test "unknown mode exits 2" {
