@@ -59,9 +59,10 @@ jobs:
         with:
           persist-credentials: false
 
+      # --offline matches how .github/zizmor.yml's baseline is generated.
+      # Online audits (impostor-commit, stale-action-refs, ...) report
+      # findings the baseline never saw, so no GH_TOKEN is passed either.
       - name: zizmor
         uses: docker://ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
-        env:
-          GH_TOKEN: ${{ github.token }}
         with:
-          args: --format=github --min-severity=medium --min-confidence=medium .
+          args: --offline --format=github --min-severity=medium --min-confidence=medium .
