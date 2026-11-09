@@ -4,6 +4,7 @@
 /actions/
 agent-build-timeout/
 __pycache__/
+node_modules/
 bluefin-validation/
 .coverage
 # Runtime marker written by render_card.py when the release card cannot be

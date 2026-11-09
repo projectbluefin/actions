@@ -295,13 +295,52 @@ and silently has no effect on plain functions.
 
 ## requirements-test.txt
 
+The test dependencies are pinned by hash so CI installs exactly the files that
+were reviewed. The loose specs live in a `.in` file and a compiled `.txt`
+with a `--hash=sha256:` line for every package, including transitive ones:
+
 ```
+# tests/requirements-test.in
 pytest>=8.0
 pytest-cov>=4.0
 pyyaml>=6.0
 ```
 
-`pytest-cov` ships as a pytest plugin — no extra import needed in test files.
+```
+# tests/requirements-test.txt (generated — do not edit by hand)
+coverage==7.17.2 \
+    --hash=sha256:... \
+...
+pytest==9.2.0 \
+    --hash=sha256:... \
+# via
+#   -r tests/requirements-test.in
+#   pytest-cov
+```
+
+`unit-tests.yml` installs it with `pip install --require-hashes -r
+tests/requirements-test.txt`; the `--require-hashes` flag makes pip refuse any
+file whose hash is not listed above.
+
+### Regenerating
+
+When a version in `tests/requirements-test.in` changes, recompile it. The lock
+must be generated for the CI interpreter (Python 3.15 on Linux) so the wheel
+hashes match what CI downloads:
+
+```
+uv pip compile --generate-hashes --python-version 3.15 --python-platform linux \
+  tests/requirements-test.in -o tests/requirements-test.txt
+```
+
+(`pip-compile --generate-hashes -o tests/requirements-test.txt
+tests/requirements-test.in`, run under Python 3.15, works too.) Commit both the
+`.in` and the regenerated `.txt`. `pytest-cov` ships as a pytest plugin — no
+extra import needed in test files.
+
+The same pattern backs `scripts/requirements.in` / `scripts/requirements.txt`
+(the exact PyYAML 6.0.3 that the workflow-parsing steps need). Compile it the
+same way.
 
 ## Required checks must be reachable
 

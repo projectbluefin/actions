@@ -16,6 +16,7 @@ on:
       - ".github/workflows/reusable-issue-policy-preview.yml"
       - "scripts/**"
       - ".github/actions/**"
+      - ".github/tools/**"
       - "tests/**"
       - ".github/workflows/factory-drift.yml"
       - ".github/workflows/factory-health.yml"
@@ -55,7 +56,7 @@ jobs:
           cache-dependency-path: tests/requirements-test.txt
 
       - name: Install test dependencies
-        run: pip install -r tests/requirements-test.txt
+        run: pip install --require-hashes -r tests/requirements-test.txt
 
       - name: Run pytest
         run: |
@@ -91,9 +92,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install bats
+        working-directory: .github/tools/bats
         run: |
-          sudo npm install -g bats@1.13.0
-          bats --version
+          npm ci --ignore-scripts
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+          ./node_modules/.bin/bats --version
 
       - name: Run bats tests
         run: bats --print-output-on-failure tests/bats/
