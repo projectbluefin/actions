@@ -34,17 +34,10 @@ rules:
       - reusable-execute-release.yml:213
       - reusable-release-gate.yml:114
       - reusable-release.yml:418
-      - reusable-vulnerability-scan.yml:80
-      - reusable-vulnerability-scan.yml:88
-      - reusable-vulnerability-scan.yml:94
-      - reusable-vulnerability-scan.yml:137
-
-  excessive-permissions:
-    ignore:
-      # TEMPORARY: workflow-level packages: write also reaches the echo-only
-      # report job. The migration-test job already declares it at job level;
-      # drop the entry once the workflow-level block is deleted.
-      - migration-test.yml:95
+      - reusable-vulnerability-scan.yml:81
+      - reusable-vulnerability-scan.yml:89
+      - reusable-vulnerability-scan.yml:95
+      - reusable-vulnerability-scan.yml:138
 
   github-app:
     ignore:
@@ -55,11 +48,11 @@ rules:
       - factory-drift.yml:31
       - reusable-pkg-cadence.yml:89
       - reusable-pkg-cadence.yml:93
-      - reusable-renovate-automerge.yml:103
+      - reusable-renovate-automerge.yml:104
 
   secrets-inherit:
     ignore:
       # Calls a first-party reusable workflow in this repository, which
       # needs the signing/App credentials of the caller; an explicit secret
       # list is a follow-up, not a regression.
-      - reusable-promote-squash.yml:531
+      - reusable-promote-squash.yml:540
