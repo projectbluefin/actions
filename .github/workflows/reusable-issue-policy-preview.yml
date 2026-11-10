@@ -5,9 +5,12 @@ on:
     # requires: any
     inputs:
       runtime-ref:
-        description: First-party Actions runtime ref; candidate branches are read-only preview sources
+        description: >
+          First-party Actions runtime ref; empty selects the commit the
+          reusable was pinned to (candidate branches are read-only preview
+          sources).
         type: string
-        default: v1
+        default: ''
       caller-ref:
         description: Candidate caller data revision; empty selects PR head SHA or event SHA
         type: string
@@ -38,7 +41,7 @@ jobs:
     steps:
       - name: Validate first-party read-only runtime ref
         env:
-          RUNTIME_REF: ${{ inputs['runtime-ref'] }}
+          RUNTIME_REF: ${{ inputs['runtime-ref'] || job.workflow_sha }}
         run: |
           set -euo pipefail
           # Repository is fixed below; no external repository or PR code runs.
@@ -57,7 +60,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: projectbluefin/actions
-          ref: ${{ inputs['runtime-ref'] }}
+          ref: ${{ inputs['runtime-ref'] || job.workflow_sha }}
           path: actions-source
           persist-credentials: false
 
@@ -71,7 +74,7 @@ jobs:
 
       - name: Record actual candidate revisions
         env:
-          RUNTIME_REF: ${{ inputs['runtime-ref'] }}
+          RUNTIME_REF: ${{ inputs['runtime-ref'] || job.workflow_sha }}
           CALLER_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
