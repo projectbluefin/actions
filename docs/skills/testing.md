@@ -359,6 +359,11 @@ consumer preview (open a consumer PR pinned to `@v1` production references and
 link a passing CI run that exercised the change) before merging. No input
 contract changed means out-of-org consumers (aurora/bazzite) are unaffected.
 
+Callers still on an older preview source branch must update that branch to the
+new installation step before they can consume this change; the preview renders
+against the branch it is pointed at, so an un-updated caller branch will keep
+rendering the old installation step.
+
 ## Required checks must be reachable
 
 A required status check on `main` must be able to report on **every** ref the
