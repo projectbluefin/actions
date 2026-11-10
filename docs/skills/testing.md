@@ -341,6 +341,24 @@ The same pattern backs `scripts/requirements.in` / `scripts/requirements.txt`
 (the exact PyYAML 6.0.3 that the workflow-parsing steps need). Compile it the
 same way.
 
+## Read-only issue-policy preview sources
+
+`reusable-issue-policy-preview.yml` renders an issue-policy **preview** for a
+caller without mutating anything. It is driven by two inputs, both empty by
+default:
+
+- `runtime-ref` — the first-party Actions runtime ref. Empty selects this
+  reusable workflow's **own commit** (`job.workflow_sha`), not the moving
+  `@v1` label, so the preview renders against a pinned, reviewed runtime.
+- `caller-ref` — the candidate caller data revision. Empty selects the caller's
+  PR head SHA or event SHA.
+
+Candidate branches are **read-only preview sources**: the workflow reads them but
+never writes. When you change this workflow or the policy it renders, run a
+consumer preview (open a consumer PR pinned to `@v1` production references and
+link a passing CI run that exercised the change) before merging. No input
+contract changed means out-of-org consumers (aurora/bazzite) are unaffected.
+
 ## Required checks must be reachable
 
 A required status check on `main` must be able to report on **every** ref the
