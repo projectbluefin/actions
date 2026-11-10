@@ -102,7 +102,11 @@ workflow comment.
 
 It only scans files that can carry a fetch: `.github/**/*.yml`, `*.sh`,
 `Justfile*`, `Containerfile*`, `*.container.in`, and `*.toml`. A `notes.txt`
-with an unsafe line is not part of the scan set.
+with an unsafe line is not part of the scan set. The only directories it skips
+are `.git/`, `node_modules/`, and `pinned-fetches-gate/` **directly under
+`--root`** — the path `reusable-pinned-fetches.yml` checks this repo out to.
+A directory of that name anywhere deeper belongs to the repo under scan and is
+scanned like any other; otherwise the name alone would hide a fetch from the gate.
 
 Exit code summary:
 
