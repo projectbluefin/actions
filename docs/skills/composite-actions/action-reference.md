@@ -378,7 +378,7 @@ Centralises all PR-validation action pins (hadolint, taiki-e/install-action, pre
 
 Steps executed in order:
 1. Install `just` (via `taiki-e/install-action`)
-2. Install `shellcheck` (apt)
+2. Install `shellcheck` (apt), pinned to the exact package for the runner image's Ubuntu release (24.04 or 26.04; any other release fails the step)
 3. Install `pre-commit` (pip)
 4. Restore `~/.cache/pre-commit` from GHA cache (keyed by `runner.os + runner.arch + hashFiles('.pre-commit-config.yaml')`)
 5. `just check`

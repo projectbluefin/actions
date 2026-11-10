@@ -33,8 +33,22 @@ runs:
     - name: Install shellcheck
       shell: bash
       run: |
+        set -euo pipefail
+        # Pin the exact shellcheck package of the runner image's Ubuntu
+        # release: a 24.04 version does not exist on 26.04, so a single pin
+        # broke every consumer when ubuntu-latest moved to 26.04.
+        IDV=$(. /usr/lib/os-release && echo "${ID}-${VERSION_ID}")
+        case "${IDV}" in
+          ubuntu-24.04) version="0.9.0-1" ;;   # noble
+          ubuntu-26.04) version="0.11.0-2" ;;  # resolute
+          *)
+            echo "::error::validate-pr pins shellcheck for ubuntu-24.04 and ubuntu-26.04 runner images; found '${IDV}'. Add that release's package version to this step."
+            exit 1
+            ;;
+        esac
+        echo "Installing shellcheck ${version} for ${IDV}"
         sudo apt-get update -y
-        sudo apt-get install -y shellcheck=0.9.0-1 # Ubuntu 24.04 noble
+        sudo apt-get install -y "shellcheck=${version}"
 
     - name: Install pre-commit
       shell: bash
