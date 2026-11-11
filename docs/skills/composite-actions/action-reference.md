@@ -44,6 +44,43 @@ Upgrades podman from Ubuntu **resolute** (26.04) on `ubuntu-24.04` runner images
 
 Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` JSON array input.
 
+### Cached Ubuntu packages
+
+`apt-packages` accepts space-separated Ubuntu package names (default `""`, no extra
+install). For example, set `update-podman: "false"` and
+`apt-packages: qemu-system-x86` to prepare a VM runner. Packages install with
+`--no-install-recommends` from the runner's own Ubuntu sources, **before** adding
+the resolute source. This works independently of the Podman upgrade on both
+Ubuntu 24.04 and 26.04. Release selectors, versions, and apt options are not
+accepted as package names.
+
+Both installs use `setup-runner/apt-cache.sh`: restore staged archives and lists
+with sudo, try an install with `--no-download` and no update on an exact hit,
+and fall back to the existing retry/timeout-protected update/install if the
+cached install fails. Misses stage only `.deb` archives and regular package-list
+files, excluding locks and working directories, then chown the staging folder to
+the runner user. Never cache the root-owned apt directories directly: unreadable
+lock/partial files make cache saves fail. Also preserve downloaded packages with
+`Binary::apt::APT::Keep-Downloaded-Packages=true`; `apt` otherwise deletes them.
+
+Native keys start with `apt-pkgs-`; Podman keys start with `apt-resolute-podman-`.
+Both include `ImageOS`, architecture, `ImageVersion`, the hash of the sorted
+native package list, and the ISO week. Image version isolation matters because
+preinstalled dependency versions change between runner images. The native list
+also affects Podman's dependency baseline when both installs run. Do not add
+broad restore prefixes: lists and archives from another image or package set
+cannot guarantee an offline install. Cache entries are immutable; a bad exact
+hit falls back to mirrors until the key rotates or the entry is deleted.
+
+For hosted validation, run the same caller twice on fresh runners in the same
+week and image version: confirm the first saves successfully, and the second
+reports a hit, performs no update, downloads zero bytes, and prints the expected
+tool versions. Test the native-only input separately from the resolute upgrade.
+
+References: [cache restore outputs](https://github.com/actions/cache/blob/main/restore/README.md#outputs),
+[cache save inputs](https://github.com/actions/cache/blob/main/save/README.md#inputs),
+and [APT's `--no-download` option](https://manpages.ubuntu.com/manpages/noble/en/man8/apt-get.8.html#options).
+
 ### Native rootful overlay mode
 
 Set `native-overlay: "true"` when a build mounts a rootful Podman image, places a kernel overlay
