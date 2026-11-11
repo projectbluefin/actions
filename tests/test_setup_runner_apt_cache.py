@@ -71,17 +71,18 @@ sys.exit(subprocess.call(args))
         (system / folder / "lock").chmod(0o600)
 
 
-def test_miss_stages_only_packages_and_lists_owned_by_runner(runner):
+def test_miss_stages_only_debs_owned_by_runner(runner):
     env, run, calls = runner
     result = run()
     assert result.returncode == 0, result.stderr
     stage = Path(env["APT_CACHE_DIR"])
     assert sorted(str(p.relative_to(stage)) for p in stage.rglob("*") if p.is_file()) == [
-        "archives/tool.deb", "lists/mirror_Packages"]
+        "archives/tool.deb"]
     assert all(p.stat().st_uid == os.getuid() for p in stage.rglob("*"))
     assert any(c[0] == "chown" for c in calls())
     installs = [c for c in calls() if c[0] == "apt" and "install" in c]
     assert len(installs) == 1
+    assert not (stage / "lists").exists()
     assert "--no-install-recommends" in installs[0]
     for option in ("Acquire::Retries=5", "Acquire::http::Timeout=60",
                    "Acquire::https::Timeout=60", "Binary::apt::APT::Keep-Downloaded-Packages=true"):
@@ -89,39 +90,29 @@ def test_miss_stages_only_packages_and_lists_owned_by_runner(runner):
 
 
 @pytest.mark.parametrize("mode", ["native", "resolute"])
-def test_hit_restores_files_without_update_or_download(runner, mode):
+def test_hit_restores_debs_but_always_updates_lists(runner, mode):
     env, run, calls = runner
     assert run(APT_MODE=mode).returncode == 0
     Path(env["CALL_LOG"]).unlink()
-    for path in ("var/cache/apt/archives/tool.deb", "var/lib/apt/lists/mirror_Packages"):
-        (Path(env["SYSTEM"]) / path).unlink()
-    result = run(APT_MODE=mode, APT_CACHE_HIT="true", FAIL_UPDATE="true")
+    system = Path(env["SYSTEM"])
+    (system / "var/cache/apt/archives/tool.deb").unlink()
+    (system / "var/lib/apt/lists/mirror_Packages").unlink()
+    result = run(APT_MODE=mode, APT_CACHE_HIT="true")
     assert result.returncode == 0, result.stderr
     apt = [c for c in calls() if c[0] == "apt"]
-    assert len(apt) == 1
-    assert "--no-download" in apt[0]
-    assert not any("update" in c for c in apt)
-    assert (Path(env["SYSTEM"]) / "var/lib/apt/lists/mirror_Packages").read_text() == "index"
+    assert "update" in apt[0] and "install" in apt[1]
+    assert not any("--no-download" in c for c in apt)
+    assert (system / "var/cache/apt/archives/tool.deb").exists()
     assert not any(c[0] == "chown" for c in calls())
     if mode == "resolute":
-        assert "podman/resolute" in apt[0]
-        assert "--allow-downgrades" in apt[0]
+        assert "podman/resolute" in apt[1]
+        assert "--allow-downgrades" in apt[1]
         assert "skopeo version test" in result.stdout
-        assert not (Path(env["SYSTEM"]) / "etc/needrestart/conf.d/99-no-restarts.conf").exists()
 
 
-@pytest.mark.parametrize("missing", [False, True])
-def test_unusable_cache_falls_back_to_update_and_install(runner, missing):
-    env, run, calls = runner
-    if not missing:
-        assert run().returncode == 0
-        Path(env["CALL_LOG"]).unlink()
-    result = run(APT_CACHE_HIT="true", FAIL_CACHE="true")
-    assert result.returncode == 0, result.stderr
-    assert "refreshing from Ubuntu mirrors" in result.stdout
-    apt = [c for c in calls() if c[0] == "apt"]
-    assert "update" in apt[-2]
-    assert "install" in apt[-1] and "--no-download" not in apt[-1]
+def test_hit_with_mirror_down_for_update_is_fatal(runner):
+    _, run, _ = runner
+    assert run(APT_CACHE_HIT="true", FAIL_UPDATE="true").returncode != 0
 
 
 def test_real_mirror_failure_is_fatal_and_cleans_needrestart(runner):

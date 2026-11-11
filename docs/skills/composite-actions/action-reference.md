@@ -54,14 +54,16 @@ the resolute source. This works independently of the Podman upgrade on both
 Ubuntu 24.04 and 26.04. Release selectors, versions, and apt options are not
 accepted as package names.
 
-Both installs use `setup-runner/apt-cache.sh`: restore staged archives and lists
-with sudo, try an install with `--no-download` and no update on an exact hit,
-and fall back to the existing retry/timeout-protected update/install if the
-cached install fails. Misses stage only `.deb` archives and regular package-list
-files, excluding locks and working directories, then chown the staging folder to
-the runner user. Never cache the root-owned apt directories directly: unreadable
-lock/partial files make cache saves fail. Also preserve downloaded packages with
-`Binary::apt::APT::Keep-Downloaded-Packages=true`; `apt` otherwise deletes them.
+Both installs use `setup-runner/apt-cache.sh`: on a hit, restore the staged `.deb`
+archives with sudo, then **always** run the retry/timeout-protected `apt update`
+and install. apt verifies the fresh signed lists and uses a cached `.deb` only if
+its hash matches, so the Actions cache is never a trust root. Lists are never
+cached or restored. If the mirror is down for `update`, the run fails as before.
+Misses stage only regular `.deb` files, excluding locks and working directories,
+then chown the staging folder to the runner user. Never cache the root-owned apt
+directories directly: unreadable lock/partial files make cache saves fail. Also
+preserve downloaded packages with `Binary::apt::APT::Keep-Downloaded-Packages=true`;
+`apt` otherwise deletes them.
 
 Native keys start with `apt-pkgs-`; Podman keys start with `apt-resolute-podman-`.
 Both include `ImageOS`, architecture, `ImageVersion`, the hash of the sorted
@@ -69,17 +71,16 @@ native package list, and the ISO week. Image version isolation matters because
 preinstalled dependency versions change between runner images. The native list
 also affects Podman's dependency baseline when both installs run. Do not add
 broad restore prefixes: lists and archives from another image or package set
-cannot guarantee an offline install. Cache entries are immutable; a bad exact
-hit falls back to mirrors until the key rotates or the entry is deleted.
+cannot match the fresh lists. Cache entries are immutable; a stale entry only
+causes re-downloads until the key rotates.
 
 For hosted validation, run the same caller twice on fresh runners in the same
 week and image version: confirm the first saves successfully, and the second
-reports a hit, performs no update, downloads zero bytes, and prints the expected
+reports a hit, runs `apt update`, downloads few or no package bytes, and prints the expected
 tool versions. Test the native-only input separately from the resolute upgrade.
 
-References: [cache restore outputs](https://github.com/actions/cache/blob/main/restore/README.md#outputs),
-[cache save inputs](https://github.com/actions/cache/blob/main/save/README.md#inputs),
-and [APT's `--no-download` option](https://manpages.ubuntu.com/manpages/noble/en/man8/apt-get.8.html#options).
+References: [cache restore outputs](https://github.com/actions/cache/blob/main/restore/README.md#outputs)
+and [cache save inputs](https://github.com/actions/cache/blob/main/save/README.md#inputs).
 
 ### Native rootful overlay mode
 
