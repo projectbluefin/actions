@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared cache mechanics for native Ubuntu packages and the resolute Podman stack.
+# Shared .deb cache mechanics for native Ubuntu packages and the resolute Podman stack.
 set -euo pipefail
 
 read -r -a packages <<< "${APT_PACKAGES:-}"
@@ -44,37 +44,25 @@ case "${1:?expected key or install}" in
     APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60
       -o Binary::apt::APT::Keep-Downloaded-Packages=true)
 
-    restore_cache() {
-      sudo mkdir -p /var/cache/apt/archives /var/lib/apt/lists || return
-      sudo find "$APT_CACHE_DIR/archives" -maxdepth 1 -type f -name '*.deb' \
-        -exec cp -t /var/cache/apt/archives/ -- {} + || return
-      sudo find "$APT_CACHE_DIR/lists" -maxdepth 1 -type f ! -name lock \
-        -exec cp -t /var/lib/apt/lists/ -- {} + || return
-    }
-    cached_install=false
+    # Only .deb files are cached. apt always verifies fresh, signed lists
+    # (apt update) and uses a cached .deb only if its hash matches them, so the
+    # cache is never a trust root. If the mirror is down for update, the job fails.
     if [[ "${APT_CACHE_HIT:-false}" == true ]]; then
-      # No update and no network downloads on a usable hit. An incomplete or
-      # stale cache must never prevent the normal mirror-backed fallback.
-      if restore_cache && sudo apt "${APT_OPTS[@]}" install -y --no-download "${install_opts[@]}" "${packages[@]}"; then
-        cached_install=true
-      else
-        echo '::warning::Cached apt install failed; refreshing from Ubuntu mirrors.'
+      sudo mkdir -p /var/cache/apt/archives
+      if ! sudo find "$APT_CACHE_DIR/archives" -maxdepth 1 -type f -name '*.deb' \
+        -exec cp -t /var/cache/apt/archives/ -- {} +; then
+        echo '::warning::Could not restore cached packages; downloading from Ubuntu mirrors.'
       fi
     fi
-    if [[ "$cached_install" != true ]]; then
-      time sudo apt "${APT_OPTS[@]}" update
-      time sudo apt "${APT_OPTS[@]}" install -y "${install_opts[@]}" "${packages[@]}"
-    fi
+    time sudo apt "${APT_OPTS[@]}" update
+    time sudo apt "${APT_OPTS[@]}" install -y "${install_opts[@]}" "${packages[@]}"
 
     if [[ "${APT_CACHE_HIT:-false}" != true ]]; then
-      # These system folders are root-owned. Caching them directly failed to
-      # save, leaving every build exposed to the 2026-11-11 mirror outage.
-      # Stage only regular package/list files, never lock/partial/auxfiles.
-      mkdir -p "$APT_CACHE_DIR/archives" "$APT_CACHE_DIR/lists"
+      # The system folder is root-owned. Caching it directly failed to save,
+      # so stage only regular .deb files (never lock/partial/auxfiles).
+      mkdir -p "$APT_CACHE_DIR/archives"
       sudo find /var/cache/apt/archives -maxdepth 1 -type f -name '*.deb' \
         -exec cp -t "$APT_CACHE_DIR/archives/" -- {} +
-      sudo find /var/lib/apt/lists -maxdepth 1 -type f ! -name lock \
-        -exec cp -t "$APT_CACHE_DIR/lists/" -- {} +
       sudo chown -R "$(id -u):$(id -g)" "$APT_CACHE_DIR"
     fi
     if [[ "$APT_MODE" == resolute ]]; then
