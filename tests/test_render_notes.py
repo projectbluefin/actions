@@ -532,6 +532,75 @@ class TestSectionPrChangelog:
         assert "#1" in md
 
 
+class TestSkipCard:
+    """--skip-card drops the release card line from both the normal and
+    trimmed (overflow) release notes."""
+
+    def _run_main(self, tmp_path, max_chars=120_000, skip_card=False):
+        import json, sys
+        sbom = {"spdxVersion": "SPDX-2.3", "packages": [
+            {"name": "kernel", "versionInfo": "6.10.0"}
+        ]}
+        versions = {
+            "notable": [{"name": "Kernel", "version": "6.10.0", "prev": None, "changed": False}],
+            "diff": {"changed_count": 0, "added_count": 0, "removed_count": 0,
+                     "changed": [], "added": [], "removed": []},
+            "has_prev": False,
+            "total_packages": 1,
+        }
+        sbom_path = tmp_path / "s.sbom.json"
+        sbom_path.write_text(json.dumps(sbom))
+        versions_path = tmp_path / "versions.json"
+        versions_path.write_text(json.dumps(versions))
+        output_path = tmp_path / "notes.md"
+        overflow_path = tmp_path / "release-notes-full.md"
+
+        argv = [
+            "render_notes.py",
+            "--versions", str(versions_path),
+            "--sbom", str(sbom_path),
+            "--tag", "stable-20260621",
+            "--title", "Test",
+            "--image", "ghcr.io/example/img",
+            "--digest", "sha256:abc",
+            "--repo", "example/img",
+            "--cert-regexp", "^https://",
+            "--output", str(output_path),
+            "--overflow-file", str(overflow_path),
+            "--max-chars", str(max_chars),
+        ]
+        if skip_card:
+            argv.append("--skip-card")
+
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            render_notes.main()
+        finally:
+            sys.argv = old_argv
+        return output_path.read_text()
+
+    def test_card_present_without_flag(self, tmp_path):
+        md = self._run_main(tmp_path)
+        assert "![Release card]" in md
+        assert "release-card.png" in md
+
+    def test_card_absent_with_flag_normal(self, tmp_path):
+        md = self._run_main(tmp_path, skip_card=True)
+        assert "![Release card]" not in md
+        assert "release-card.png" not in md
+
+    def test_card_absent_with_flag_trimmed(self, tmp_path):
+        # Small max-chars forces the overflow/trimmed body path.
+        md = self._run_main(tmp_path, max_chars=500, skip_card=True)
+        assert "![Release card]" not in md
+        assert "release-card.png" not in md
+
+    def test_card_present_in_trimmed_without_flag(self, tmp_path):
+        md = self._run_main(tmp_path, max_chars=500)
+        assert "![Release card]" in md
+
+
 class TestSectionOrder:
     def _run_main(self, tmp_path, variants=None, extra_components=None):
         import json, sys
