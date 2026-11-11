@@ -62,7 +62,13 @@ sys.exit(subprocess.call(args))
         path = Path(env["CALL_LOG"])
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    return env, run, calls
+    yield env, run, calls
+    # Restore access before pytest removes its temporary tree (older pytest
+    # versions cannot clean up mode-000 directories without this).
+    for folder in ("var/cache/apt/archives", "var/lib/apt/lists"):
+        for name in ("partial", "auxfiles"):
+            (system / folder / name).chmod(0o700)
+        (system / folder / "lock").chmod(0o600)
 
 
 def test_miss_stages_only_packages_and_lists_owned_by_runner(runner):
