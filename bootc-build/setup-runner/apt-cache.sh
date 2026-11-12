@@ -94,7 +94,10 @@ case "${1:?expected key or install}" in
       for release in "$APT_CACHE_DIR"/lists/*_InRelease; do
         [[ -f "$release" ]] || continue
         prefix=${release%InRelease}
-        gpgv "${keyrings[@]}" --output "$plain" "$release" 2>/dev/null || continue
+        if ! gpgv "${keyrings[@]}" --output "$plain" "$release" 2>/dev/null; then
+          echo "apt cache: ${release##*/}: signature not verified; group skipped"
+          continue
+        fi
         expected=()
         while read -r hash _ entry; do
           [[ -n "$entry" ]] && expected["${prefix}${entry//\//_}"]=$hash
@@ -105,11 +108,13 @@ case "${1:?expected key or install}" in
           if index_verified "$file"; then
             group+=("$file")
           else
+            [[ "$ok" == true ]] && echo "apt cache: ${release##*/}: ${file##*/} not verified; group skipped"
             ok=false
           fi
         done
         if [[ "$ok" == true && ${#group[@]} -gt 1 ]]; then
           verified_lists+=("${group[@]}")
+          echo "apt cache: ${release##*/}: verified ($(( ${#group[@]} - 1 )) index files)"
         fi
       done
       rm -f "$plain"
@@ -129,6 +134,15 @@ case "${1:?expected key or install}" in
         cached_install=true
       else
         echo '::warning::Cached apt install unusable; refreshing from Ubuntu mirrors.'
+        # Say why, so a fallback is diagnosable from the log: the packages
+        # apt still wanted to download (none needs the network to list).
+        missing=$(sudo apt-get install --print-uris -qq -y "${install_opts[@]}" "${packages[@]}" 2>/dev/null \
+          | grep "^'" | awk '{print $2}' || true)  # lines: 'URL' file size hash
+        if [[ -n "$missing" ]]; then
+          echo "::group::apt cache: $(wc -l <<<"$missing") package(s) not in the cache"
+          head -n 50 <<<"$missing"
+          echo '::endgroup::'
+        fi
       fi
     fi
     if [[ "$cached_install" != true ]]; then
