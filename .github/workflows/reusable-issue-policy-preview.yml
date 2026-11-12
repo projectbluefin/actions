@@ -69,8 +69,16 @@ jobs:
         with:
           python-version: '3.15'
 
+      - name: Check out workflow dependency lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: projectbluefin/actions
+          ref: ${{ job.workflow_sha }}
+          path: workflow-source
+          persist-credentials: false
+
       - name: Install data parser without caller dependency files
-        run: python3 -m pip install --require-hashes -r actions-source/scripts/requirements.txt
+        run: python3 -m pip install --require-hashes -r workflow-source/scripts/requirements.txt
 
       - name: Record actual candidate revisions
         env:
