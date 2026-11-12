@@ -45,6 +45,10 @@ jobs:
       packages: write
     with:
       image: ${{ needs.build.outputs.image }}@${{ needs.build.outputs.digest }}
+      # The previous build, digest-pinned: the VM boots it, then upgrades
+      # to `image`. Without it the upgrade is a no-op and the suite fails.
+      # `previous` is your own job that resolves it (see below).
+      previous_image: ${{ needs.previous.outputs.image }}
 
   promote:
     needs: upgrade-test
@@ -60,6 +64,11 @@ jobs:
 | `suites` | no | `lifecycle` | Comma-separated testsuite suites to run |
 | `skip_native_apps` | no | `false` | Skip `@native_app` scenarios |
 | `screenshot_flatpaks` | no | `""` | Comma-separated Flatpak IDs to launch-and-screenshot |
+| `previous_image` | no | `""` | Digest-pinned (`@sha256:`) earlier build of the **same repository** to boot first; `image` is staged and upgraded to, then rolled back. Empty boots `image` and upgrades to itself, which testsuite's no-op guard fails. Rejected before boot if tag-only, equal to `image`, or from another repository |
+
+#### Finding the previous build
+
+Images that publish dated immutable tags can resolve the previous build from them. For example, utah publishes `testing-YYYYMMDD-<sha>`: take the newest such tag older than the candidate and pin it by digest (`skopeo inspect --format '{{.Digest}}' docker://ghcr.io/projectbluefin/utah:testing-20261111-abc1234`). An image without dated tags (dakota, today) must keep its previous digest itself, for example from the last successful build's output.
 
 ### Outputs reference
 
