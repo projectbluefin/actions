@@ -119,6 +119,22 @@ def test_branch_referenced_as_env_not_input_in_every_step():
             )
 
 
+def test_default_branch_is_resolved_and_refuses_when_unresolvable():
+    """On a schedule trigger github.event.repository is the caller's payload, so
+    DEFAULT_BRANCH is empty and the old guard fell through to force-reset (the
+    #543 scenario). The detect step must resolve it directly and refuse rather
+    than force-reset when it still cannot be proven non-default."""
+    step = _step_by_id("diverge")
+    env = step.get("env", {})
+    assert env["DEFAULT_BRANCH"] == "${{ github.event.repository.default_branch }}"
+    run = step["run"]
+    # It re-resolves the default branch directly for schedule callers...
+    assert "gh api" in run and "default_branch" in run
+    # ...and refuses (never force-resets) when it still cannot be resolved.
+    assert "strategy=refuse" in run
+    assert "could not resolve the repository default branch" in run
+
+
 def _first_line(text, prefix):
     for line in text.splitlines():
         if line.strip().startswith(prefix):
