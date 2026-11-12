@@ -347,9 +347,9 @@ same way.
 caller without mutating anything. It is driven by two inputs, both empty by
 default:
 
-- `runtime-ref` — the first-party Actions runtime ref. Empty selects this
-  reusable workflow's **own commit** (`job.workflow_sha`), not the moving
-  `@v1` label, so the preview renders against a pinned, reviewed runtime.
+- `runtime-ref` — the first-party Actions runtime ref. Defaults to `v1`
+  (the pinned release), checked out directly, so the preview renders against
+  a pinned, reviewed runtime.
 - `caller-ref` — the candidate caller data revision. Empty selects the caller's
   PR head SHA or event SHA.
 
@@ -360,9 +360,9 @@ link a passing CI run that exercised the change) before merging. No input
 contract changed means out-of-org consumers (aurora/bazzite) are unaffected.
 
 Callers still on an older preview source branch must update that branch to the
-new installation step before they can consume this change; the preview renders
-against the branch it is pointed at, so an un-updated caller branch will keep
-rendering the old installation step.
+new installation step before they can consume this change; an older selected
+`runtime-ref` lacking `scripts/requirements.txt` fails the install, it does not
+retain the old installation step.
 
 ## Required checks must be reachable
 
