@@ -55,11 +55,14 @@ Ubuntu 24.04 and 26.04. Release selectors, versions, and apt options are not
 accepted as package names.
 
 Both installs use `setup-runner/apt-cache.sh`: on a hit, restore the staged `.deb`
-archives with sudo, then **always** run the retry/timeout-protected `apt update`
-and install. apt verifies the fresh signed lists and uses a cached `.deb` only if
-its hash matches, so the Actions cache is never a trust root. Lists are never
-cached or restored. If the mirror is down for `update`, the run fails as before.
-Misses stage only regular `.deb` files, excluding locks and working directories,
+archives and package lists, then install with `--no-download` and **no** `apt update`,
+so a usable cache survives Ubuntu mirror outages. The cache is never a trust root:
+each cached `InRelease` must verify with the runner's apt keyrings (`gpgv`), every
+cached list in its group must match the signed hashes, and only verified lists are
+restored. apt then checks each `.deb` against those lists. If verification or the
+offline install fails, the script falls back to the retry/timeout-protected
+`apt update` and install, which fails if the mirror is down.
+Misses stage only regular `.deb` and list files, excluding locks and working directories,
 then chown the staging folder to the runner user. Never cache the root-owned apt
 directories directly: unreadable lock/partial files make cache saves fail. Also
 preserve downloaded packages with `Binary::apt::APT::Keep-Downloaded-Packages=true`;
@@ -71,12 +74,12 @@ native package list, and the ISO week. Image version isolation matters because
 preinstalled dependency versions change between runner images. The native list
 also affects Podman's dependency baseline when both installs run. Do not add
 broad restore prefixes: lists and archives from another image or package set
-cannot match the fresh lists. Cache entries are immutable; a stale entry only
+may not match. Cache entries are immutable; a stale entry only
 causes re-downloads until the key rotates.
 
 For hosted validation, run the same caller twice on fresh runners in the same
 week and image version: confirm the first saves successfully, and the second
-reports a hit, runs `apt update`, downloads few or no package bytes, and prints the expected
+reports a hit, skips `apt update`, downloads no package bytes, and prints the expected
 tool versions. Test the native-only input separately from the resolute upgrade.
 
 References: [cache restore outputs](https://github.com/actions/cache/blob/main/restore/README.md#outputs)

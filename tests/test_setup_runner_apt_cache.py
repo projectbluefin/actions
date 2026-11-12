@@ -25,7 +25,7 @@ def runner(tmp_path):
         (path / "auxfiles").mkdir(mode=0o000)
     sudo = bin_dir / "sudo"
     sudo.write_text('''#!/usr/bin/env python3
-import json, os, pathlib, subprocess, sys
+import hashlib, json, os, pathlib, subprocess, sys
 args = sys.argv[1:]
 with open(os.environ["CALL_LOG"], "a") as f:
     f.write(json.dumps(args) + "\\n")
@@ -38,11 +38,23 @@ if args[0] == "apt":
     if "install" in args and "--no-download" not in args:
         root = pathlib.Path(os.environ["SYSTEM"])
         (root / "var/cache/apt/archives/tool.deb").write_text("package")
-        (root / "var/lib/apt/lists/mirror_Packages").write_text("index")
+        lists = root / "var/lib/apt/lists"
+        (lists / "mirror_main_binary-amd64_Packages").write_text("index")
+        digest = hashlib.sha256(b"index").hexdigest()
+        (lists / "mirror_InRelease").write_text(f"SHA256:\\n {digest} 5 main/binary-amd64/Packages\\n")
     sys.exit(0)
 sys.exit(subprocess.call(args))
 ''')
     sudo.chmod(0o755)
+    gpgv = bin_dir / "gpgv"
+    gpgv.write_text('''#!/bin/sh
+[ "$FAIL_GPG" = true ] && exit 1
+while [ $# -gt 1 ]; do [ "$1" = --output ] && out=$2; shift; done
+cp "$1" "$out"
+''')
+    gpgv.chmod(0o755)
+    keyring = tmp_path / "keyring.gpg"
+    keyring.write_text("key")
     for tool in ("podman", "buildah", "crun", "skopeo"):
         executable = bin_dir / tool
         executable.write_text(f"#!/bin/sh\necho '{tool} version test'\n")
@@ -52,7 +64,7 @@ sys.exit(subprocess.call(args))
                GITHUB_OUTPUT=str(tmp_path / "output"), APT_MODE="native",
                APT_PACKAGES="qemu-system-x86", APT_CACHE_HIT="false",
                APT_CACHE_DIR=str(tmp_path / "stage"), ImageOS="ubuntu24",
-               ImageVersion="20261111.1", RUNNER_OS="Linux", RUNNER_ARCH="X64")
+               ImageVersion="20261111.1", APT_KEYRINGS=str(keyring), RUNNER_OS="Linux", RUNNER_ARCH="X64")
 
     def run(command="install", **overrides):
         return subprocess.run(["bash", str(SCRIPT), command],
@@ -71,48 +83,80 @@ sys.exit(subprocess.call(args))
         (system / folder / "lock").chmod(0o600)
 
 
-def test_miss_stages_only_debs_owned_by_runner(runner):
+def test_miss_stages_only_regular_files_owned_by_runner(runner):
     env, run, calls = runner
     result = run()
     assert result.returncode == 0, result.stderr
     stage = Path(env["APT_CACHE_DIR"])
     assert sorted(str(p.relative_to(stage)) for p in stage.rglob("*") if p.is_file()) == [
-        "archives/tool.deb"]
+        "archives/tool.deb", "lists/mirror_InRelease", "lists/mirror_main_binary-amd64_Packages"]
     assert all(p.stat().st_uid == os.getuid() for p in stage.rglob("*"))
     assert any(c[0] == "chown" for c in calls())
     installs = [c for c in calls() if c[0] == "apt" and "install" in c]
     assert len(installs) == 1
-    assert not (stage / "lists").exists()
     assert "--no-install-recommends" in installs[0]
     for option in ("Acquire::Retries=5", "Acquire::http::Timeout=60",
                    "Acquire::https::Timeout=60", "Binary::apt::APT::Keep-Downloaded-Packages=true"):
         assert option in installs[0]
 
 
-@pytest.mark.parametrize("mode", ["native", "resolute"])
-def test_hit_restores_debs_but_always_updates_lists(runner, mode):
-    env, run, calls = runner
+def prime_hit(env, run, mode):
     assert run(APT_MODE=mode).returncode == 0
     Path(env["CALL_LOG"]).unlink()
     system = Path(env["SYSTEM"])
     (system / "var/cache/apt/archives/tool.deb").unlink()
-    (system / "var/lib/apt/lists/mirror_Packages").unlink()
-    result = run(APT_MODE=mode, APT_CACHE_HIT="true")
+    for name in ("mirror_InRelease", "mirror_main_binary-amd64_Packages"):
+        (system / "var/lib/apt/lists" / name).unlink()
+    return system
+
+
+@pytest.mark.parametrize("mode", ["native", "resolute"])
+def test_verified_hit_installs_offline_without_update(runner, mode):
+    env, run, calls = runner
+    system = prime_hit(env, run, mode)
+    result = run(APT_MODE=mode, APT_CACHE_HIT="true", FAIL_UPDATE="true")
     assert result.returncode == 0, result.stderr
     apt = [c for c in calls() if c[0] == "apt"]
-    assert "update" in apt[0] and "install" in apt[1]
-    assert not any("--no-download" in c for c in apt)
+    assert len(apt) == 1 and "--no-download" in apt[0] and "update" not in apt[0]
     assert (system / "var/cache/apt/archives/tool.deb").exists()
+    assert (system / "var/lib/apt/lists/mirror_InRelease").exists()
     assert not any(c[0] == "chown" for c in calls())
     if mode == "resolute":
-        assert "podman/resolute" in apt[1]
-        assert "--allow-downgrades" in apt[1]
+        assert "podman/resolute" in apt[0]
         assert "skopeo version test" in result.stdout
 
 
-def test_hit_with_mirror_down_for_update_is_fatal(runner):
-    _, run, _ = runner
-    assert run(APT_CACHE_HIT="true", FAIL_UPDATE="true").returncode != 0
+def test_tampered_list_falls_back_to_online_path(runner):
+    env, run, calls = runner
+    system = prime_hit(env, run, "native")
+    stage_list = Path(env["APT_CACHE_DIR"]) / "lists/mirror_main_binary-amd64_Packages"
+    stage_list.write_text("poisoned")
+    assert run(APT_CACHE_HIT="true").returncode == 0
+    apt = [c for c in calls() if c[0] == "apt"]
+    assert not any("--no-download" in c for c in apt)
+    assert "update" in apt[0] and "install" in apt[1]
+    assert not (system / "var/lib/apt/lists/mirror_Packages").exists()
+
+
+def test_bad_signature_falls_back_to_online_path(runner):
+    env, run, calls = runner
+    prime_hit(env, run, "native")
+    assert run(APT_CACHE_HIT="true", FAIL_GPG="true").returncode == 0
+    assert not any("--no-download" in c for c in calls() if c[0] == "apt")
+
+
+def test_failed_cached_install_falls_back_to_online_path(runner):
+    env, run, calls = runner
+    prime_hit(env, run, "native")
+    assert run(APT_CACHE_HIT="true", FAIL_CACHE="true").returncode == 0
+    apt = [c for c in calls() if c[0] == "apt"]
+    assert "--no-download" in apt[0] and "update" in apt[1] and "install" in apt[2]
+
+
+def test_unusable_cache_and_mirror_down_is_fatal(runner):
+    env, run, _ = runner
+    prime_hit(env, run, "native")
+    assert run(APT_CACHE_HIT="true", FAIL_GPG="true", FAIL_UPDATE="true").returncode != 0
 
 
 def test_real_mirror_failure_is_fatal_and_cleans_needrestart(runner):
