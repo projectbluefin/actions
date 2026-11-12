@@ -1,4 +1,5 @@
 """Exercise the shipped apt cache helper without root or access to Ubuntu mirrors."""
+import gzip
 import json
 import os
 from pathlib import Path
@@ -136,6 +137,35 @@ def test_tampered_list_falls_back_to_online_path(runner):
     assert not any("--no-download" in c for c in apt)
     assert "update" in apt[0] and "install" in apt[1]
     assert not (system / "var/lib/apt/lists/mirror_Packages").exists()
+
+
+def compress_stage_index(env, content):
+    """Replace the staged plain index with a locally recompressed copy, as apt can keep it."""
+    lists = Path(env["APT_CACHE_DIR"]) / "lists"
+    (lists / "mirror_main_binary-amd64_Packages").unlink()
+    (lists / "mirror_main_binary-amd64_Packages.gz").write_bytes(gzip.compress(content))
+
+
+def test_compressed_index_verifies_against_signed_uncompressed_entry(runner):
+    env, run, calls = runner
+    system = prime_hit(env, run, "native")
+    compress_stage_index(env, b"index")
+    result = run(APT_CACHE_HIT="true", FAIL_UPDATE="true")
+    assert result.returncode == 0, result.stderr
+    apt = [c for c in calls() if c[0] == "apt"]
+    assert len(apt) == 1 and "--no-download" in apt[0] and "update" not in apt[0]
+    assert (system / "var/lib/apt/lists/mirror_main_binary-amd64_Packages.gz").exists()
+
+
+def test_tampered_compressed_index_falls_back_to_online_path(runner):
+    env, run, calls = runner
+    system = prime_hit(env, run, "native")
+    compress_stage_index(env, b"poisoned")
+    assert run(APT_CACHE_HIT="true").returncode == 0
+    apt = [c for c in calls() if c[0] == "apt"]
+    assert not any("--no-download" in c for c in apt)
+    assert "update" in apt[0] and "install" in apt[1]
+    assert not (system / "var/lib/apt/lists/mirror_main_binary-amd64_Packages.gz").exists()
 
 
 def test_bad_signature_falls_back_to_online_path(runner):

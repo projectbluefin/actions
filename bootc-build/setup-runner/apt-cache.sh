@@ -48,6 +48,39 @@ case "${1:?expected key or install}" in
     # files only install against package lists whose InRelease signature
     # verifies with the runner's apt keyrings and whose index hashes match.
     # Anything unverifiable falls back to the retry-protected online path.
+    #
+    # apt may keep an index recompressed locally (for example
+    # `…_Packages.lz4`). Its name and compressed hash are not in InRelease,
+    # which signs the uncompressed `…/Packages`, so such a file is checked by
+    # hashing its decompressed content against that entry.
+    decompressed_sha256() {
+      local file=$1
+      if [[ -x /usr/lib/apt/apt-helper ]]; then
+        /usr/lib/apt/apt-helper cat-file "$file" | sha256sum | cut -d' ' -f1
+        return
+      fi
+      case "$file" in
+        *.gz) gzip -dc -- "$file" ;;
+        *.xz) xz -dc -- "$file" ;;
+        *.lz4) lz4 -dc -- "$file" ;;
+        *.zst) zstd -dc -- "$file" ;;
+        *.bz2) bzip2 -dc -- "$file" ;;
+        *) return 1 ;;
+      esac | sha256sum | cut -d' ' -f1
+    }
+    index_verified() {
+      local file=$1 base
+      if [[ -n "${expected[$file]:-}" ]]; then
+        [[ "$(sha256sum "$file" | cut -d' ' -f1)" == "${expected[$file]}" ]]
+        return
+      fi
+      case "$file" in
+        *.gz|*.xz|*.lz4|*.zst|*.bz2) base=${file%.*} ;;
+        *) return 1 ;;
+      esac
+      [[ -n "${expected[$base]:-}" ]] || return 1
+      [[ "$(decompressed_sha256 "$file")" == "${expected[$base]}" ]]
+    }
     verify_lists() {
       local keyrings=() keyring release prefix plain file hash entry
       local -A expected
@@ -69,7 +102,7 @@ case "${1:?expected key or install}" in
         local group=("$release") ok=true
         for file in "$prefix"*; do
           [[ -f "$file" && "$file" != "$release" ]] || continue
-          if [[ -n "${expected[$file]:-}" && "$(sha256sum "$file" | cut -d' ' -f1)" == "${expected[$file]}" ]]; then
+          if index_verified "$file"; then
             group+=("$file")
           else
             ok=false

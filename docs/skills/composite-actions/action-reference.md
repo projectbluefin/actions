@@ -59,7 +59,8 @@ archives and package lists, then install with `--no-download` and **no** `apt up
 so a usable cache survives Ubuntu mirror outages. The cache is never a trust root:
 each cached `InRelease` must verify with the runner's apt keyrings (`gpgv`), every
 cached list in its group must match the signed hashes, and only verified lists are
-restored. apt then checks each `.deb` against those lists. If verification or the
+restored. A list apt keeps recompressed locally (for example `…_Packages.lz4`) is checked by
+hashing its decompressed content against the signed uncompressed entry. apt then checks each `.deb` against those lists. If verification or the
 offline install fails, the script falls back to the retry/timeout-protected
 `apt update` and install, which fails if the mirror is down.
 Misses stage only regular `.deb` and list files, excluding locks and working directories,
