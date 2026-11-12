@@ -418,6 +418,8 @@ individual shellcheck arguments.
 
 **When updating hadolint or taiki-e/install-action SHA pins:** edit only the pin in `bootc-build/validate-pr/action.yml`. All consuming repos pick up the update automatically when their `projectbluefin/actions` Renovate bump PR merges.
 
+**Pin `taiki-e/install-action` to a release tag, never a per-tool tag:** use `taiki-e/install-action@<SHA of a vX.Y.Z tag> # vX.Y.Z` with `with: tool: <name>`. Per-tool tags such as `just` are force-moved to new orphan commits, so a SHA taken from one is on no tag or branch upstream. `gh actions-lock` rejects such a pin as `unreachable-pin`, and every consumer that locks its workflows fails `gh actions-lock --verify`.
+
 **Pinning rule for PR tooling:** treat `.pre-commit-config.yaml` hook repos and `validate-pr` package installs with the same supply-chain discipline as `uses:` lines. External pre-commit hook repos must use full commit SHAs with inline release comments, `pre-commit` must be installed at an exact version while clearing inherited `PIP_CONSTRAINT` values from consumer repos, and `shellcheck` must be pinned to the Ubuntu 24.04 package version used by GitHub runners.
 
 ---
