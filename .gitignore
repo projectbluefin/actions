@@ -6,3 +6,4 @@ agent-build-timeout/
 __pycache__/
 bluefin-validation/
 .coverage
+node_modules/

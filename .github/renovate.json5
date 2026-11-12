@@ -9,6 +9,13 @@
   // Do not rebase when the default branch is updated
   "rebaseWhen": "never",
 
+  "pip-compile": {
+    "managerFilePatterns": ["/(^|/)requirements(-test)?\\.txt$/"]
+  },
+  "pip_requirements": {
+    "enabled": false
+  },
+
   "packageRules": [
     {
       "automerge": true,
