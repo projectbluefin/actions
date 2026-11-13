@@ -84,14 +84,15 @@ on:
           private_key. Falls back to github.token when not provided.
         required: false
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   automerge:
     name: Auto-merge Renovate PRs
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # gh pr merge on the github.token fallback path
+      pull-requests: write
     # The secrets context is unavailable in step-level `if:`, so mirror the
     # presence of app credentials into env for the conditional token step.
     env:
