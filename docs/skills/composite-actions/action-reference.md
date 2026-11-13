@@ -66,10 +66,14 @@ offline install fails, the script falls back to the retry/timeout-protected
 Misses stage only regular `.deb` and list files, excluding locks and working directories,
 then chown the staging folder to the runner user. Never cache the root-owned apt
 directories directly: unreadable lock/partial files make cache saves fail. Also
-preserve downloaded packages with `Binary::apt::APT::Keep-Downloaded-Packages=true`;
-`apt` otherwise deletes them.
+preserve downloaded packages with `-o APT::Keep-Downloaded-Packages=true`;
+`apt` otherwise deletes them. The `Binary::apt::` form does not work on the
+command line: apt folds that subtree in before it parses `-o`, so the option
+is never read, the saved cache lacks the packages, and every hit fell back
+online.
 
-Native keys start with `apt-pkgs-`; Podman keys start with `apt-resolute-podman-`.
+Native keys start with `apt-pkgs-v2-`; Podman keys start with `apt-resolute-podman-v2-`.
+`v2` retires the entries saved before the packages were kept.
 Both include `ImageOS`, architecture, `ImageVersion`, the hash of the sorted
 native package list, and the ISO week. Image version isolation matters because
 preinstalled dependency versions change between runner images. The native list
