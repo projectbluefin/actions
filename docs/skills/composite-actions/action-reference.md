@@ -62,7 +62,9 @@ cached list in its group must match the signed hashes, and only verified lists a
 restored. A list apt keeps recompressed locally (for example `…_Packages.lz4`) is checked by
 hashing its decompressed content against the signed uncompressed entry. apt then checks each `.deb` against those lists. If verification or the
 offline install fails, the script falls back to the retry/timeout-protected
-`apt update` and install, which fails if the mirror is down.
+`apt update` and install, which fails if the mirror is down. The log says why: one line
+per cached `InRelease` (verified, or which file failed), and on a fallback a
+`apt cache: N package(s) not in the cache` group listing the `.deb`s apt still wanted.
 Misses stage only regular `.deb` and list files, excluding locks and working directories,
 then chown the staging folder to the runner user. Never cache the root-owned apt
 directories directly: unreadable lock/partial files make cache saves fail. Also

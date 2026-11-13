@@ -31,6 +31,9 @@ args = sys.argv[1:]
 with open(os.environ["CALL_LOG"], "a") as f:
     f.write(json.dumps(args) + "\\n")
 args = [os.environ["SYSTEM"] + a if a.startswith(("/var/", "/etc/")) else a for a in args]
+if args[0] == "apt-get" and "--print-uris" in args:
+    sys.stdout.write(os.environ.get("PRINT_URIS", ""))
+    sys.exit(0)
 if args[0] == "apt":
     if "--no-download" in args and os.environ.get("FAIL_CACHE") == "true":
         sys.exit(1)
@@ -240,3 +243,40 @@ def test_action_wiring_separates_native_and_resolute_caches():
             assert install["if"] == "inputs.apt-packages != ''"
         else:
             assert install["if"] == "steps.podman-source.outputs.install-from-resolute == 'true'"
+
+
+def test_verification_is_logged_per_release(runner):
+    env, run, calls = runner
+    prime_hit(env, run, "native")
+    result = run(APT_CACHE_HIT="true", FAIL_UPDATE="true")
+    assert result.returncode == 0, result.stderr
+    assert "apt cache: mirror_InRelease: verified (1 index files)" in result.stdout
+
+
+def test_unverified_index_is_named_in_the_log(runner):
+    env, run, calls = runner
+    prime_hit(env, run, "native")
+    (Path(env["APT_CACHE_DIR"]) / "lists/mirror_main_binary-amd64_Packages").write_text("poisoned")
+    result = run(APT_CACHE_HIT="true")
+    assert result.returncode == 0, result.stderr
+    assert "mirror_main_binary-amd64_Packages not verified; group skipped" in result.stdout
+
+
+def test_fallback_lists_the_packages_missing_from_the_cache(runner):
+    env, run, calls = runner
+    prime_hit(env, run, "native")
+    uris = ("'http://mirror/pool/libc6_2.39_amd64.deb' libc6_2.39_amd64.deb 3 SHA256:aa\n"
+            "'http://mirror/pool/dpkg_1.22_amd64.deb' dpkg_1.22_amd64.deb 2 SHA256:bb\n")
+    result = run(APT_CACHE_HIT="true", FAIL_CACHE="true", PRINT_URIS=uris)
+    assert result.returncode == 0, result.stderr
+    assert "Cached apt install unusable" in result.stdout
+    assert "::group::apt cache: 2 package(s) not in the cache" in result.stdout
+    assert "libc6_2.39_amd64.deb" in result.stdout and "dpkg_1.22_amd64.deb" in result.stdout
+
+
+def test_fallback_without_missing_packages_prints_no_group(runner):
+    env, run, calls = runner
+    prime_hit(env, run, "native")
+    result = run(APT_CACHE_HIT="true", FAIL_CACHE="true", PRINT_URIS="")
+    assert result.returncode == 0, result.stderr
+    assert "not in the cache" not in result.stdout
