@@ -97,8 +97,11 @@ def test_miss_stages_only_regular_files_owned_by_runner(runner):
     assert len(installs) == 1
     assert "--no-install-recommends" in installs[0]
     for option in ("Acquire::Retries=5", "Acquire::http::Timeout=60",
-                   "Acquire::https::Timeout=60", "Binary::apt::APT::Keep-Downloaded-Packages=true"):
+                   "Acquire::https::Timeout=60", "APT::Keep-Downloaded-Packages=true"):
         assert option in installs[0]
+    # A Binary::apt:: option on the command line is never read: apt folds that
+    # subtree in before parsing -o, so downloaded packages were deleted.
+    assert not any(arg.startswith("Binary::") for arg in installs[0])
 
 
 def prime_hit(env, run, mode):
@@ -205,7 +208,9 @@ def test_key_is_sorted_and_changes_with_packages_image_arch_and_mode(runner):
         return Path(env["GITHUB_OUTPUT"]).read_text().strip()
 
     original = key(APT_PACKAGES="skopeo qemu-system-x86")
-    assert original.startswith("key=apt-pkgs-ubuntu24-X64-20261111.1-")
+    # v2 retires entries saved while downloaded packages were still deleted.
+    assert original.startswith("key=apt-pkgs-v2-ubuntu24-X64-20261111.1-")
+    assert key(APT_PACKAGES="skopeo", APT_MODE="resolute").startswith("key=apt-resolute-podman-v2-")
     assert original == key(APT_PACKAGES="qemu-system-x86 skopeo skopeo")
     assert original != key(APT_PACKAGES="skopeo")
     for overrides in ({"ImageVersion": "next"}, {"ImageOS": "ubuntu26"},
