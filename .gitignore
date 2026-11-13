@@ -6,3 +6,6 @@ agent-build-timeout/
 __pycache__/
 bluefin-validation/
 .coverage
+# Runtime marker written by render_card.py when the release card cannot be
+# drawn; the release drops the card instead of publishing a blank one.
+_card_placeholder

@@ -540,12 +540,14 @@ calling workflow
             2. fetch previous SBOM from last GitHub Release (*.spdx.json asset)
             3. sbom_diff.py  → versions.json  (added / changed / removed)
             4. render_card.py → release-card.png + release-card-dark.png
-               (falls back to placeholder PNGs if Playwright/browser rendering is unavailable)
+               (falls back to placeholder PNGs + _card_placeholder marker if
+                Playwright/browser rendering is unavailable; the release then
+                drops the card instead of publishing a blank one)
             5. render_notes.py → release-notes.md
                  • key components table (notable packages)
                  • collapsible full SPDX package inventory
                  • supply chain section (cosign, oras, slsa-verifier)
-            6. gh release create (attaches card PNGs + SBOM)
+            6. gh release create (attaches card PNGs when drawn + SBOM)
 ```
 
 ### Inputs
@@ -574,8 +576,11 @@ Outputs: `release-url` (URL of the created release).
 
 **Reliability behavior:** `create-release` no longer installs Playwright/Chromium at runtime.
 `render_card.py` attempts browser rendering if Playwright is already present; otherwise it writes
-placeholder `release-card*.png` assets and continues so release publication is never blocked by
-browser provisioning.
+placeholder `release-card*.png` assets plus a `_card_placeholder` marker and continues so release
+publication is never blocked by browser provisioning. When the marker is present the release
+**drops the card** instead of publishing it: `render_notes.py --skip-card` omits the card line and
+`gh release create` attaches no `release-card*.png`. When Playwright is present the card is drawn,
+shown and attached exactly as before.
 
 ### Supply chain verification section (user-facing)
 
