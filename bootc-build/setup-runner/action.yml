@@ -9,6 +9,9 @@ inputs:
   update-podman:
     description: "Upgrade podman/buildah/crun/skopeo from Ubuntu resolute (26.04) on runner images that ship an older stack; no-op on ubuntu-26.04 runners"
     default: "true"
+  apt-packages:
+    description: "Space-separated Ubuntu package names to install from the runner's own sources with a weekly cache"
+    default: ""
   native-overlay:
     description: "Use native rootful overlay storage instead of fuse-overlayfs; resets rootful Podman storage"
     default: "false"
@@ -52,6 +55,42 @@ runs:
         mount-opts: compress-force=zstd:2
         loopback-free: "1"
 
+    # Install native packages before adding resolute: never mix Ubuntu sources
+    # or cache entries between the optional tools and the Podman upgrade.
+    - name: Compute native apt cache key
+      if: inputs.apt-packages != ''
+      id: apt-pkgs-key
+      shell: bash
+      env:
+        APT_MODE: native
+        APT_PACKAGES: ${{ inputs.apt-packages }}
+      run: bash "$GITHUB_ACTION_PATH/apt-cache.sh" key
+
+    - name: Restore native apt package cache
+      if: inputs.apt-packages != ''
+      id: apt-pkgs-restore
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/apt-native-cache
+        key: ${{ steps.apt-pkgs-key.outputs.key }}
+
+    - name: Install native Ubuntu packages
+      if: inputs.apt-packages != ''
+      shell: bash
+      env:
+        APT_MODE: native
+        APT_PACKAGES: ${{ inputs.apt-packages }}
+        APT_CACHE_DIR: ${{ runner.temp }}/apt-native-cache
+        APT_CACHE_HIT: ${{ steps.apt-pkgs-restore.outputs.cache-hit }}
+      run: bash "$GITHUB_ACTION_PATH/apt-cache.sh" install
+
+    - name: Save native apt package cache
+      if: inputs.apt-packages != '' && steps.apt-pkgs-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/apt-native-cache
+        key: ${{ steps.apt-pkgs-key.outputs.key }}
+
     - name: Select podman source
       if: inputs.update-podman == 'true'
       id: podman-source
@@ -93,47 +132,35 @@ runs:
       if: steps.podman-source.outputs.install-from-resolute == 'true'
       id: apt-cache-key
       shell: bash
-      run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
+      env:
+        APT_MODE: resolute
+        APT_PACKAGES: ${{ inputs.apt-packages }}
+      run: bash "$GITHUB_ACTION_PATH/apt-cache.sh" key
 
     - name: Restore apt package cache
       if: steps.podman-source.outputs.install-from-resolute == 'true'
       id: apt-cache-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: /var/cache/apt/archives
-        key: apt-resolute-podman-${{ runner.os }}-${{ runner.arch }}-${{ steps.apt-cache-key.outputs.week }}
-        restore-keys: |
-          apt-resolute-podman-${{ runner.os }}-${{ runner.arch }}-
+        path: ${{ runner.temp }}/apt-resolute-cache
+        key: ${{ steps.apt-cache-key.outputs.key }}
 
     - name: Install podman stack from Ubuntu resolute
       if: steps.podman-source.outputs.install-from-resolute == 'true'
       shell: bash
-      run: |
-        set -eux
-        # Suppress needrestart's automatic service restarts during apt install.
-        # When libgpg-error0 upgrades noble→resolute, needrestart tries to restart
-        # rsyslog. The restart fails with a core dump; the runner then loses log
-        # connectivity ~20 minutes later and gets killed mid-build.
-        # Leaving the running rsyslog in place (with the old library in memory via
-        # mmap) is safe — it keeps functioning until the job ends.
-        sudo mkdir -p /etc/needrestart/conf.d
-        echo '$nrconf{restart} = "l";' | sudo tee /etc/needrestart/conf.d/99-no-restarts.conf
-        # The Azure Ubuntu mirror drops connections mid-download ("Error
-        # reading from server. Remote end closed connection"), which failed
-        # whole image builds at this step. apt retries a failed fetch itself
-        # with Acquire::Retries; timeouts keep a stalled mirror from eating
-        # the job.
-        APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60)
-        /bin/time -f '%E %C' sudo apt "${APT_OPTS[@]}" update
-        /bin/time -f '%E %C' sudo apt "${APT_OPTS[@]}" install -y --allow-downgrades crun/resolute buildah/resolute podman/resolute skopeo/resolute
-        sudo rm -f /etc/needrestart/conf.d/99-no-restarts.conf
+      env:
+        APT_MODE: resolute
+        APT_PACKAGES: ${{ inputs.apt-packages }}
+        APT_CACHE_DIR: ${{ runner.temp }}/apt-resolute-cache
+        APT_CACHE_HIT: ${{ steps.apt-cache-restore.outputs.cache-hit }}
+      run: bash "$GITHUB_ACTION_PATH/apt-cache.sh" install
 
     - name: Save apt package cache
       if: steps.podman-source.outputs.install-from-resolute == 'true' && steps.apt-cache-restore.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: /var/cache/apt/archives
-        key: ${{ steps.apt-cache-restore.outputs.cache-primary-key }}
+        path: ${{ runner.temp }}/apt-resolute-cache
+        key: ${{ steps.apt-cache-key.outputs.key }}
 
     - name: Configure native rootful overlay storage
       if: inputs.native-overlay == 'true'
