@@ -263,6 +263,7 @@ Quick reference - for full details see [`composite-actions/action-reference.md`]
 | `discord-release-notify` | Post a release card to a Discord forum webhook (no-op without a webhook) |
 | `render-pr-body` | Render the testing-to-stable promotion PR body |
 | `render-gate-section` | Replace the gate checklist section of a promotion PR body in place |
+| `merge-label-guard` | Locate the fail-closed hold policy invoked immediately before merge/enrollment writes |
 | `check-token-health` | Fail fast when a token is expired, revoked, or missing required scopes |
 
 ---

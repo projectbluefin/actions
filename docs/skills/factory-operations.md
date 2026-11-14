@@ -109,6 +109,18 @@ enrollment back into the PR-construction job.
 ruleset. `use_merge_queue: true` selects `enqueuePullRequest`; it does not decide
 whether a release window is open.
 
+### Merge-blocking labels
+
+Both promotion and Renovate use `.github/actions/merge-label-guard` immediately
+before each merge/enqueue write (including retries and promotion's `validate`
+status). It reads every current label page and fails closed on API or malformed
+data. Literal `hold`, bare `do-not-merge`, and `do-not-merge/*` block enrollment.
+An earlier check is not sufficient after a release gate or check-rollup wait.
+For a held PR, withdraw native auto-merge/queue enrollment only when its recorded
+actor matches the authenticated token's actor; leave other actors' enrollment
+untouched and report failures. No labels, reviews, or branch protections change.
+
+
 ### `auto_merge` — what the PR body promises
 
 `auto_merge` is the third, separate axis: whether anything ever merges the
@@ -166,13 +178,14 @@ falls below the success-rate threshold.
 
 | Repo | Pipeline | Workflow queried |
 |---|---|---|
-| `projectbluefin/bluefin` | Build | `Testing Images` |
-| `projectbluefin/bluefin` | E2E | `Nightly E2E` |
-| `projectbluefin/bluefin` | Promote | `Promote testing to main` |
 | `projectbluefin/dakota` | Build | `Build Bluefin dakota` |
 | `projectbluefin/dakota` | Promote | `Publish Bluefin dakota` |
 | `projectbluefin/common` | Build | `Build` |
 | `projectbluefin/common` | Unit Tests | `Unit Tests` |
+
+Archived repositories are not active health/drift targets. The archived-only
+package-cadence caller is retired; `reusable-pkg-cadence.yml` remains available
+for explicit active consumers, independently of registry cleanup.
 
 ### Alerting behavior
 
@@ -194,7 +207,7 @@ falls below the success-rate threshold.
   (only alerts opened by the workflow's alerting identity suppress new alerts, preventing human-filed
   issues with matching titles from muting a pipeline)
 - Issues are filed in `projectbluefin/common` with the labels that currently exist from:
-  `priority/p0`, `area/ci`, `kind/bug`
+  `priority/critical-urgent`, `kind/bug`
 
 Each pipeline lands in one of four statuses. Only `alert` files an issue:
 
@@ -321,9 +334,9 @@ step output, then fail on it in a later step that runs after the useful work is 
 
 A `::warning::` is not enough. Factory Health ran for months filing alerts into the wrong repository
 while every scheduled run concluded `success`; nobody noticed until a reviewer read a raw run log
-(projectbluefin/actions#556). Alerts that land in the fallback repo also arrive **unlabelled** —
-`priority/p0`, `area/ci` and `kind/bug` exist in `projectbluefin/common`, not here — so they carry a
-misroute banner in the body to stay self-describing wherever they end up.
+(projectbluefin/actions#556). A fallback repo may lack the supported
+`priority/critical-urgent` and `kind/bug` labels, so alerts carry a misroute
+banner and only apply labels already present in the destination.
 
 **Diagnosing "the common issue token is unavailable".** Two different failures produce an empty token
 and they have opposite remediations. Read the app-token step's own log before assuming either:
@@ -396,11 +409,13 @@ The bypass is only reachable through automation:
 | `.github/workflows/renovate-automerge.yml` | Local `workflow_run` caller. Fires on every CI workflow completion, passes `base_branch: main`, `require_auto_merge: true`, and the MergeRaptor app credentials. |
 | `.github/workflows/reusable-renovate-automerge.yml` | Mints the app installation token, qualifies the PR, validates the full check rollup, and merges (respecting a merge queue if one exists). |
 
-Three gates must all pass before a merge happens:
+These gates must all pass before a merge happens:
 
 1. **Author** is `mergeraptor` or `renovate` (in any spelling — see the gotcha below).
 2. **Renovate enabled auto-merge** on the PR (`autoMergeRequest != null`), i.e. `renovate.json` says it qualifies.
 3. **Every check is green *and* nothing is still running.** Nonterminal check states — `PENDING`, `QUEUED`, `IN_PROGRESS`, `WAITING`, `REQUESTED`, `EXPECTED` (the same set `gh pr checks` places in its own `pending` bucket) — are awaited up to `check_timeout_seconds`, never treated as failures. `SKIPPED` and `NEUTRAL` are non-blocking, matching GitHub's own merge semantics. Only terminal failure conclusions (`FAILURE`, `CANCELLED`, `TIMED_OUT`, `ACTION_REQUIRED`, `STARTUP_FAILURE`, `STALE`, `ERROR`) or an unrecognized state block outright.
+4. **Fresh labels permit merge.** The shared merge-label guard runs after the wait
+   and again before a queue-strategy retry, refusing holds and unreadable policy.
 
 **Gotcha — an absent check is not a passing check.** `gh pr checks` reports only the check-runs that currently *exist*. A workflow that is queued but has not yet registered a check-run is simply **missing from the rollup**, not `PENDING`; and re-running a workflow removes its check-runs entirely while they re-queue. A naive "nothing is pending, so we're done" gate will happily merge with most checks never having run. Since this workflow is triggered by *one* CI workflow completing while siblings may still be queued, that race is the normal case, not an edge case. Cross-check in-flight runs for the same commit:
 
