@@ -67,7 +67,16 @@ jobs:
           python-version: '3.15'
 
       - name: Install data parser without caller dependency files
-        run: python3 -m pip install --require-hashes -r actions-source/scripts/requirements.txt
+        run: |
+          set -euo pipefail
+          if [ -f actions-source/scripts/requirements.txt ]; then
+            python3 -m pip install --require-hashes -r actions-source/scripts/requirements.txt
+          else
+            # Older released runtimes predate the lock. Pin the source distribution
+            # so this remains usable without trusting caller dependency files.
+            printf '%s\n' 'pyyaml==6.0.3 --hash=sha256:d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f' > "$RUNNER_TEMP/issue-policy-requirements.txt"
+            python3 -m pip install --require-hashes --no-binary=pyyaml -r "$RUNNER_TEMP/issue-policy-requirements.txt"
+          fi
 
       - name: Record actual candidate revisions
         env:
