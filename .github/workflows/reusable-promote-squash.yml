@@ -496,24 +496,27 @@ jobs:
             echo "pr_url=${PR_URL}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Check do-not-merge label
-        if: steps.upsert.outputs.pr_number != ''
+      - name: Load merge label policy
+        id: merge-policy
+        uses: $/.github/actions/merge-label-guard
+
+      - name: Check merge-blocking labels
+        if: steps.upsert.outputs.pr_number != '' || steps.rebuild.outputs.pr_number != ''
         id: check-dnm
         run: |
-          blocked=$(gh pr view "${{ steps.upsert.outputs.pr_number }}" \
-            --repo "${{ github.repository }}" \
-            --json labels \
-            --jq 'any(.labels[].name; . == "do-not-merge")' 2>/dev/null || echo false)
-          echo "blocked=${blocked}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.upsert.outputs.pr_number || steps.rebuild.outputs.pr_number }}
+          MERGE_LABEL_GUARD: ${{ steps.merge-policy.outputs.script }}
 
-      - name: Report do-not-merge label block
-        if: steps.upsert.outputs.pr_number != '' && steps.check-dnm.outputs.blocked == 'true'
+      - name: Report merge label block
+        if: steps.check-dnm.outputs.blocked == 'true'
         env:
-          PR_NUMBER: ${{ steps.upsert.outputs.pr_number }}
+          PR_NUMBER: ${{ steps.upsert.outputs.pr_number || steps.rebuild.outputs.pr_number }}
         run: |
-          echo "::notice::PR #${PR_NUMBER} has the do-not-merge label; auto-merge/queue enrollment skipped."
+          echo "::notice::PR #${PR_NUMBER} has a merge-blocking label; auto-merge/queue enrollment skipped."
 
       - name: Clear stale release labels on refresh
         if: ${{ !inputs.enqueue_promotion && steps.upsert.outputs.pr_number != '' }}
@@ -575,11 +578,18 @@ jobs:
       PR_NUMBER: ${{ needs.promote.outputs.pr_number }}
       PROMOTION_BRANCH: ${{ format('auto/promote-{0}-to-{1}', inputs.source_branch, inputs.target_branch) }}
     steps:
+      - name: Load merge label policy
+        id: merge-policy
+        uses: $/.github/actions/merge-label-guard
+
       - name: Post validate status after release gate
+        env:
+          MERGE_LABEL_GUARD: ${{ steps.merge-policy.outputs.script }}
         run: |
           set -euo pipefail
           SHA=$(gh api "repos/${{ github.repository }}/git/ref/heads/${PROMOTION_BRANCH}" \
             --jq '.object.sha')
+          bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
           gh api "repos/${{ github.repository }}/statuses/${SHA}" \
             -X POST \
             --field state=success \
@@ -588,8 +598,11 @@ jobs:
             --field target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Enable auto-merge or enqueue verified promotion PR
+        env:
+          MERGE_LABEL_GUARD: ${{ steps.merge-policy.outputs.script }}
         run: |
           set -euo pipefail
+          bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
 
           # This job cannot start until the release gate succeeds. A failed
           # cosign or E2E check therefore never reaches either merge path.
@@ -606,6 +619,7 @@ jobs:
               echo "PR #${PR_NUMBER} is already queued"
               exit 0
             fi
+            bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
             # shellcheck disable=SC2016  # $id is a GraphQL variable, not a shell variable
             gh api graphql \
               -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id}){mergeQueueEntry{id}}}' \
@@ -621,6 +635,7 @@ jobs:
               exit 0
             fi
 
+            bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
             gh pr merge "$PR_NUMBER" \
               --repo "${{ github.repository }}" \
               --auto
@@ -644,7 +659,7 @@ jobs:
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              labels: 'area/ci,kind/bug',
+              labels: 'kind/bug',
               state: 'open',
             });
             const open = existing.data.find(i => i.title === title);
@@ -680,7 +695,7 @@ jobs:
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              labels: 'area/ci,kind/bug',
+              labels: 'kind/bug',
               state: 'open',
             });
             const dup = existing.data.find(i => i.title === title);
@@ -697,7 +712,7 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
-                labels: ['area/ci', 'kind/bug', 'priority/p1'],
+                labels: ['kind/bug', 'priority/important-soon'],
               });
             }
 
@@ -719,7 +734,7 @@ jobs:
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              labels: 'area/ci,kind/bug',
+              labels: 'kind/bug',
               state: 'open',
             });
             const existing = issues.data.find((issue) => issue.title === title);
@@ -736,7 +751,7 @@ jobs:
                 repo: context.repo.repo,
                 title,
                 body,
-                labels: ['area/ci', 'kind/bug', 'priority/p1'],
+                labels: ['kind/bug', 'priority/important-soon'],
               });
             }
 
@@ -756,7 +771,7 @@ jobs:
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              labels: 'area/ci,kind/bug',
+              labels: 'kind/bug',
               state: 'open',
             });
             const existing = issues.data.find((issue) => issue.title === title);

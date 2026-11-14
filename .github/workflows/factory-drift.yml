@@ -40,7 +40,6 @@ jobs:
           set -euo pipefail
 
           CONSUMER_REPOS=(
-            projectbluefin/bluefin
             projectbluefin/dakota
             projectbluefin/common
             projectbluefin/bonedigger
@@ -110,14 +109,12 @@ jobs:
           set -euo pipefail
 
           CONSUMER_REPOS=(
-            projectbluefin/bluefin
             projectbluefin/dakota
             projectbluefin/common
             projectbluefin/bonedigger
           )
 
           IMAGE_REPOS=(
-            projectbluefin/bluefin
             projectbluefin/dakota
           )
 
@@ -361,7 +358,6 @@ jobs:
             gh issue create \
               --repo "${target_repo}" \
               --title "${title}" \
-              --label "area/ci" \
               --body-file /tmp/issue_body.md \
             || true
 

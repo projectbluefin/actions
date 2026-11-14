@@ -491,7 +491,7 @@ Inputs:
 | `github-token` | required | Token for SARIF upload and fallback issue creation |
 | `gh-token` | `""` | Optional token override for `gh issue create` |
 
-In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. The auto-issue step deduplicates per CVE ID by searching open issues before filing and only applies `priority/p0`, `area/security`, and `kind/bug` labels when those labels already exist in the caller repo. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing actionable CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the reporting threshold (default: `CRITICAL`).
+In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. The auto-issue step deduplicates per CVE ID by searching open issues before filing and only applies `priority/critical-urgent`, `area/security`, and `kind/bug` labels when those labels already exist in the caller repo. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing actionable CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the reporting threshold (default: `CRITICAL`).
 
 **Permissions required:** the calling job needs `security-events: write` for SARIF upload. If `create-issue: true`, it also needs `issues: write`. Both are already set on the `build_container` job in `reusable-build.yml`.
 

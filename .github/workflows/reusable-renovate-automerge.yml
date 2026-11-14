@@ -140,17 +140,20 @@ jobs:
           # GraphQL reports a GitHub App author as the bare slug ("mergeraptor"),
           # while the REST/`gh pr list` view reports "app/mergeraptor" and a
           # legacy bot user as "renovate[bot]". Match every spelling.
-          pr_number=$(jq -r \
-            --arg head "$HEAD_SHA" \
-            --arg require "$REQUIRE_AUTO_MERGE" '
-              .[]
+          candidates=$(jq \
+            --arg head "$HEAD_SHA" '
+              [.[]
               | select(.headRefOid == $head)
               | select(.isDraft | not)
               | select(.mergeable != "CONFLICTING")
               | select((.author.login | ascii_downcase | sub("^app/"; "") | sub("\\[bot\\]$"; ""))
-                       | . == "mergeraptor" or . == "renovate")
-              | select($require != "true" or .autoMergeRequest != null)
-              | .number' <<<"$nodes" | head -1)
+                       | . == "mergeraptor" or . == "renovate")]' <<<"$nodes")
+          pr_number=$(jq -r --arg require "$REQUIRE_AUTO_MERGE" '
+              .[] | select($require != "true" or .autoMergeRequest != null)
+              | .number' <<<"$candidates" | head -1)
+          # A queued PR may no longer have an autoMergeRequest. It still needs
+          # hold withdrawal, but must not gain merge qualification from that.
+          label_pr_number=$(jq -r '.[0].number // empty' <<<"$candidates")
 
           if [ -z "$pr_number" ]; then
             echo "No qualifying Renovate/Mergeraptor PR for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
@@ -158,10 +161,27 @@ jobs:
             echo "Found qualifying PR #$pr_number"
           fi
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          echo "label_pr_number=$label_pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Load merge label policy
+        id: merge-policy
+        if: steps.find-pr.outputs.label_pr_number != ''
+        uses: $/.github/actions/merge-label-guard
+
+      - name: Check merge-blocking labels before waiting
+        id: merge-labels
+        if: steps.find-pr.outputs.label_pr_number != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
+          PR_NUMBER: ${{ steps.find-pr.outputs.label_pr_number }}
+          MERGE_LABEL_GUARD: ${{ steps.merge-policy.outputs.script }}
+        run: |
+          set -euo pipefail
+          bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
 
       - name: Require a complete, all-successful check rollup
         id: checks
-        if: steps.find-pr.outputs.pr_number != ''
+        if: steps.find-pr.outputs.pr_number != '' && steps.merge-labels.outputs.blocked == 'false'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.token || github.token }}
           PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
@@ -271,6 +291,7 @@ jobs:
           PR_NUMBER: ${{ steps.find-pr.outputs.pr_number }}
           MERGE_METHOD: ${{ inputs.merge_method }}
           HEAD_SHA: ${{ inputs.head_sha }}
+          MERGE_LABEL_GUARD: ${{ steps.merge-policy.outputs.script }}
         run: |
           set -euo pipefail
           # --auto is intentionally never used:
@@ -301,6 +322,7 @@ jobs:
             esac
           }
 
+          bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
           if gh pr merge "$PR_NUMBER" "${flags[@]}" --match-head-commit "$HEAD_SHA" --repo "$GITHUB_REPOSITORY" 2>merge.err; then
             cat merge.err >&2
             report_outcome
@@ -339,6 +361,7 @@ jobs:
           # when a strategy flag is passed on a queued branch. Retry with none.
           if [ "${#flags[@]}" -ne 0 ] && grep -qi "merge queue" merge.err; then
             echo "Base branch uses a merge queue; retrying without an explicit strategy"
+            bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
             if gh pr merge "$PR_NUMBER" --match-head-commit "$HEAD_SHA" --repo "$GITHUB_REPOSITORY" 2>retry.err; then
               cat retry.err >&2
               report_outcome

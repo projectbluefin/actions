@@ -230,6 +230,11 @@ def competing_workflow(path, workflow, catalog):
         if not isinstance(job, dict):
             continue
         steps = job.get("steps", [])
+        references = [job.get("uses", "")]
+        if isinstance(steps, list):
+            references.extend(step.get("uses", "") for step in steps if isinstance(step, dict))
+        if any(isinstance(reference, str) and re.match(r"^cncf/prow-github-actions(?:@|/)", reference, re.I) for reference in references):
+            errors.append(f"{path}: jobs.{name} runs broad Prow alongside the constrained lifecycle; remove the competing writer")
         executable = json.dumps(steps)
         stage_names = set(catalog["stages"]) | set(catalog["retired_stages"])
         has_stage = any(label in executable for label in stage_names)

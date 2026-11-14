@@ -290,7 +290,7 @@ runs:
         title = os.environ["ISSUE_TITLE"]
         findings = json.loads(Path(os.environ["FINDINGS_FILE"]).read_text(encoding="utf-8"))
         body_path = Path(os.environ["GITHUB_WORKSPACE"]) / "scan-image-issue-body.md"
-        desired_labels = ["priority/p0", "area/security", "kind/bug"]
+        desired_labels = ["priority/critical-urgent", "area/security", "kind/bug"]
 
         def gh_json(*args):
             completed = subprocess.run(
