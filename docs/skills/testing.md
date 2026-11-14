@@ -323,11 +323,11 @@ Filter the *work*, not the *trigger*. Let the workflow start on every PR and
 skip expensive internals with a step-level `if:`; a job that runs and reports
 success in seconds is what satisfies the ruleset.
 
-When a reporter needs a PR context it will not have on `push` or `merge_group`,
-select it by event rather than dropping the trigger:
+Use native annotations when API-based reporters fail their final check-run
+PATCH. Keep every required trigger, including `push` and `merge_group`:
 
 ```yaml
-reporter: ${{ github.event_name == 'pull_request' && 'github-pr-check' || 'github-annotations' }}
+reporter: github-annotations
 fail_level: error
 ```
 
@@ -338,8 +338,9 @@ the action passes its default `fail_level: none` to the CLI, which overrides
 the deprecated `fail_on_error` fallback. Reviewdog scans without diff filtering for non-PR
 events and sends no API requests on that path; its existing token input is
 still required by the CLI.
-Keep `github-pr-check` and its existing `checks: write` permission for PRs;
-do not broaden permissions to repair a non-PR reporter's final PATCH 404.
+The same reporter preserves PR diff filtering and needs only read access to
+fetch that diff. Remove `checks: write` when no step writes to the Checks API;
+do not broaden permissions to repair a reporter's final PATCH 404.
 See [Reviewdog's annotation reporter](https://github.com/reviewdog/reviewdog#reporter-github-annotations--reportergithub-annotations).
 
 Diagnosing it: compare `mergeStateStatus` between an affected PR and one that
