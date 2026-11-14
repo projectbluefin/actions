@@ -67,6 +67,7 @@ report_outcome() {
   esac
 }
 
+bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
 if gh pr merge "$PR_NUMBER" "${flags[@]}" --match-head-commit "$HEAD_SHA" --repo "$GITHUB_REPOSITORY" 2>merge.err; then
   cat merge.err >&2
   report_outcome
@@ -105,6 +106,7 @@ fi
 # when a strategy flag is passed on a queued branch. Retry with none.
 if [ "${#flags[@]}" -ne 0 ] && grep -qi "merge queue" merge.err; then
   echo "Base branch uses a merge queue; retrying without an explicit strategy"
+  bash "$MERGE_LABEL_GUARD" || { status=$?; [ "$status" -eq 3 ] && exit 0; exit "$status"; }
   if gh pr merge "$PR_NUMBER" --match-head-commit "$HEAD_SHA" --repo "$GITHUB_REPOSITORY" 2>retry.err; then
     cat retry.err >&2
     report_outcome
@@ -145,6 +147,8 @@ setup() {
   export HEAD_SHA="0123456789abcdef0123456789abcdef01234567"
   export MERGE_ARGS_FILE="${TEST_TMP}/merge_args"
   : > "$MERGE_ARGS_FILE"
+  export MERGE_LABEL_GUARD="${BATS_TEST_DIRNAME}/../../.github/actions/merge-label-guard/guard.sh"
+  export GITHUB_OUTPUT="${TEST_TMP}/github_output"
 
   # gh mock:
   #   gh pr merge  -> exit code and stderr are scripted per call via
@@ -182,6 +186,14 @@ case "$1 $2" in
     n=$(cat "$VIEW_CALL_FILE"); n=$((n + 1)); echo "$n" > "$VIEW_CALL_FILE"
     state="${SCRIPT_DIR}/view_${n}"; [ -f "$state" ] && { cat "$state"; exit 0; }
     printf '%s\n' "${PR_VIEW_STATE_DEFAULT:-MERGED}"
+    ;;
+  "api "*)
+    if [[ "$2" == *"/labels?per_page=100" ]]; then
+      echo '[[]]'
+    else
+      echo "mock gh: unexpected API invocation: $*" >&2
+      exit 1
+    fi
     ;;
   *)
     echo "mock gh: unexpected invocation: $*" >&2

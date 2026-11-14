@@ -197,7 +197,7 @@ must:
 An absent status is a neutral waiting state: digest and signature checks still
 run, the PR receives `release/pending`, but the workflow stays green and does
 not enqueue. An explicit producer failure, digest failure, or signature failure
-fails closed, marks `release/blocked`, and opens or updates a `priority/p1`
+fails closed, marks `release/blocked`, and opens or updates a `priority/important-soon`
 issue. A later passing gate closes that issue. Because status is attached to an
 immutable commit, it remains valid for that commit and needs no age-based
 revalidation.

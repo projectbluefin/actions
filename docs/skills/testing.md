@@ -56,6 +56,7 @@ Coverage gate: `--cov-fail-under=75`
 | `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | `renovate-automerge-wiring.yml` wiring assertion (`scripts/renovate-automerge-wiring-check.sh`) | `tests/bats/test_renovate_automerge_wiring_check.bats` (10 tests) |
 | `reusable-renovate-automerge.yml` merge step: `--match-head-commit` pin, moved-head skip (409 or changed `headRefOid`), `gh pr view --json state` outcome reporting | `tests/bats/test_renovate_automerge_merge.bats` (19 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
+| Shared merge-label policy and full Renovate/promotion merge paths | `tests/test_merge_label_guard.py`: holds, pagination, owned withdrawal, API failure, late-label races, retries, and unheld enrollment |
 
 The Node suite runs in the `node` job in `unit-tests.yml`:
 
@@ -335,12 +336,25 @@ Filter the *work*, not the *trigger*. Let the workflow start on every PR and
 skip expensive internals with a step-level `if:`; a job that runs and reports
 success in seconds is what satisfies the ruleset.
 
-When a reporter needs a PR context it will not have on `merge_group`, select it
-by event rather than dropping the trigger:
+Use native annotations when API-based reporters fail their final check-run
+PATCH. Keep every required trigger, including `push` and `merge_group`:
 
 ```yaml
-reporter: ${{ github.event_name == 'merge_group' && 'github-check' || 'github-pr-check' }}
+reporter: github-annotations
+fail_level: error
 ```
+
+`github-annotations` writes runner logging commands instead of creating and
+patching a second check through the Checks API. The native job still reports
+the required `Lint GitHub Actions` context. Set `fail_level: error` explicitly:
+the action passes its default `fail_level: none` to the CLI, which overrides
+the deprecated `fail_on_error` fallback. Reviewdog scans without diff filtering for non-PR
+events and sends no API requests on that path; its existing token input is
+still required by the CLI.
+The same reporter preserves PR diff filtering and needs only read access to
+fetch that diff. Remove `checks: write` when no step writes to the Checks API;
+do not broaden permissions to repair a reporter's final PATCH 404.
+See [Reviewdog's annotation reporter](https://github.com/reviewdog/reviewdog#reporter-github-annotations--reportergithub-annotations).
 
 Diagnosing it: compare `mergeStateStatus` between an affected PR and one that
 touches the filtered paths. Both `SUCCESS` on `statusCheckRollup` while only one
