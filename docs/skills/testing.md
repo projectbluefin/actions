@@ -323,14 +323,11 @@ Filter the *work*, not the *trigger*. Let the workflow start on every PR and
 skip expensive internals with a step-level `if:`; a job that runs and reports
 success in seconds is what satisfies the ruleset.
 
-The actionlint workflow uses PR annotations only for pull requests. On push and
-merge queue events, `github-check` fails its final check-run API update, so the
-local reporter writes findings to the job log. Error-level findings still fail
-the job:
+When a reporter needs a PR context it will not have on `merge_group`, select it
+by event rather than dropping the trigger:
 
 ```yaml
-reporter: ${{ github.event_name == 'pull_request' && 'github-pr-check' || 'local' }}
-fail_level: error
+reporter: ${{ github.event_name == 'merge_group' && 'github-check' || 'github-pr-check' }}
 ```
 
 Diagnosing it: compare `mergeStateStatus` between an affected PR and one that
