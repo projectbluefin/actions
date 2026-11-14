@@ -11,5 +11,5 @@ inputs:
     required: false
     default: '[["What happened?","What would you like to see?"],["Steps to reproduce","What does done look like?"],["Affected area"]]'
 runs:
-  using: node20
+  using: node24
   main: index.js
