@@ -62,7 +62,9 @@ cached list in its group must match the signed hashes, and only verified lists a
 restored. A list apt keeps recompressed locally (for example `…_Packages.lz4`) is checked by
 hashing its decompressed content against the signed uncompressed entry. apt then checks each `.deb` against those lists. If verification or the
 offline install fails, the script falls back to the retry/timeout-protected
-`apt update` and install, which fails if the mirror is down.
+`apt update` and install, which fails if the mirror is down. The log says why: one line
+per cached `InRelease` (verified, or which file failed), and on a fallback a
+`apt cache: N package(s) not in the cache` group listing the `.deb`s apt still wanted.
 Misses stage only regular `.deb` and list files, excluding locks and working directories,
 then chown the staging folder to the runner user. Never cache the root-owned apt
 directories directly: unreadable lock/partial files make cache saves fail. Also
@@ -538,12 +540,14 @@ calling workflow
             2. fetch previous SBOM from last GitHub Release (*.spdx.json asset)
             3. sbom_diff.py  → versions.json  (added / changed / removed)
             4. render_card.py → release-card.png + release-card-dark.png
-               (falls back to placeholder PNGs if Playwright/browser rendering is unavailable)
+               (falls back to placeholder PNGs + _card_placeholder marker if
+                Playwright/browser rendering is unavailable; the release then
+                drops the card instead of publishing a blank one)
             5. render_notes.py → release-notes.md
                  • key components table (notable packages)
                  • collapsible full SPDX package inventory
                  • supply chain section (cosign, oras, slsa-verifier)
-            6. gh release create (attaches card PNGs + SBOM)
+            6. gh release create (attaches card PNGs when drawn + SBOM)
 ```
 
 ### Inputs
@@ -572,8 +576,11 @@ Outputs: `release-url` (URL of the created release).
 
 **Reliability behavior:** `create-release` no longer installs Playwright/Chromium at runtime.
 `render_card.py` attempts browser rendering if Playwright is already present; otherwise it writes
-placeholder `release-card*.png` assets and continues so release publication is never blocked by
-browser provisioning.
+placeholder `release-card*.png` assets plus a `_card_placeholder` marker and continues so release
+publication is never blocked by browser provisioning. When the marker is present the release
+**drops the card** instead of publishing it: `render_notes.py --skip-card` omits the card line and
+`gh release create` attaches no `release-card*.png`. When Playwright is present the card is drawn,
+shown and attached exactly as before.
 
 ### Supply chain verification section (user-facing)
 
