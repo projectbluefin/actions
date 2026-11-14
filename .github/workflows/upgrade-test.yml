@@ -18,10 +18,11 @@ name: bootc Upgrade and Rollback Test
 # deployment, rollback to previous deployment, and /etc persistence.
 # See: https://github.com/projectbluefin/testsuite/blob/main/tests/lifecycle/features/bootc.feature
 #
-# NOTE: explicit from→to cross-version upgrade path testing requires testsuite
-# changes tracked in:
-#   https://github.com/projectbluefin/testsuite/issues/223  (target-image input)
-#   https://github.com/projectbluefin/testsuite/issues/222  (no-op upgrade guard)
+# Pass `previous_image` (a digest-pinned earlier build of the same image) to
+# test a real upgrade: the VM boots `previous_image`, stages `image` as the
+# target, upgrades, reboots and rolls back. Without it the lifecycle suite
+# boots `image` and "upgrades" to itself, which testsuite's no-op guard
+# (projectbluefin/testsuite#1039, #1047) correctly fails. See #753.
 
 on:
   workflow_dispatch:
@@ -38,6 +39,10 @@ on:
         description: "Enable zstd:chunked migration scenarios"
         required: false
         default: "false"
+      previous_image:
+        description: "Digest-pinned earlier build of the same image to boot first and upgrade from (empty: upgrade-to-self, which fails as a no-op)"
+        required: false
+        default: ""
   workflow_call:
     inputs:
       image:
@@ -71,6 +76,16 @@ on:
         description: "Enable zstd:chunked migration scenarios in the lifecycle suite"
         type: boolean
         default: false
+      previous_image:
+        description: >
+          Digest-pinned (@sha256:) earlier build of the same image repository
+          to boot first; `image` is then staged and upgraded to. Images with
+          dated immutable tags can resolve the previous build from them (e.g.
+          the newest `testing-YYYYMMDD-<sha>` older than the candidate, by
+          digest). Empty keeps today's behaviour: the VM boots `image` and
+          upgrades to itself, which the lifecycle suite fails as a no-op.
+        type: string
+        default: ""
 
     outputs:
       result:
@@ -80,8 +95,48 @@ on:
 permissions: {}
 
 jobs:
+  plan:
+    name: Check upgrade source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      boot_image: ${{ steps.plan.outputs.boot_image }}
+      target_image: ${{ steps.plan.outputs.target_image }}
+    steps:
+      - id: plan
+        shell: bash
+        env:
+          IMAGE: ${{ inputs.image }}
+          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
+        run: |
+          set -euo pipefail
+          # Repository part of a ref: drop @digest, then a :tag after the last /.
+          repo_of() {
+            local ref=${1%%@*}
+            [[ "${ref##*/}" == *:* ]] && ref=${ref%:*}
+            printf '%s' "$ref"
+          }
+          if [[ -z "${PREVIOUS_IMAGE}" ]]; then
+            echo "boot_image=${IMAGE}" >> "$GITHUB_OUTPUT"
+            echo "target_image=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${PREVIOUS_IMAGE}" != *@sha256:* ]]; then
+            echo "::error::previous_image must be digest-pinned (…@sha256:…): ${PREVIOUS_IMAGE}"; exit 1
+          fi
+          if [[ "${PREVIOUS_IMAGE}" == "${IMAGE}" ]]; then
+            echo "::error::previous_image equals image; an upgrade to itself is a no-op"; exit 1
+          fi
+          if [[ "$(repo_of "${PREVIOUS_IMAGE}")" != "$(repo_of "${IMAGE}")" ]]; then
+            echo "::error::previous_image must be from the same repository as image ($(repo_of "${IMAGE}"))"; exit 1
+          fi
+          echo "boot_image=${PREVIOUS_IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "target_image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
   upgrade-test:
     name: Upgrade & rollback — ${{ inputs.image }}
+    needs: plan
     # Keep this pin identical to the testsuite e2e.yml pin in reusable-execute-release.yml
     # (same `# v1` comment) so Renovate bumps all callers together.
     uses: projectbluefin/testsuite/.github/workflows/e2e.yml@87bdbafbc7de4d83744682144a4ea3494735d0b6 # v1
@@ -89,7 +144,8 @@ jobs:
       contents: read
       packages: write
     with:
-      image: ${{ inputs.image }}
+      image: ${{ needs.plan.outputs.boot_image }}
+      target-image: ${{ needs.plan.outputs.target_image }}
       suites: ${{ inputs.suites || 'lifecycle' }}
       skip_native_apps: ${{ inputs.skip_native_apps || false }}
       screenshot_flatpaks: ${{ inputs.screenshot_flatpaks || '' }}
