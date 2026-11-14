@@ -41,10 +41,11 @@ on:
       actions_ref:
         description: >
           The ref of projectbluefin/actions to take the gate script from.
-          Defaults to the managed @v1 tag, which is exactly the release the
-          caller already trusted to run this workflow.
+          Empty selects the commit the caller already trusted to run this
+          workflow (the reusable's own pinned commit), so the workflow YAML
+          and the gate script always come from the same commit.
         type: string
-        default: v1
+        default: ''
         required: false
 
 permissions:
@@ -67,7 +68,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: projectbluefin/actions
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ inputs.actions_ref || job.workflow_sha }}
           path: pinned-fetches-gate
           persist-credentials: false
 

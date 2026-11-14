@@ -31,13 +31,13 @@ def test_reusable_script_source_is_a_configurable_input():
     on_key = "on" if "on" in workflow else True
     inputs = workflow[on_key]["workflow_call"]["inputs"]
     assert inputs["actions_repository"]["default"] == "projectbluefin/actions"
-    assert inputs["actions_ref"]["default"] == "v1"
+    assert inputs["actions_ref"]["default"] == ""
 
     job = workflow["jobs"]["thin-caller-gate"]
     checkout_steps = [s for s in job["steps"] if s.get("with", {}).get("path") == "thin-caller-gate"]
     assert len(checkout_steps) == 1
     assert checkout_steps[0]["with"]["repository"] == "${{ inputs.actions_repository }}"
-    assert checkout_steps[0]["with"]["ref"] == "${{ inputs.actions_ref }}"
+    assert checkout_steps[0]["with"]["ref"] == "${{ inputs.actions_ref || job.workflow_sha }}"
 
 
 def test_reusable_documents_job_level_opt_in():
