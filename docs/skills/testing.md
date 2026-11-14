@@ -66,6 +66,10 @@ node --test tests/node/*.test.mjs
 
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
 
+CI installs bats from `.github/tools/bats/package-lock.json` with
+`npm ci --ignore-scripts` and adds its local binary directory to `GITHUB_PATH`.
+Update the package manifest and regenerate the lock together when bumping bats.
+
 ```bash
 bats tests/bats/test_resolve_digests.bats
 bats tests/bats/test_verify_signatures.bats
@@ -293,13 +297,21 @@ finally:
 Do not use `__wrapped__` introspection — it only applies to `functools.wraps`-decorated functions
 and silently has no effect on plain functions.
 
-## requirements-test.txt
+## Hash-locked Python requirements
 
+The loose test requirements live in `tests/requirements-test.in`; the shared
+workflow parser requirement lives in `scripts/requirements.in`. Regenerate their
+hash-locked files for the CI interpreter after changing either input:
+
+```bash
+uv pip compile --generate-hashes --python-version 3.15 --python-platform linux tests/requirements-test.in -o tests/requirements-test.txt
+uv pip compile --generate-hashes --python-version 3.15 --python-platform linux scripts/requirements.in -o scripts/requirements.txt
 ```
-pytest>=8.0
-pytest-cov>=4.0
-pyyaml>=6.0
-```
+
+Install with `pip install --require-hashes -r <lockfile>`. The issue-policy
+preview uses the lock from its checked-out first-party runtime, never caller data.
+For older runtimes without that lock, the workflow pins the PyYAML source
+distribution and its hash inline; update that fallback when changing the parser.
 
 `pytest-cov` ships as a pytest plugin — no extra import needed in test files.
 
