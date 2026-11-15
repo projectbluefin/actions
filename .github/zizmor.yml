@@ -62,4 +62,4 @@ rules:
       # Calls a first-party reusable workflow in this repository, which
       # needs the signing/App credentials of the caller; an explicit secret
       # list is a follow-up, not a regression.
-      - reusable-promote-squash.yml:542
+      - reusable-promote-squash.yml:545
