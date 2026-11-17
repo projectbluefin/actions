@@ -3,37 +3,11 @@ name: Unit Tests
 on:
   push:
     branches: [main]
+  # Every pull request and the merge queue, so bats, node and pytest can be
+  # required checks: a path filter would leave a required check missing.
   pull_request:
-    paths:
-      - ".github/workflows/actionlint.yml"
-      - ".github/workflows/pat-ban.yml"
-      - ".github/workflows/reusable-design-enforcement.yml"
-      - "actions/**"
-      - "bootc-build/**"
-      - "issue-lifecycle/**"
-      - "prow-labels/**"
-      - ".github/workflows/reusable-issue-lifecycle.yml"
-      - ".github/workflows/reusable-issue-policy-preview.yml"
-      - "scripts/**"
-      - ".github/actions/**"
-      - "tests/**"
-      - ".github/workflows/factory-drift.yml"
-      - ".github/workflows/factory-health.yml"
-      - ".github/workflows/ghcr-cleanup.yml"
-      - ".github/workflows/factory-health.yml"
-      - ".github/workflows/migration-test.yml"
-      - ".github/workflows/upgrade-test.yml"
-      - ".github/workflows/reusable-build.yml"
-      - ".github/workflows/reusable-execute-release.yml"
-      - ".github/workflows/reusable-pkg-cadence.yml"
-      - ".github/workflows/reusable-promote-squash.yml"
-      - ".github/workflows/reusable-sync-branches.yml"
-      - ".github/workflows/reusable-release-gate.yml"
-      - ".github/workflows/reusable-release.yml"
-      - ".github/workflows/reusable-renovate-automerge.yml"
-      - ".github/workflows/reusable-renovate.yml"
-      - ".github/workflows/reusable-thin-caller-gate.yml"
-      - ".github/workflows/unit-tests.yml"
+    branches: [main]
+  merge_group:
 
 permissions: {}
 
