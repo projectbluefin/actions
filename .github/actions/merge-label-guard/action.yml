@@ -1,0 +1,12 @@
+name: Merge label guard
+description: Locate the trusted fail-closed merge label guard for immediate pre-write checks.
+outputs:
+  script:
+    description: Path to the guard; exit 0 allows, exit 3 holds, other exits fail closed.
+    value: ${{ steps.locate.outputs.script }}
+runs:
+  using: composite
+  steps:
+    - id: locate
+      shell: bash
+      run: echo "script=${GITHUB_ACTION_PATH}/guard.sh" >> "$GITHUB_OUTPUT"

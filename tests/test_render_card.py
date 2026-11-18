@@ -175,3 +175,13 @@ class TestWritePlaceholderCards:
         png_signature = b"\x89PNG\r\n\x1a\n"
         assert out.read_bytes().startswith(png_signature)
         assert dark.read_bytes().startswith(png_signature)
+
+    def test_writes_card_placeholder_marker(self, tmp_path, monkeypatch):
+        import os
+        # _card_placeholder is written to the working directory (cwd), not the
+        # output path. Point tmp_path at cwd for the duration of the call.
+        monkeypatch.chdir(tmp_path)
+        render_card._write_placeholder_cards(str(tmp_path / "release-card.png"))
+        marker = tmp_path / "_card_placeholder"
+        assert marker.exists()
+        assert marker.read_text() == ""

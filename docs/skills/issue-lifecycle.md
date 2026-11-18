@@ -183,6 +183,11 @@ this preview interface/runtime; the fixed repository and read-only permissions
 remain mandatory. Replace the preview interface with `@v1` after publication;
 production callers always use `reusable-issue-lifecycle.yml@v1`.
 
+The structural preflight rejects broad `cncf/prow-github-actions` reusable jobs
+and direct steps alongside the lifecycle caller. Keep the constrained
+`projectbluefin/actions/prow-labels` wrapper; its internal pinned upstream action
+does not grant a second consumer workflow broad label or merge authority.
+
 ## Common Rationalizations
 
 - “The bot restored the label, so use its latest event.” Filter provenance first;

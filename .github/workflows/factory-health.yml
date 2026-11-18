@@ -92,10 +92,8 @@ jobs:
             echo "fallback_issue_repo=${GITHUB_REPOSITORY}"
           } >> "${GITHUB_OUTPUT}"
 
-          # A misrouted alert lands without the priority/p0, area/ci and
-          # kind/bug labels, because those labels only exist in the intended
-          # repo. Say so in the body so the issue is self-describing wherever
-          # it ends up.
+          # A misrouted alert may lack the supported priority/critical-urgent
+          # and kind/bug labels. Keep the issue self-describing wherever it lands.
           misroute_banner=''
           if [[ "${ALERT_ROUTING}" == "fallback" ]]; then
             misroute_banner=$(cat <<EOF
@@ -249,9 +247,6 @@ jobs:
             row=$(monitor_pipeline "${repo}" "${pipeline}" "${workflow}")
             results=$(jq --argjson row "${row}" '. + [$row]' <<<"${results}")
           done <<'EOF'
-          projectbluefin/bluefin|Build|Testing Images
-          projectbluefin/bluefin|E2E|Nightly E2E
-          projectbluefin/bluefin|Promote|Promote testing to main
           projectbluefin/dakota|Build|Build Bluefin dakota
           projectbluefin/dakota|Promote|Publish Bluefin dakota
           projectbluefin/common|Build|Build
@@ -359,7 +354,7 @@ jobs:
             --jq '.[].name')
 
           label_args=()
-          for label in priority/p0 area/ci kind/bug; do
+          for label in priority/critical-urgent kind/bug; do
             if grep -Fxq "${label}" <<<"${existing_labels}"; then
               label_args+=(--label "${label}")
             else

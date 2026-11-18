@@ -44,6 +44,50 @@ Upgrades podman from Ubuntu **resolute** (26.04) on `ubuntu-24.04` runner images
 
 Installs optional tools (`just`, `cosign`, `oras`, `syft`) via `install-tools` JSON array input.
 
+### Cached Ubuntu packages
+
+`apt-packages` accepts space-separated Ubuntu package names (default `""`, no extra
+install). For example, set `update-podman: "false"` and
+`apt-packages: qemu-system-x86` to prepare a VM runner. Packages install with
+`--no-install-recommends` from the runner's own Ubuntu sources, **before** adding
+the resolute source. This works independently of the Podman upgrade on both
+Ubuntu 24.04 and 26.04. Release selectors, versions, and apt options are not
+accepted as package names.
+
+Both installs use `setup-runner/apt-cache.sh`: on a hit, restore the staged `.deb`
+archives and package lists, then install with `--no-download` and **no** `apt update`,
+so a usable cache survives Ubuntu mirror outages. The cache is never a trust root:
+each cached `InRelease` must verify with the runner's apt keyrings (`gpgv`), every
+cached list in its group must match the signed hashes, and only verified lists are
+restored. A list apt keeps recompressed locally (for example `…_Packages.lz4`) is checked by
+hashing its decompressed content against the signed uncompressed entry. apt then checks each `.deb` against those lists. If verification or the
+offline install fails, the script falls back to the retry/timeout-protected
+`apt update` and install, which fails if the mirror is down. The log says why: one line
+per cached `InRelease` (verified, or which file failed), and on a fallback a
+`apt cache: N package(s) not in the cache` group listing the `.deb`s apt still wanted.
+Misses stage only regular `.deb` and list files, excluding locks and working directories,
+then chown the staging folder to the runner user. Never cache the root-owned apt
+directories directly: unreadable lock/partial files make cache saves fail. Also
+preserve downloaded packages with `Binary::apt::APT::Keep-Downloaded-Packages=true`;
+`apt` otherwise deletes them.
+
+Native keys start with `apt-pkgs-`; Podman keys start with `apt-resolute-podman-`.
+Both include `ImageOS`, architecture, `ImageVersion`, the hash of the sorted
+native package list, and the ISO week. Image version isolation matters because
+preinstalled dependency versions change between runner images. The native list
+also affects Podman's dependency baseline when both installs run. Do not add
+broad restore prefixes: lists and archives from another image or package set
+may not match. Cache entries are immutable; a stale entry only
+causes re-downloads until the key rotates.
+
+For hosted validation, run the same caller twice on fresh runners in the same
+week and image version: confirm the first saves successfully, and the second
+reports a hit, skips `apt update`, downloads no package bytes, and prints the expected
+tool versions. Test the native-only input separately from the resolute upgrade.
+
+References: [cache restore outputs](https://github.com/actions/cache/blob/main/restore/README.md#outputs)
+and [cache save inputs](https://github.com/actions/cache/blob/main/save/README.md#inputs).
+
 ### Native rootful overlay mode
 
 Set `native-overlay: "true"` when a build mounts a rootful Podman image, places a kernel overlay
@@ -418,6 +462,8 @@ individual shellcheck arguments.
 
 **When updating hadolint or taiki-e/install-action SHA pins:** edit only the pin in `bootc-build/validate-pr/action.yml`. All consuming repos pick up the update automatically when their `projectbluefin/actions` Renovate bump PR merges.
 
+**Pin `taiki-e/install-action` to a release tag, never a per-tool tag:** use `taiki-e/install-action@<SHA of a vX.Y.Z tag> # vX.Y.Z` with `with: tool: <name>`. Per-tool tags such as `just` are force-moved to new orphan commits, so a SHA taken from one is on no tag or branch upstream. `gh actions-lock` rejects such a pin as `unreachable-pin`, and every consumer that locks its workflows fails `gh actions-lock --verify`.
+
 **Pinning rule for PR tooling:** treat `.pre-commit-config.yaml` hook repos and `validate-pr` package installs with the same supply-chain discipline as `uses:` lines. External pre-commit hook repos must use full commit SHAs with inline release comments, `pre-commit` must be installed at an exact version while clearing inherited `PIP_CONSTRAINT` values from consumer repos, and `shellcheck` must be pinned to the Ubuntu 24.04 package version used by GitHub runners.
 
 ---
@@ -445,7 +491,7 @@ Inputs:
 | `github-token` | required | Token for SARIF upload and fallback issue creation |
 | `gh-token` | `""` | Optional token override for `gh issue create` |
 
-In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. The auto-issue step deduplicates per CVE ID by searching open issues before filing and only applies `priority/p0`, `area/security`, and `kind/bug` labels when those labels already exist in the caller repo. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing actionable CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the reporting threshold (default: `CRITICAL`).
+In `reusable-build.yml`, `scan-image` stays report-only on every event, and `create-issue` is enabled only for non-PR runs in `projectbluefin/*` repos. The auto-issue step deduplicates per CVE ID by searching open issues before filing and only applies `priority/critical-urgent`, `area/security`, and `kind/bug` labels when those labels already exist in the caller repo. This preserves the org-wide prohibition on automated writes to `ublue-os/*` while still auto-filing actionable CVE issues for Bluefin-managed images. The `scan-severity-threshold` workflow input lets callers override the reporting threshold (default: `CRITICAL`).
 
 **Permissions required:** the calling job needs `security-events: write` for SARIF upload. If `create-issue: true`, it also needs `issues: write`. Both are already set on the `build_container` job in `reusable-build.yml`.
 
@@ -494,12 +540,14 @@ calling workflow
             2. fetch previous SBOM from last GitHub Release (*.spdx.json asset)
             3. sbom_diff.py  → versions.json  (added / changed / removed)
             4. render_card.py → release-card.png + release-card-dark.png
-               (falls back to placeholder PNGs if Playwright/browser rendering is unavailable)
+               (falls back to placeholder PNGs + _card_placeholder marker if
+                Playwright/browser rendering is unavailable; the release then
+                drops the card instead of publishing a blank one)
             5. render_notes.py → release-notes.md
                  • key components table (notable packages)
                  • collapsible full SPDX package inventory
                  • supply chain section (cosign, oras, slsa-verifier)
-            6. gh release create (attaches card PNGs + SBOM)
+            6. gh release create (attaches card PNGs when drawn + SBOM)
 ```
 
 ### Inputs
@@ -528,8 +576,11 @@ Outputs: `release-url` (URL of the created release).
 
 **Reliability behavior:** `create-release` no longer installs Playwright/Chromium at runtime.
 `render_card.py` attempts browser rendering if Playwright is already present; otherwise it writes
-placeholder `release-card*.png` assets and continues so release publication is never blocked by
-browser provisioning.
+placeholder `release-card*.png` assets plus a `_card_placeholder` marker and continues so release
+publication is never blocked by browser provisioning. When the marker is present the release
+**drops the card** instead of publishing it: `render_notes.py --skip-card` omits the card line and
+`gh release create` attaches no `release-card*.png`. When Playwright is present the card is drawn,
+shown and attached exactly as before.
 
 ### Supply chain verification section (user-facing)
 

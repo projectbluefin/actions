@@ -56,17 +56,20 @@ nodes=$(gh api graphql \
 # GraphQL reports a GitHub App author as the bare slug ("mergeraptor"),
 # while the REST/`gh pr list` view reports "app/mergeraptor" and a
 # legacy bot user as "renovate[bot]". Match every spelling.
-pr_number=$(jq -r \
-  --arg head "$HEAD_SHA" \
-  --arg require "$REQUIRE_AUTO_MERGE" '
-    .[]
+candidates=$(jq \
+  --arg head "$HEAD_SHA" '
+    [.[]
     | select(.headRefOid == $head)
     | select(.isDraft | not)
     | select(.mergeable != "CONFLICTING")
     | select((.author.login | ascii_downcase | sub("^app/"; "") | sub("\\[bot\\]$"; ""))
-             | . == "mergeraptor" or . == "renovate")
-    | select($require != "true" or .autoMergeRequest != null)
-    | .number' <<<"$nodes" | head -1)
+             | . == "mergeraptor" or . == "renovate")]' <<<"$nodes")
+pr_number=$(jq -r --arg require "$REQUIRE_AUTO_MERGE" '
+    .[] | select($require != "true" or .autoMergeRequest != null)
+    | .number' <<<"$candidates" | head -1)
+# A queued PR may no longer have an autoMergeRequest. It still needs
+# hold withdrawal, but must not gain merge qualification from that.
+label_pr_number=$(jq -r '.[0].number // empty' <<<"$candidates")
 
 if [ -z "$pr_number" ]; then
   echo "No qualifying Renovate/Mergeraptor PR for SHA $HEAD_SHA on base $BASE_BRANCH — skipping"
@@ -74,6 +77,7 @@ else
   echo "Found qualifying PR #$pr_number"
 fi
 echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+echo "label_pr_number=$label_pr_number" >> "$GITHUB_OUTPUT"
 EOF
 )
 
@@ -173,6 +177,7 @@ found_pr() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"No qualifying Renovate/Mergeraptor PR"* ]]
   [ "$(found_pr)" = "" ]
+  grep -Fxq 'label_pr_number=13' "$GITHUB_OUTPUT"
 }
 
 @test "require_auto_merge=false merges a bot PR even with null autoMergeRequest" {

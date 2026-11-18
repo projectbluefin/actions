@@ -65,7 +65,10 @@ def _load_variants(path: str | None) -> list[dict] | None:
 
 # ── Section builders ──────────────────────────────────────────────────────────
 
-def _section_card(tag: str, repo: str) -> str:
+def _section_card(tag: str, repo: str, skip: bool = False) -> str:
+    """Render the release card image line. Returns '' when skip is True."""
+    if skip:
+        return ""
     url = f"https://github.com/{repo}/releases/download/{tag}/release-card.png"
     return f"![Release card]({url})\n"
 
@@ -468,6 +471,8 @@ def main() -> None:
                     help="Path to write full notes when truncation occurs")
     ap.add_argument("--skip-screenshot",  action="store_true",
                     help="Omit desktop screenshot section from release notes")
+    ap.add_argument("--skip-card",        action="store_true",
+                    help="Omit the release card image line from release notes")
     args = ap.parse_args()
 
     for path, label in [(args.versions, "--versions"), (args.sbom, "--sbom")]:
@@ -493,7 +498,7 @@ def main() -> None:
     total       = versions.get("total_packages", 0)
 
     sections = [
-        _section_card(args.tag, args.repo),
+        _section_card(args.tag, args.repo, skip=args.skip_card),
         "",
         _section_variants(variants),
         "",
@@ -540,7 +545,7 @@ def main() -> None:
             f"They are attached as [`{asset_ref}`]({asset_ref})._\n"
         )
         compact_sections = [
-            _section_card(args.tag, args.repo),
+            _section_card(args.tag, args.repo, skip=args.skip_card),
             "",
             _section_variants(variants),
             "",

@@ -5,8 +5,7 @@ on:
     - cron: '0 4 * * 1'  # Mondays 04:00 UTC
   workflow_dispatch:
 
-permissions:
-  packages: write
+permissions: {}
 
 concurrency:
   group: ghcr-cleanup
@@ -16,6 +15,8 @@ jobs:
   cleanup:
     name: Prune old GHCR images
     runs-on: ubuntu-24.04
+    permissions:
+      packages: write  # ghcr-cleanup deletes package versions with GITHUB_TOKEN
     steps:
       - name: Prune old images — bluefin family
         uses: $/bootc-build/ghcr-cleanup

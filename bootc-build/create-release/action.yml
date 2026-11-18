@@ -225,6 +225,7 @@ runs:
 
     # ── Render release card ───────────────────────────────────────────────────
     - name: Render release card
+      id: card
       shell: bash
       env:
         TAG:          ${{ inputs.tag }}
@@ -259,6 +260,14 @@ runs:
           --docs-url     "${DOCS_URL}" \
           --output       release-card.png
 
+        # The script writes _card_placeholder only when it could not draw the
+        # card (no Playwright). Surface that so later steps skip the card.
+        if [[ -f "_card_placeholder" ]]; then
+          echo "rendered=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "rendered=true" >> "$GITHUB_OUTPUT"
+        fi
+
     # ── Render release notes ──────────────────────────────────────────────────
     - name: Render release notes
       shell: bash
@@ -281,6 +290,8 @@ runs:
         if [[ "${ENABLE_SCREENSHOT}" == "false" ]]; then
           SCREENSHOT_ARG=(--skip-screenshot)
         fi
+        CARD_ARG=()
+        [[ "${{ steps.card.outputs.rendered }}" == "false" ]] && CARD_ARG=(--skip-card)
         VARIANTS_ARG=()
         [[ -f "_variants.json" ]]          && VARIANTS_ARG=(--variants _variants.json)
         EXTRA_ARG=()
@@ -305,7 +316,8 @@ runs:
           "${VARIANTS_ARG[@]}" \
           "${EXTRA_ARG[@]}" \
           "${GITHUB_NOTES_ARG[@]}" \
-          "${SCREENSHOT_ARG[@]}"
+          "${SCREENSHOT_ARG[@]}" \
+          "${CARD_ARG[@]}"
 
     # ── Resolve SBOM asset filename ───────────────────────────────────────────
     - name: Resolve SBOM filename
@@ -351,6 +363,7 @@ runs:
         PRERELEASE:    ${{ inputs.prerelease }}
         OVERFLOW_FOUND: ${{ steps.overflow.outputs.found }}
         SBOM_FILENAME: ${{ steps.sbom-name.outputs.filename }}
+        CARD_RENDERED: ${{ steps.card.outputs.rendered }}
       run: |
         set -euo pipefail
 
@@ -373,14 +386,22 @@ runs:
           OVERFLOW_ASSETS+=("release-notes-full.md")
         fi
 
+        # Attach the release card only when it was actually drawn. When
+        # Playwright is missing the card is a blank placeholder, so the
+        # release omits it instead of publishing a blank image.
+        CARD_ASSETS=()
+        if [[ "${CARD_RENDERED}" == "true" ]]; then
+          CARD_ASSETS+=("release-card.png")
+          CARD_ASSETS+=("release-card-dark.png")
+        fi
+
         URL=$(gh release create "${TAG}" \
           --repo           "${REPO}" \
           --title          "${TITLE}" \
           --notes-file     release-notes.md \
           ${DRAFT_FLAG} \
           ${PRERELEASE_FLAG} \
-          release-card.png \
-          release-card-dark.png \
+          "${CARD_ASSETS[@]}" \
           "${SBOM_FILENAME}" \
           "${OVERFLOW_ASSETS[@]}" \
           | tail -n1)
@@ -392,4 +413,4 @@ runs:
     - name: Cleanup
       if: always()
       shell: bash
-      run: rm -f _versions.json _notable_packages.json _variants.json _extra_components.json _github_notes.json release-notes-full.md
+      run: rm -f _versions.json _notable_packages.json _variants.json _extra_components.json _github_notes.json release-notes-full.md _card_placeholder

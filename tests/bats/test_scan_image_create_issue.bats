@@ -25,7 +25,7 @@ setup() {
 
   export GH_LOG="${TEST_TMP}/gh.log"
   export GH_TOKEN_LOG="${TEST_TMP}/gh-token.log"
-  export GH_LABELS_JSON='[{"name":"priority/p0"},{"name":"area/security"},{"name":"kind/bug"}]'
+  export GH_LABELS_JSON='[{"name":"priority/critical-urgent"},{"name":"area/security"},{"name":"kind/bug"}]'
   export GH_OPEN_DIR="${TEST_TMP}/open"
   export GH_CREATED_BODY="${TEST_TMP}/created-body.md"
   export GH_FAIL=""
@@ -213,7 +213,7 @@ ONE_CVE='[{"cve":"CVE-2026-0001","package":"openssl","installed":"3.0.1","fixed"
   run bash -c "$CREATE_ISSUE_LOGIC"
   [ "$status" -eq 0 ]
   run create_args
-  [[ "$output" == *$'--label\npriority/p0'* ]]
+  [[ "$output" == *$'--label\npriority/critical-urgent'* ]]
   [[ "$output" == *$'--label\narea/security'* ]]
   [[ "$output" == *$'--label\nkind/bug'* ]]
 }
@@ -225,7 +225,7 @@ ONE_CVE='[{"cve":"CVE-2026-0001","package":"openssl","installed":"3.0.1","fixed"
   [ "$status" -eq 0 ]
   run create_args
   [[ "$output" == *$'--label\narea/security'* ]]
-  [[ "$output" != *"priority/p0"* ]]
+  [[ "$output" != *"priority/critical-urgent"* ]]
   [[ "$output" != *"kind/bug"* ]]
   [[ "$output" != *"unrelated"* ]]
 }

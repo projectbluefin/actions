@@ -45,6 +45,7 @@ For private vulnerability reporting, see [SECURITY.md](SECURITY.md).
 | [`.github/actions/discord-release-notify`](.github/actions/discord-release-notify/) | Post a release card to a Discord forum webhook (no-op without a webhook) |
 | [`.github/actions/render-pr-body`](.github/actions/render-pr-body/) | Render the testing-to-stable promotion PR body |
 | [`.github/actions/render-gate-section`](.github/actions/render-gate-section/) | Replace the gate checklist section of a promotion PR body in place |
+| [`.github/actions/merge-label-guard`](.github/actions/merge-label-guard/) | Locate the fail-closed hold policy invoked immediately before merge/enrollment writes |
 | [`actions/check-token-health`](actions/check-token-health/) | Fail fast when a token is expired, revoked, or missing required scopes |
 
 ## Reusable Workflows

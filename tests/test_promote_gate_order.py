@@ -87,7 +87,7 @@ def test_explicit_gate_failure_opens_actionable_issue():
     assert "report-gate-failure" in jobs
     assert "needs.gate.result == 'failure'" in jobs["report-gate-failure"]["if"]
     script = jobs["report-gate-failure"]["steps"][0]["with"]["script"]
-    assert "priority/p1" in script
+    assert "priority/important-soon" in script
 
 
 def test_auto_merge_defaults_to_todays_rendered_body():

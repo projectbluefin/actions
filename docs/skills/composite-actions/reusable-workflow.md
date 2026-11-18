@@ -199,7 +199,7 @@ must:
 An absent status is a neutral waiting state: digest and signature checks still
 run, the PR receives `release/pending`, but the workflow stays green and does
 not enqueue. An explicit producer failure, digest failure, or signature failure
-fails closed, marks `release/blocked`, and opens or updates a `priority/p1`
+fails closed, marks `release/blocked`, and opens or updates a `priority/important-soon`
 issue. A later passing gate closes that issue. Because status is attached to an
 immutable commit, it remains valid for that commit and needs no age-based
 revalidation.
@@ -451,6 +451,7 @@ Do not use this skill to:
 - Passing bare unvalidated JSON strings into matrix dimensions without decoding.
 - Resolving image digests multiple times across gates instead of carrying a single resolved digest.
 - Mismatched `projectbluefin/testsuite` e2e pins between the release gate and consuming repos.
+- `secrets: inherit` on a call to a first-party reusable workflow that signs releases: the finding is accepted by design, so it must be baselined in `.github/zizmor.yml` on the exact `uses:` line zizmor reports. A stale baseline line number is what breaks the audit check on unrelated PRs (#767); never delete the inheritance, that drops the signing/App credentials the release gate verifies with.
 
 ## Verification
 
@@ -459,3 +460,4 @@ Do not use this skill to:
 - [ ] Internal composite action invocations use `$/bootc-build/...` self-repo syntax.
 - [ ] Output digests are verified immutable SHA-256 strings (`sha256:...`).
 - [ ] Actionlint and consumer contract checks pass without errors.
+- [ ] Any `secrets: inherit` on a first-party reusable-workflow call is baselined in `.github/zizmor.yml` on the reported `uses:` line, and `test_zizmor_baseline_pins.py` passes.

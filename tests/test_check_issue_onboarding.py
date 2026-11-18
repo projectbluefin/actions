@@ -483,3 +483,20 @@ def test_workflow_jobs_must_be_a_mapping(consumer):
 def test_non_mapping_jobs_are_skipped_by_competing_writer_scan(consumer):
     save(consumer[0], ".github/workflows/odd.yml", {"on": {"push": {}}, "jobs": {"build": "not a job"}})
     assert failures(consumer) == ""
+
+
+@pytest.mark.parametrize("reference, direct", [
+    ("cncf/prow-github-actions/.github/workflows/prow.yml@" + "a" * 40, False),
+    ("cncf/prow-github-actions@" + "a" * 40, True),
+    ("CNCF/prow-github-actions@v3.5.0", True),
+])
+def test_broad_prow_cannot_coexist_with_constrained_lifecycle(consumer, reference, direct):
+    job = {"steps": [{"uses": reference}]} if direct else {"uses": reference}
+    save(consumer[0], ".github/workflows/prow.yml", {"on": {"issue_comment": {}}, "jobs": {"prow": job}})
+    assert "runs broad Prow alongside the constrained lifecycle" in failures(consumer)
+
+
+def test_constrained_prow_wrapper_is_not_a_competing_broad_writer(consumer):
+    save(consumer[0], ".github/workflows/wrapper.yml", {"on": {"issue_comment": {}}, "jobs": {
+        "commands": {"steps": [{"uses": "projectbluefin/actions/prow-labels@v1"}]}}})
+    assert failures(consumer) == ""

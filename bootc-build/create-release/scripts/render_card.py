@@ -349,6 +349,10 @@ def _write_placeholder_cards(output_path: str) -> None:
         f.write(png_1x1)
     with open(f"{stem}-dark{ext}", "wb") as f:
         f.write(png_1x1)
+    # Marker so the caller can tell the release not to publish the card:
+    # the placeholder is blank, so the release drops the card instead.
+    with open("_card_placeholder", "w") as f:
+        f.write("")
     print("  fallback: wrote placeholder release cards")
 
 
