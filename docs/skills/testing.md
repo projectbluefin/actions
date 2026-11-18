@@ -310,8 +310,10 @@ uv pip compile --generate-hashes --python-version 3.15 --python-platform linux s
 
 Install with `pip install --require-hashes -r <lockfile>`. The issue-policy
 preview uses the lock from its checked-out first-party runtime, never caller data.
-For older runtimes without that lock, the workflow pins the PyYAML source
-distribution and its hash inline; update that fallback when changing the parser.
+The preview uses Python 3.14 and requires wheels, avoiding unhashed isolated
+build dependencies. For older runtimes without a lock, it pins the Linux x86-64
+PyYAML wheel and its hash inline; update that fallback when changing the parser
+or preview interpreter.
 
 `pytest-cov` ships as a pytest plugin — no extra import needed in test files.
 
