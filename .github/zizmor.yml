@@ -61,5 +61,9 @@ rules:
     ignore:
       # Calls a first-party reusable workflow in this repository, which
       # needs the signing/App credentials of the caller; an explicit secret
-      # list is a follow-up, not a regression.
-      - reusable-promote-squash.yml:542
+      # list is a follow-up, not a regression. zizmor reports this finding on
+      # the uses: line, so the pin must sit on line 545 (the uses:), not on a
+      # permissions entry above it; a stale line number is what broke the
+      # audit check on unrelated PRs (#767). Never remove secrets: inherit
+      # here: that drops the credentials the release gate signs with.
+      - reusable-promote-squash.yml:545
