@@ -36,9 +36,11 @@ on:
       actions_ref:
         description: >-
           Ref of actions_repository to check out the validator script from.
+          Empty selects the commit the caller already trusted (the reusable's
+          own pinned commit) so the workflow YAML and script never drift.
           Override only to validate a fork or branch of this reusable itself.
         type: string
-        default: v1
+        default: ''
 
 permissions: {}
 
@@ -57,7 +59,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.actions_repository }}
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ inputs.actions_ref || job.workflow_sha }}
           path: thin-caller-gate
 
       - name: Set up Python
