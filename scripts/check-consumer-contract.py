@@ -56,10 +56,6 @@ def check_contract(contract: dict, verbose: bool) -> list[str]:
     def check_section(label: str, path_str: str, required: list[str]) -> None:
         path = REPO_ROOT / path_str
         live = get_live_inputs(path)
-        if not live and path.exists():
-            if verbose:
-                print(f"  WARN: {label}: could not parse inputs from {path_str}")
-            return
         if not path.exists():
             failures.append(f"{label}: file missing — {path_str}")
             return

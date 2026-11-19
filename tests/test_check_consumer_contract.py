@@ -173,6 +173,130 @@ class TestCheckContract:
         assert failures == []
 
 
+# ── Empty-input guard (issue #771) ────────────────────────────────────────────
+
+class TestEmptyInputGuard:
+    """Removing every declared input must fail when the snapshot still requires one.
+
+    The old guard returned early (skipped) whenever the live file had no inputs,
+    so deleting the last required input reported success. These cases pin the
+    repair: an empty live set still fails against a non-empty required list.
+    """
+
+    def _write_composite(self, tmp_path: Path, body: str) -> Path:
+        d = tmp_path / "bootc-build" / "example"
+        d.mkdir(parents=True)
+        p = d / "action.yml"
+        p.write_text(f"name: example\n{body}runs:\n  using: composite\n  steps: []\n")
+        return p
+
+    def _write_workflow(self, tmp_path: Path, body: str) -> Path:
+        d = tmp_path / ".github" / "workflows"
+        d.mkdir(parents=True)
+        p = d / "reusable-build.yml"
+        p.write_text(f"on:\n  workflow_call:\n{body}jobs: {{}}\n")
+        return p
+
+    def test_composite_absent_inputs_fails(self, tmp_path, monkeypatch):
+        self._write_composite(tmp_path, "")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "composite_actions": {
+                "example": {"path": "bootc-build/example/action.yml", "required_inputs": ["must-keep"]}
+            }
+        }
+        failures = check_contract(contract, verbose=False)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+    def test_composite_empty_map_inputs_fails(self, tmp_path, monkeypatch):
+        self._write_composite(tmp_path, "inputs: {}\n")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "composite_actions": {
+                "example": {"path": "bootc-build/example/action.yml", "required_inputs": ["must-keep"]}
+            }
+        }
+        failures = check_contract(contract, verbose=False)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+    def test_composite_null_inputs_fails(self, tmp_path, monkeypatch):
+        self._write_composite(tmp_path, "inputs:\n")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "composite_actions": {
+                "example": {"path": "bootc-build/example/action.yml", "required_inputs": ["must-keep"]}
+            }
+        }
+        failures = check_contract(contract, verbose=False)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+    def test_workflow_absent_inputs_fails(self, tmp_path, monkeypatch):
+        self._write_workflow(tmp_path, "    inputs:\n")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "reusable_workflow": {
+                "path": ".github/workflows/reusable-build.yml", "required_inputs": ["must-keep"]
+            }
+        }
+        failures = check_contract(contract, verbose=False)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+    def test_workflow_empty_map_inputs_fails(self, tmp_path, monkeypatch):
+        self._write_workflow(tmp_path, "    inputs: {}\n")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "reusable_workflow": {
+                "path": ".github/workflows/reusable-build.yml", "required_inputs": ["must-keep"]
+            }
+        }
+        failures = check_contract(contract, verbose=False)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+    def test_workflow_null_inputs_fails(self, tmp_path, monkeypatch):
+        self._write_workflow(tmp_path, "    inputs:\n")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "reusable_workflow": {
+                "path": ".github/workflows/reusable-build.yml", "required_inputs": ["must-keep"]
+            }
+        }
+        failures = check_contract(contract, verbose=False)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+    def test_zero_required_inputs_still_passes_with_empty_live(self, tmp_path, monkeypatch):
+        # An interface the snapshot requires nothing of must keep passing,
+        # even when the live file declares no inputs at all.
+        self._write_composite(tmp_path, "")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "composite_actions": {
+                "example": {"path": "bootc-build/example/action.yml", "required_inputs": []}
+            }
+        }
+        assert check_contract(contract, verbose=False) == []
+
+    def test_verbose_contract_returns_missing_in_failures(self, tmp_path, monkeypatch):
+        # check_contract never prints; verbose mode only adds the per-input "OK"
+        # lines. The missing input still surfaces in the returned list, and
+        # main() prints it to stderr. Verify the list here.
+        self._write_composite(tmp_path, "")
+        monkeypatch.setattr(_mod, "REPO_ROOT", tmp_path)
+        contract = {
+            "composite_actions": {
+                "example": {"path": "bootc-build/example/action.yml", "required_inputs": ["must-keep"]}
+            }
+        }
+        failures = check_contract(contract, verbose=True)
+        assert len(failures) == 1
+        assert "must-keep" in failures[0]
+
+
 # ── Smoke test against real repo ──────────────────────────────────────────────
 
 class TestRealContract:
