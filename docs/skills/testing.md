@@ -36,6 +36,26 @@ which copy gets imported.
 
 Coverage gate: `--cov-fail-under=75`
 
+### Consumer-contract guard: an empty live set still fails
+
+`scripts/check-consumer-contract.py` keeps external consumers (aurora, bazzite) from losing
+required action inputs. `get_live_inputs()` returns an empty set when an action or reusable
+workflow declares no inputs — that is a *valid* interface when the snapshot requires nothing, but
+it is also the exact shape produced when the last required input is deleted.
+
+`check_contract()` must compare the snapshot's required inputs against that live set and fail on
+any miss. It must **not** return early (or skip) when the live set is empty: doing so turns a
+removed required input into a silent pass. The guard keeps its missing-file diagnostic for files
+that are gone, but for a file that exists it iterates the required inputs against whatever is
+live — empty or not. An interface the snapshot requires nothing of still passes, because the
+required list is then empty and the loop records no failures.
+
+Regression coverage exercises all three "no inputs" shapes — absent `inputs:` key, `inputs: {}`
+empty map, and `inputs:` with a null value — for both composite actions and reusable workflows,
+plus a zero-required-input interface that must keep passing. See
+`tests/test_check_consumer_contract.py` (`TestEmptyInputGuard`) and
+`tests/test_check_consumer_contract_cli.py`.
+
 ### Shell scripts (bats)
 
 | Script | Test file |
