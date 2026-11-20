@@ -36,6 +36,26 @@ which copy gets imported.
 
 Coverage gate: `--cov-fail-under=75`
 
+### Consumer-contract guard: an empty live set still fails
+
+`scripts/check-consumer-contract.py` keeps external consumers (aurora, bazzite) from losing
+required action inputs. `get_live_inputs()` returns an empty set when an action or reusable
+workflow declares no inputs — that is a *valid* interface when the snapshot requires nothing, but
+it is also the exact shape produced when the last required input is deleted.
+
+`check_contract()` must compare the snapshot's required inputs against that live set and fail on
+any miss. It must **not** return early (or skip) when the live set is empty: doing so turns a
+removed required input into a silent pass. The guard keeps its missing-file diagnostic for files
+that are gone, but for a file that exists it iterates the required inputs against whatever is
+live — empty or not. An interface the snapshot requires nothing of still passes, because the
+required list is then empty and the loop records no failures.
+
+Regression coverage exercises all three "no inputs" shapes — absent `inputs:` key, `inputs: {}`
+empty map, and `inputs:` with a null value — for both composite actions and reusable workflows,
+plus a zero-required-input interface that must keep passing. See
+`tests/test_check_consumer_contract.py` (`TestEmptyInputGuard`) and
+`tests/test_check_consumer_contract_cli.py`.
+
 ### Shell scripts (bats)
 
 | Script | Test file |
@@ -65,6 +85,10 @@ node --test tests/node/*.test.mjs
 ```
 
 The bats suite runs in the `bats` job in `unit-tests.yml`. Run locally:
+
+CI installs bats from `.github/tools/bats/package-lock.json` with
+`npm ci --ignore-scripts` and adds its local binary directory to `GITHUB_PATH`.
+Update the package manifest and regenerate the lock together when bumping bats.
 
 ```bash
 bats tests/bats/test_resolve_digests.bats
@@ -293,13 +317,23 @@ finally:
 Do not use `__wrapped__` introspection — it only applies to `functools.wraps`-decorated functions
 and silently has no effect on plain functions.
 
-## requirements-test.txt
+## Hash-locked Python requirements
 
+The loose test requirements live in `tests/requirements-test.in`; the shared
+workflow parser requirement lives in `scripts/requirements.in`. Regenerate their
+hash-locked files for the CI interpreter after changing either input:
+
+```bash
+uv pip compile --generate-hashes --python-version 3.15 --python-platform linux tests/requirements-test.in -o tests/requirements-test.txt
+uv pip compile --generate-hashes --python-version 3.15 --python-platform linux scripts/requirements.in -o scripts/requirements.txt
 ```
-pytest>=8.0
-pytest-cov>=4.0
-pyyaml>=6.0
-```
+
+Install with `pip install --require-hashes -r <lockfile>`. The issue-policy
+preview uses the lock from its checked-out first-party runtime, never caller data.
+The preview uses Python 3.14 and requires wheels, avoiding unhashed isolated
+build dependencies. For older runtimes without a lock, it pins the Linux x86-64
+PyYAML wheel and its hash inline; update that fallback when changing the parser
+or preview interpreter.
 
 `pytest-cov` ships as a pytest plugin — no extra import needed in test files.
 

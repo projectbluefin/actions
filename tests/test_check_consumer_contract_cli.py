@@ -102,6 +102,97 @@ def test_cli_validation_failure_exits_1(tmp_path):
     assert "required input 'image-name' missing" in result.stderr
 
 
+def _write_reusable_workflow(tmp_path: Path, body: str) -> None:
+    d = tmp_path / ".github" / "workflows"
+    d.mkdir(parents=True)
+    (d / "reusable-build.yml").write_text(
+        "on:\n  workflow_call:\n" + body + "jobs: {}\n"
+    )
+
+
+def _write_contract_dict(tmp_path: Path, contract: dict) -> None:
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (docs_dir / "consumer-contract.yml").write_text(yaml.dump(contract))
+
+
+def test_cli_composite_absent_inputs_fails(tmp_path):
+    # Issue #771: a composite action that declares no inputs must still fail
+    # when the snapshot requires one.
+    script = _copy_script(tmp_path)
+    action_dir = tmp_path / "bootc-build" / "example"
+    action_dir.mkdir(parents=True)
+    (action_dir / "action.yml").write_text(
+        "name: example\nruns:\n  using: composite\n  steps: []\n"
+    )
+    _write_contract_dict(tmp_path, {
+        "composite_actions": {
+            "example": {"path": "bootc-build/example/action.yml", "required_inputs": ["must-keep"]}
+        }
+    })
+
+    result = _run_script(script)
+
+    assert result.returncode == 1
+    assert "required input 'must-keep' missing" in result.stderr
+
+
+def test_cli_workflow_null_inputs_fails(tmp_path):
+    # Issue #771: a reusable workflow with a null inputs block must fail too.
+    script = _copy_script(tmp_path)
+    _write_reusable_workflow(tmp_path, "    inputs:\n")
+    _write_contract_dict(tmp_path, {
+        "reusable_workflow": {
+            "path": ".github/workflows/reusable-build.yml", "required_inputs": ["must-keep"]
+        }
+    })
+
+    result = _run_script(script)
+
+    assert result.returncode == 1
+    assert "required input 'must-keep' missing" in result.stderr
+
+
+def test_cli_zero_required_inputs_passes_with_empty_live(tmp_path):
+    # An interface the snapshot requires nothing of keeps passing.
+    script = _copy_script(tmp_path)
+    action_dir = tmp_path / "bootc-build" / "example"
+    action_dir.mkdir(parents=True)
+    (action_dir / "action.yml").write_text(
+        "name: example\nruns:\n  using: composite\n  steps: []\n"
+    )
+    _write_contract_dict(tmp_path, {
+        "composite_actions": {
+            "example": {"path": "bootc-build/example/action.yml", "required_inputs": []}
+        }
+    })
+
+    result = _run_script(script)
+
+    assert result.returncode == 0
+    assert "Consumer contract OK" in result.stdout
+
+
+def test_cli_verbose_identifies_missing_input(tmp_path):
+    # Issue #771: verbose CLI must also exit nonzero and name the input.
+    script = _copy_script(tmp_path)
+    action_dir = tmp_path / "bootc-build" / "example"
+    action_dir.mkdir(parents=True)
+    (action_dir / "action.yml").write_text(
+        "name: example\nruns:\n  using: composite\n  steps: []\n"
+    )
+    _write_contract_dict(tmp_path, {
+        "composite_actions": {
+            "example": {"path": "bootc-build/example/action.yml", "required_inputs": ["must-keep"]}
+        }
+    })
+
+    result = _run_script(script, "--verbose")
+
+    assert result.returncode == 1
+    assert "required input 'must-keep' missing" in result.stderr
+
+
 def test_cli_import_failure_without_pyyaml(tmp_path):
     script = _copy_script(tmp_path)
 

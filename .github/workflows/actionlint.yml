@@ -33,13 +33,13 @@ jobs:
         with:
           python-version: '3.15'
       - name: Install workflow parser
-        run: python3 -m pip install 'pyyaml==6.0.3'
+        run: python3 -m pip install --require-hashes -r scripts/requirements.txt
 
       - name: Check self-repository references
         run: python3 scripts/check-self-repository-references.py
 
       - name: Run actionlint
-        uses: reviewdog/action-actionlint@619a81ec64ff8c0211cd6146eb2b21e8f1d7f440 # v1.81.1
+        uses: reviewdog/action-actionlint@ae857e78c1b42b3d0a49637181b09d3d56d402b4 # v1.84.1
         with:
           # Runner annotations work on every event; the job reports the required check.
           reporter: github-annotations
@@ -62,6 +62,6 @@ jobs:
       # Online audits (impostor-commit, stale-action-refs, ...) report
       # findings the baseline never saw, so no GH_TOKEN is passed either.
       - name: zizmor
-        uses: docker://ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
+        uses: docker://ghcr.io/zizmorcore/zizmor:1.32.0@sha256:3014cc8f68f663935f69b3c3e0e41f5ce102b268d97db13db0f62208747f860d
         with:
           args: --offline --format=github --min-severity=medium --min-confidence=medium .
