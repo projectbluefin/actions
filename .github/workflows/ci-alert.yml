@@ -164,6 +164,15 @@ jobs:
             echo "Green run is for ${RUN_SHA}, but main HEAD is ${head_sha}; leaving alert as-is."
             exit 0
           fi
+          # Update v1 tag also exits 0 while it waits for the other main CI workflow
+          # (update-v1-tag.yml), so a green run alone does not mean v1 moved.
+          if [[ "${WORKFLOW}" == "Update v1 tag" ]]; then
+            v1_sha=$(gh api "repos/${{ github.repository }}/commits/v1" --jq .sha)
+            if [[ "${v1_sha}" != "${head_sha}" ]]; then
+              echo "v1 is at ${v1_sha}, not main HEAD ${head_sha}; leaving alert as-is."
+              exit 0
+            fi
+          fi
           state=$(gh issue view "${EXISTING}" --repo "${{ github.repository }}" --json state --jq .state)
           if [[ "${state}" == "OPEN" ]]; then
             gh issue close "${EXISTING}" --repo "${{ github.repository }}" \
