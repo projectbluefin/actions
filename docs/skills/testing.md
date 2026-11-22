@@ -71,6 +71,7 @@ plus a zero-required-input interface that must keep passing. See
 | `setup-runner` native-overlay setup & podman source selection | `tests/bats/test_setup_runner.bats` (16 tests) |
 | `chunka` config temp-file creation + `fs.protected_regular` drift guard | `tests/bats/test_chunka.bats` (4 tests) |
 | `chunka` chunkah pull retry loop (must fail closed, not fall through on the last attempt) | `tests/bats/test_chunka_retry.bats` (6 tests) |
+| `create-release` SBOM validation, previous-SBOM fetch, tag parsing, card-rendered gating, asset list | `tests/bats/test_create_release.bats` (27 tests), kept in sync with the action by `tests/test_create_release_bats_sync.py` |
 | `factory-health.yml` pipeline status classification (threshold, sample floor, failure streak) | `tests/bats/test_factory_health_status.bats` (12 tests), kept in sync with the workflow by `tests/test_factory_health_classify_sync.py` |
 | `reusable-renovate-automerge.yml` check-rollup classification + head-moved stop | `tests/bats/test_renovate_automerge_checks.bats` (12 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |

@@ -12,10 +12,16 @@
 #   Validate SBOM        - missing file, non-SPDX JSON, valid SPDX
 #   Fetch previous SBOM  - no prior release, asset present, asset absent
 #   Write optional input - variants/extra-components written only when non-empty
-#   Render release card  - YYYY-MM-DD-SHA7 tag parsing vs. semver fallback
+#   Render release card  - YYYY-MM-DD-SHA7 tag parsing vs. semver fallback,
+#                          rendered=false when render_card.py leaves the
+#                          _card_placeholder marker, rendered=true otherwise
 #   Resolve SBOM name    - explicit sbom-filename vs. basename fallback
 #   Detect overflow      - release-notes-full.md present or not
-#   Create release       - idempotent skip, draft/prerelease flags, overflow asset
+#   Create release       - idempotent skip, draft/prerelease flags, overflow asset,
+#                          card PNGs attached only when the card was rendered
+#
+# tests/test_create_release_bats_sync.py fails when a copy below stops matching
+# the action, so re-copy the step and update these tests when that happens.
 
 # ── Step logic, verbatim from bootc-build/create-release/action.yml ──────────
 
@@ -105,6 +111,14 @@ python3 "${ACTION_PATH}/scripts/render_card.py" \
   --image-ref    "${IMAGE}" \
   --docs-url     "${DOCS_URL}" \
   --output       release-card.png
+
+# The script writes _card_placeholder only when it could not draw the
+# card (no Playwright). Surface that so later steps skip the card.
+if [[ -f "_card_placeholder" ]]; then
+  echo "rendered=false" >> "$GITHUB_OUTPUT"
+else
+  echo "rendered=true" >> "$GITHUB_OUTPUT"
+fi
 BATS_STEP_EOF
 )
 
@@ -154,14 +168,22 @@ if [[ "${OVERFLOW_FOUND}" == "true" ]]; then
   OVERFLOW_ASSETS+=("release-notes-full.md")
 fi
 
+# Attach the release card only when it was actually drawn. When
+# Playwright is missing the card is a blank placeholder, so the
+# release omits it instead of publishing a blank image.
+CARD_ASSETS=()
+if [[ "${CARD_RENDERED}" == "true" ]]; then
+  CARD_ASSETS+=("release-card.png")
+  CARD_ASSETS+=("release-card-dark.png")
+fi
+
 URL=$(gh release create "${TAG}" \
   --repo           "${REPO}" \
   --title          "${TITLE}" \
   --notes-file     release-notes.md \
   ${DRAFT_FLAG} \
   ${PRERELEASE_FLAG} \
-  release-card.png \
-  release-card-dark.png \
+  "${CARD_ASSETS[@]}" \
   "${SBOM_FILENAME}" \
   "${OVERFLOW_ASSETS[@]}" \
   | tail -n1)
@@ -194,6 +216,7 @@ setup() {
   export PRERELEASE="false"
   export OVERFLOW_FOUND="false"
   export SBOM_FILENAME=""
+  export CARD_RENDERED="true"
 }
 
 teardown() {
@@ -245,6 +268,9 @@ stub_python3() {
   cat > "${MOCK_DIR}/python3" << 'EOF'
 #!/usr/bin/env bash
 echo "$*" >> "$PY_CALL_LOG"
+# render_card.py leaves this marker in the working directory when it cannot
+# draw the card (no Playwright).
+[[ "${PY_WRITES_CARD_PLACEHOLDER:-false}" == "true" ]] && : > _card_placeholder
 exit 0
 EOF
   chmod +x "${MOCK_DIR}/python3"
@@ -401,6 +427,21 @@ setup_card_env() {
   [[ "$output" == *"--sha7 ABCDEF1"* ]]
 }
 
+@test "render card: a drawn card reports rendered=true" {
+  setup_card_env
+  run bash -c "$RENDER_CARD_LOGIC"
+  [ "$status" -eq 0 ]
+  [ "$(output_value rendered)" = "true" ]
+}
+
+@test "render card: the placeholder marker reports rendered=false" {
+  setup_card_env
+  export PY_WRITES_CARD_PLACEHOLDER="true"
+  run bash -c "$RENDER_CARD_LOGIC"
+  [ "$status" -eq 0 ]
+  [ "$(output_value rendered)" = "false" ]
+}
+
 # ── Resolve SBOM filename ───────────────────────────────────────────────────
 
 @test "resolve sbom filename: explicit sbom-filename wins over the source basename" {
@@ -505,4 +546,15 @@ setup_card_env() {
   [ "$status" -eq 0 ]
   run cat "$GH_CALL_LOG"
   [[ "$output" != *"release-notes-full.md"* ]]
+}
+
+@test "create release: an undrawn card leaves both card PNGs off the asset list" {
+  stub_gh
+  export CARD_RENDERED="false"
+  export SBOM_FILENAME="bluefin.spdx.json"
+  run bash -c "$CREATE_RELEASE_LOGIC"
+  [ "$status" -eq 0 ]
+  run cat "$GH_CALL_LOG"
+  [[ "$output" == *"--notes-file release-notes.md bluefin.spdx.json"* ]]
+  [[ "$output" != *"release-card"* ]]
 }
