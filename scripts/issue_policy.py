@@ -8,7 +8,7 @@ import base64
 import hashlib
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 import subprocess
 import sys
@@ -26,6 +26,9 @@ SOURCE_FILES = ("scripts/issue_policy.py", "scripts/issue_status.py", "issue-lif
                 "scripts/prow_commands.py", "prow-labels/action.yml",
                 ".github/workflows/reusable-issue-lifecycle.yml")
 EMPTY = {"", "_no response_", "no response", "none"}
+# A reporter's report waits for the reporter, but not forever. The reply window
+# closes this many days after a maintainer asks the reporter to verify the fix.
+VERIFICATION_TIMEOUT_DAYS = 14
 # Default-branch CI usually finishes within minutes of a merge; the reusable
 # lifecycle job has a 15-minute timeout, so the wait must leave room for the rest.
 MAIN_CI_WAIT_SECONDS = 600
@@ -156,6 +159,17 @@ def authorized_stage_event(timeline, facts, label):
         if any(reset and event_order(reset) > event_order(grant) for reset in resets):
             return None
     return grant
+
+
+def verification_reply_deadline(grant):
+    """When the reporter's reply window closes, counted from the human grant."""
+    started = datetime.fromisoformat(grant["created_at"].replace("Z", "+00:00"))
+    return started + timedelta(days=VERIFICATION_TIMEOUT_DAYS)
+
+
+def verification_expired(grant, now):
+    """True once the reporter had the whole reply window and did not answer."""
+    return now >= verification_reply_deadline(grant)
 
 
 def request_identity(event, record):
@@ -289,9 +303,15 @@ def _intake_labels(record, catalog):
     return wanted
 
 
-def plan(record, facts, catalog, *, migrate=False, labels_only=False):
-    """Return a proposed public label/comment/state transition without performing I/O."""
+def plan(record, facts, catalog, *, migrate=False, labels_only=False, now=None):
+    """Return a proposed public label/comment/state transition without performing I/O.
+
+    ``now`` is the clock the caller runs with. Without it the reporter's reply
+    window is never measured, so a plan stays a pure function of its inputs.
+    """
     validate_catalog(catalog)
+    if now is not None and now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     quiet = migrate or labels_only
     original = labels_of(record)
     aliases = catalog["label_aliases"] if migrate else {}
@@ -496,6 +516,8 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
         desired.add("needs-human")
 
     close = False
+    verification_timed_out = False
+    verification_deadline = None
     if stage == "needs-verification":
         verify_event = authorized_stage_event(timeline, facts, "needs-verification")
         responses = [
@@ -516,6 +538,12 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
             stage = "needs-triage"
         elif response:
             close = True
+        elif verify_event and now is not None:
+            # The report waits for the reporter, but not forever. The timeout
+            # never closes the report; it tells a maintainer that they may.
+            deadline = verification_reply_deadline(verify_event)
+            verification_deadline = deadline.date().isoformat()
+            verification_timed_out = verification_expired(verify_event, now)
 
     request_event = authorized_stage_event(timeline, facts, "needs-verification") if stage == "needs-verification" else info_event
     # Automatic missing-field requests retain one semantic anchor across bot restorations.
@@ -529,6 +557,8 @@ def plan(record, facts, catalog, *, migrate=False, labels_only=False):
         "close": close, "request_event": request_event, "request_id": request_id,
         "kind_ambiguous": kind_ambiguous, "kind": kind,
         "active_gate_labels": active_gate_labels,
+        "verification_timed_out": verification_timed_out,
+        "verification_deadline": verification_deadline,
     }
     rendered = status_report(record, facts, catalog, context)
     return {
@@ -979,6 +1009,9 @@ def main(argv=None):
             record, facts = github.collect(number, record=listed_records.get(number),
                                           quiet=args.migrate or args.labels_only or args.retire_labels)
             entries.append({"record": record, "facts": facts})
+    # One clock for the whole sweep, so every record in a run is judged against
+    # the same moment.
+    now = datetime.now(timezone.utc)
     output = [
         {
             **entry,
@@ -988,6 +1021,7 @@ def main(argv=None):
                 catalog,
                 migrate=args.migrate,
                 labels_only=args.labels_only or args.retire_labels,
+                now=now,
             ),
         }
         for entry in entries

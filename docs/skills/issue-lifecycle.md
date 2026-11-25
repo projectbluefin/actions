@@ -141,6 +141,14 @@ repository-owned. Lifecycle acceptance is not assignment or merge permission.
   Only the original human reporter's ordinary `Confirmed fixed` or
   `Still broken` reply after that authorized request can confirm or reject it.
   Later Bot projection events do not move the reply cutoff.
+- A reporter's report waits for the reporter, but not forever. The reply window
+  closes 14 days after the authorized `needs-verification` grant, and the engine
+  measures it while reconciling the issue. An expired report is never closed by
+  the bot: the status report tells a maintainer that they may close the report on
+  GitHub with a stated reason, the same way an issue is declined today, and the
+  reporter is not pinged again for an expired report. A late `Confirmed fixed`
+  still closes the report, a renewed verification request restarts the window,
+  and Bot projections neither move the reply cutoff nor extend the window.
 - Renderer output is `{comment, notify_reporter, notification_action}`. The
   runtime combines the semantic action with the authorized request identity,
   repository, and issue number for mention deduplication. Never parse Markdown
