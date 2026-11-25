@@ -257,6 +257,7 @@ Move back to `@v1` after the branch merges. Renovate manages SHA bumps automatic
 | CentOS Stream requires explicit compression | Set `force-compression: true` on both `chunka` and `push-image`. Fedora consumers must leave both at the default `false` |
 | SBOM on all non-PR streams | `testing` stream builds include SBOM — weekly promotions retag testing digests to stable, so SBOM coverage is required end-to-end |
 | `reusable-sync-branches` needs `GH_TOKEN` for protected branches | The workflow accepts an optional `GH_TOKEN` secret. Without it the merge/push uses `github.token`, which cannot bypass protected-branch rules. Pass `GH_TOKEN: ${{ secrets.BLUEFINBOT_TOKEN }}` (or equivalent app token) in the `secrets:` block if the target branch is protected |
+| `reusable-sync-branches` refuses to force-reset by default | When the source and target branches diverge the workflow now refuses (failing the job) instead of force-resetting the target, unless you opt in with `allow_force_reset: true`. The default branch is never force-reset. Only set `allow_force_reset: true` when the target carries automated commits exclusively (e.g. a testing branch fed by Renovate); otherwise resolve the divergence through a pull request |
 | Multi-arch matrix stays in the consumer workflow | Do not move matrix orchestration into shared actions. Shared actions are per-arch steps; the matrix stays in the consumer workflow |
 
 ---
