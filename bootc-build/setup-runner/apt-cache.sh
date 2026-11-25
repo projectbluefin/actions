@@ -16,12 +16,14 @@ case "${1:?expected key or install}" in
   key)
     # Dependencies vary with the hosted runner image's preinstalled packages.
     # Do not restore across image versions (or native package lists for Podman).
+    # v2: entries saved before APT::Keep-Downloaded-Packages took effect lack
+    # the downloaded packages, so they must never be restored.
     image="${ImageOS:-${RUNNER_OS}}-${RUNNER_ARCH}-${ImageVersion:-unknown}"
     week=$(date +%Y-W%V)
     if [[ "$APT_MODE" == resolute ]]; then
-      key="apt-resolute-podman-${RUNNER_OS}-${image}-${package_hash}-${week}"
+      key="apt-resolute-podman-v2-${RUNNER_OS}-${image}-${package_hash}-${week}"
     else
-      key="apt-pkgs-${image}-${package_hash}-${week}"
+      key="apt-pkgs-v2-${image}-${package_hash}-${week}"
     fi
     echo "key=$key" >> "$GITHUB_OUTPUT"
     ;;
@@ -40,9 +42,13 @@ case "${1:?expected key or install}" in
     fi
     # Keep the existing mirror retries/timeouts: Azure can drop connections
     # mid-download, and a stalled mirror must not consume the whole job.
-    # apt (unlike apt-get) normally deletes downloaded packages after install.
+    # apt (unlike apt-get) normally deletes downloaded packages after install,
+    # which left the saved cache without them. The option must be top-level:
+    # apt folds its Binary::apt:: settings into the configuration before it
+    # parses -o, so `-o Binary::apt::APT::Keep-Downloaded-Packages` was never
+    # read (apt-private/private-cmndline.cc, ParseCommandLine).
     APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60
-      -o Binary::apt::APT::Keep-Downloaded-Packages=true)
+      -o APT::Keep-Downloaded-Packages=true)
 
     # Offline hit path. The Actions cache is never a trust root: cached .deb
     # files only install against package lists whose InRelease signature
