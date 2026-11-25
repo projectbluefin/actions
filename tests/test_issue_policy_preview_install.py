@@ -38,6 +38,6 @@ def test_preview_parser_install_uses_trusted_hashes(tmp_path, has_lock):
     else:
         package, digest = installed.strip().split(" --hash=sha256:")
         lock = (ROOT / "scripts/requirements.txt").read_text()
-        assert package == "pyyaml==6.0.3"
+        assert package == "pyyaml==6.0.4"
         assert package + " \\" in lock
         assert "--hash=sha256:" + digest in lock

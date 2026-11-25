@@ -74,7 +74,7 @@ jobs:
           else
             # Older released runtimes predate the lock. Pin the Linux x86-64
             # Python 3.14 wheel rather than downloading unverified build tools.
-            printf '%s\n' 'pyyaml==6.0.3 --hash=sha256:c458b6d084f9b935061bc36216e8a69a7e293a2f1e68bf956dcd9e6cbcd143f5' > "$RUNNER_TEMP/issue-policy-requirements.txt"
+            printf '%s\n' 'pyyaml==6.0.4 --hash=sha256:c604dc2613c417130479cdd6e55c2faa691b6365aa82b3dafddfcecc2eaf1ac7' > "$RUNNER_TEMP/issue-policy-requirements.txt"
             python3 -m pip install --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/issue-policy-requirements.txt"
           fi
 
