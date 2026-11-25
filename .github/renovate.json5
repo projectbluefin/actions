@@ -38,6 +38,16 @@
       "matchUpdateTypes": ["major"],
       "enabled": false
     },
+    // reusable-issue-policy-preview.yml installs a hash-locked data parser: the
+    // inline fallback pins the PyYAML cp314 wheel and
+    // tests/test_issue_policy_preview_install.py asserts python-version 3.14.
+    // Renovate proposing 3.15 breaks the pytest gate (#775), so hold the
+    // interpreter there until the lock and test are moved together on purpose.
+    {
+      "matchFileNames": [".github/workflows/reusable-issue-policy-preview.yml"],
+      "matchDepNames": ["python"],
+      "enabled": false
+    },
     // First-party self-references must stay on the floating @v1 tag, which this
     // repo's release process advances deliberately. config:best-practices pulls in
     // helpers:pinGitHubActionDigests, which would otherwise pin and then bump
