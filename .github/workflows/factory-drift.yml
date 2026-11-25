@@ -135,17 +135,25 @@ jobs:
             fi
           done
 
-          # ── Check 2: consumers must use @v1, not SHA pins, for actions refs ───
+          # ── Check 2: actions refs must use @v1 or a SHA with a `# v1` comment ─
+          # scripts/check_actions_sha_pins.py holds the matcher so it can be
+          # unit tested (tests/test_check_actions_sha_pins.py). A full SHA
+          # followed by `# v<major>` is the documented Renovate-managed form
+          # (issue #785); only a bare SHA with no version comment is drift.
+          # Exit 1 means findings; any other non-zero is a checker failure and
+          # becomes its own drift item rather than a silent pass.
           for repo in "${CONSUMER_REPOS[@]}"; do
             short="${repo#projectbluefin/}"
-            sha_pinned=$(
-              grep -rh 'uses:.*projectbluefin/actions.*@[0-9a-f]\{40\}' \
-                "/tmp/workflows/${short}/" 2>/dev/null \
-              | grep -v '^\s*#' \
-              || true
-            )
-            if [[ -n "${sha_pinned}" ]]; then
-              drift_items+=("${repo}|actions-sha-pin|Consumer pins projectbluefin/actions to a commit SHA instead of @v1")
+            set +e
+            pin_output=$(python3 scripts/check_actions_sha_pins.py --root "/tmp/workflows/${short}" 2>&1)
+            pin_status=$?
+            set -e
+            if (( pin_status == 1 )); then
+              detail=$(cut -d: -f1 <<<"${pin_output}" | xargs -r -n1 basename | sort -u | tr '\n' ' ' | sed 's/ $//')
+              drift_items+=("${repo}|actions-sha-pin|Consumer pins projectbluefin/actions to a commit SHA with no '# v1' version comment in: ${detail}")
+            elif (( pin_status != 0 )); then
+              detail=$(tr '\n' ' ' <<<"${pin_output}" | cut -c1-300)
+              drift_items+=("${repo}|sha-pin-checker-error|SHA-pin checker exited ${pin_status}: ${detail}")
             fi
           done
 
