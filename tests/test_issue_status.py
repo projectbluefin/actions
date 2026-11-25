@@ -162,6 +162,22 @@ def test_completed_confirmation_does_not_renotify_reporter(record, facts, catalo
     assert result["notification_action"] is None
 
 
+def test_expired_reply_window_asks_a_maintainer_to_close(record, facts, catalog, context, evidence):
+    context.update(
+        stage="needs-verification",
+        delivery_evidence=evidence,
+        verification_timed_out=True,
+        verification_deadline="2026-10-16",
+    )
+    result = status_report(record, facts, catalog, context)
+    assert not result["notify_reporter"]
+    assert result["notification_action"] is None
+    assert "reply window closed on 2026-10-16" in result["comment"]
+    assert "Close this report with a stated reason" in result["comment"]
+    # The reporter can still answer late, so the test steps stay available.
+    assert evidence["verify"] in result["comment"]
+
+
 @pytest.mark.parametrize("stage,delivery", [
     ("triage/accepted", {"image": "test"}),
     ("needs-verification", None),

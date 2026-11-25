@@ -3,6 +3,7 @@
 import copy
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,8 @@ CATALOG["feature_fields"] = ["problem to solve", "desired outcome", "affected co
 T0 = "2026-10-02T10:00:00Z"
 T1 = "2026-10-02T11:00:00Z"
 T2 = "2026-10-02T12:00:00Z"
+# The reporter's reply window closes 14 days after the T1 verification request.
+WINDOW_CLOSES = datetime(2026, 10, 16, 11, 0, tzinfo=timezone.utc)
 
 
 def issue(labels=(), body="", number=10):
@@ -443,6 +446,95 @@ def test_earlier_confirmation_cannot_close_a_new_verification_request():
         (event("needs-verification", time=T2),), (reply("Confirmed fixed", time=T0),)
     )
     assert not policy.plan(record, data, CATALOG)["close"]
+
+
+def test_reporter_reply_window_closes_fourteen_days_after_the_verification_request():
+    grant = event("needs-verification")
+    assert policy.VERIFICATION_TIMEOUT_DAYS == 14
+    assert policy.verification_reply_deadline(grant) == WINDOW_CLOSES
+
+
+def test_expired_reply_window_tells_a_maintainer_they_may_close_the_report():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification"),))
+    result = policy.plan(record, data, CATALOG, now=WINDOW_CLOSES)
+    assert result["stage"] == "needs-verification"
+    assert "reply window closed on 2026-10-16" in result["comment"]
+    assert "Close this report with a stated reason" in result["comment"]
+
+
+def test_expired_reply_window_never_closes_the_report_by_itself():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification"),))
+    assert not policy.plan(record, data, CATALOG, now=WINDOW_CLOSES)["close"]
+
+
+def test_expired_report_does_not_ping_the_reporter_again():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification"),))
+    result = policy.plan(record, data, CATALOG, now=WINDOW_CLOSES)
+    assert not result["notify_reporter"]
+    assert result["notification_action"] is None
+
+
+def test_reply_window_is_still_open_on_the_last_day():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification"),))
+    result = policy.plan(record, data, CATALOG, now=WINDOW_CLOSES - timedelta(minutes=1))
+    assert "reply window closed" not in result["comment"]
+    assert result["notify_reporter"]
+
+
+def test_late_reporter_confirmation_still_closes_the_report():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts(
+        (event("needs-verification"),),
+        (reply("Confirmed fixed in the release linked above", time="2026-10-20T00:00:00Z"),),
+    )
+    result = policy.plan(record, data, CATALOG, now=datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc))
+    assert result["close"]
+
+
+def test_renewed_verification_request_restarts_the_reply_window():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts(
+        (
+            event("needs-verification"),
+            event("needs-verification", time="2026-10-10T10:00:00Z"),
+        ),
+    )
+    result = policy.plan(record, data, CATALOG, now=WINDOW_CLOSES)
+    assert "reply window closed" not in result["comment"]
+
+
+def test_bot_projection_does_not_extend_the_reporter_reply_window():
+    # The window belongs to the maintainer's request, not to a later bot
+    # projection that re-adds the label.
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts(
+        (
+            event("needs-verification", time=T0),
+            event("needs-verification", "github-actions[bot]", "Bot", time=T2),
+        ),
+    )
+    result = policy.plan(record, data, CATALOG, now=WINDOW_CLOSES)
+    assert "reply window closed" in result["comment"]
+
+
+def test_unverified_grant_starts_no_reply_window():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification", "agent[bot]", "Bot"),))
+    result = policy.plan(record, data, CATALOG, now=WINDOW_CLOSES)
+    assert result["stage"] == "needs-triage"
+    assert not result["close"]
+
+
+def test_without_a_clock_the_reply_window_is_not_measured():
+    record = issue(("needs-verification", "kind/bug"), delivery_body())
+    data = facts((event("needs-verification"),))
+    result = policy.plan(record, data, CATALOG)
+    assert "reply window closed" not in result["comment"]
+    assert result["notify_reporter"]
 
 
 def test_write_client_rejects_every_other_repository():
