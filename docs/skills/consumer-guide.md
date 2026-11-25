@@ -236,13 +236,24 @@ jobs:
 
 ## Versioning and SHA pinning
 
-Pin to `@v1` for stability. To test against a feature branch before it merges:
+Two reference forms are accepted for production use. `factory-drift.yml` (Check 2,
+matcher in `scripts/check_actions_sha_pins.py`) reports a SHA pin that lacks the comment.
+
+| Form | Example | Choose it when |
+|---|---|---|
+| Managed tag | `uses: projectbluefin/actions/bootc-build/chunka@v1` | Default. You pick up each `v1` publication on the next run with no PR in your repo. |
+| Full SHA + version comment | `uses: projectbluefin/actions/bootc-build/chunka@<40-hex sha> # v1` | You need every actions change to land through a reviewed PR in your repo (e.g. common's `build.yml`, see its `ACTIONS-SECURITY.md`), or you want a `v1` move to be unable to change a running workflow mid-flight. Renovate's digest updates read the `# v1` comment and open a PR when `v1` advances. |
+
+A bare 40-hex SHA with **no** `# v<major>` comment is drift: nothing records which tag
+it tracks, so Renovate cannot keep it current and it silently goes stale.
+
+To test against a feature branch before it merges:
 
 ```yaml
 uses: projectbluefin/actions/.github/workflows/reusable-build.yml@abc1234
 ```
 
-Move back to `@v1` after the branch merges. Renovate manages SHA bumps automatically.
+Move back to one of the accepted forms after the branch merges.
 
 ---
 
