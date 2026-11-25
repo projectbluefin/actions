@@ -75,7 +75,6 @@ plus a zero-required-input interface that must keep passing. See
 | `factory-health.yml` pipeline status classification (threshold, sample floor, failure streak) | `tests/bats/test_factory_health_status.bats` (12 tests), kept in sync with the workflow by `tests/test_factory_health_classify_sync.py` |
 | `reusable-renovate-automerge.yml` check-rollup classification + head-moved stop | `tests/bats/test_renovate_automerge_checks.bats` (12 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | `reusable-renovate-automerge.yml` PR-lookup / qualification matcher | `tests/bats/test_renovate_automerge_find_pr.bats` (10 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
-| `renovate-automerge-wiring.yml` wiring assertion (`scripts/renovate-automerge-wiring-check.sh`) | `tests/bats/test_renovate_automerge_wiring_check.bats` (10 tests) |
 | `reusable-renovate-automerge.yml` merge step: `--match-head-commit` pin, moved-head skip (409 or changed `headRefOid`), `gh pr view --json state` outcome reporting | `tests/bats/test_renovate_automerge_merge.bats` (19 tests), kept in sync with the workflow by `tests/test_renovate_automerge_bats_sync.py` |
 | Shared merge-label policy and full Renovate/promotion merge paths | `tests/test_merge_label_guard.py`: holds, pagination, owned withdrawal, API failure, late-label races, retries, and unheld enrollment |
 
@@ -212,8 +211,7 @@ corresponding standalone script file. The canonical approach:
    against `monitor_pipeline()` in `factory-health.yml` and cross-checking the thresholds the
    bats `setup()` exports. Put that companion test in **pytest**, not bats, and make sure
    `unit-tests.yml` lists the source file in its `paths` filter, so editing the source alone
-   is enough to run it. `scripts/renovate-automerge-wiring-check.sh` is the same idea applied
-   to repository settings.
+   is enough to run it.
 
 ```bash
 # In the bats file, at the top:
