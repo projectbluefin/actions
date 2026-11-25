@@ -322,7 +322,6 @@ def status_report(record, facts, catalog, context):
             reporter = "No action needed yet."
             transition = "Evidence added → reporter tests."
         else:
-            actor = "Reporter"
             target = (
                 f"image `{evidence['image']}`"
                 if delivery_type == "image"
@@ -335,11 +334,25 @@ def status_report(record, facts, catalog, context):
             ]
             if delivery_type == "release":
                 reporter_steps.append("Follow the install steps, including any image-installed helper update.")
-            maintainer.append("Review the reporter's reply.")
-            # The writer anchors instructions to the authorized request event.
-            # Reformatting its Verify text must not create a second notification.
-            notification_action = _action("verify-delivery", {key: evidence[key] for key in sorted(required - {"verify"})})
-            transition = "`Confirmed fixed` → closed; `Still broken` → back to triage."
+            if context.get("verification_timed_out"):
+                # The reply window closed with no answer. The maintainer decides
+                # now; the reporter is not pinged again for an expired report.
+                status = "Released, no reporter reply — a maintainer may close this report"
+                actor = "Maintainer"
+                maintainer.append(
+                    "The reporter's reply window closed on "
+                    + str(context.get("verification_deadline"))
+                    + ". Close this report with a stated reason, or leave it open while the reporter tests."
+                )
+                maintainer.append("Review the reporter's reply if they still answer.")
+                transition = "Maintainer closes with a reason, or the reporter replies."
+            else:
+                actor = "Reporter"
+                maintainer.append("Review the reporter's reply.")
+                # The writer anchors instructions to the authorized request event.
+                # Reformatting its Verify text must not create a second notification.
+                notification_action = _action("verify-delivery", {key: evidence[key] for key in sorted(required - {"verify"})})
+                transition = "`Confirmed fixed` → closed; `Still broken` → back to triage."
 
     if native_gates and not context.get("close"):
         gate_names = " / ".join(f"`{label}`" for label in sorted(native_gates))
