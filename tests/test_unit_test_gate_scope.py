@@ -45,11 +45,12 @@ _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 # fails once an entry is covered, forcing it back out of this list; growing the
 # list requires an explicit edit here, so no blind spot enters silently.
 #
-# Every entry below is a workflow file that a `paths:` filter in
-# `unit-tests.yml` would leave blind. The workflow carries no such filter
-# today, so this list is empty; an entry reappears only if a filter is
-# reintroduced, and the exact replacement text is then recorded in the
-# tracking issue.
+# An entry is a workflow file that a `paths:` filter in `unit-tests.yml` would
+# leave blind. The workflow carries no such filter today, so the list of
+# entries is empty; an entry reappears only if a filter is reintroduced, and
+# the exact replacement text is then recorded in the tracking issue. The files
+# named below are not entries: they were blind under the filter this gate was
+# written against and are kept here only for history.
 #
 #   .github/workflows/factory-drift.yml — guarded by
 #       tests/test_factory_drift_thin_caller_check.py
