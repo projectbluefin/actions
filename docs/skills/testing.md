@@ -209,9 +209,8 @@ corresponding standalone script file. The canonical approach:
    parses the source and asserts the two agree — `tests/test_factory_health_classify_sync.py`
    does this for `tests/bats/test_factory_health_status.bats`, comparing the dedented block
    against `monitor_pipeline()` in `factory-health.yml` and cross-checking the thresholds the
-   bats `setup()` exports. Put that companion test in **pytest**, not bats, and make sure
-   `unit-tests.yml` lists the source file in its `paths` filter, so editing the source alone
-   is enough to run it.
+   bats `setup()` exports. Put that companion test in **pytest**, not bats: `unit-tests.yml` has no
+   `paths:` filter, so a pull request that edits the source alone already runs the pytest job.
 
 ```bash
 # In the bats file, at the top:
