@@ -7,16 +7,23 @@ inline `run:` body still matches its extracted script
 release gate (`test_promote_gate_order.py`), that cosign/skopeo call sites are
 still declared (`test_trust_policy_single_source.py`), and so on.
 
-Those gates are only as good as the events that run them. `unit-tests.yml`
-filters on `paths:`, so a pull request that edits *only* a guarded workflow does
-not run pytest at all, and the gate that exists to protect that exact file stays
-silent. The guarded set and the trigger set are two separate hand-maintained
-lists, and nothing kept them in agreement.
+Those gates are only as good as the events that run them. `unit-tests.yml` has
+no `paths:` filter — it runs on every push to `main`, on every pull request
+that targets `main`, and in the merge queue — so every guarded workflow is
+covered, and there is no second hand-maintained list of trigger paths to keep
+in agreement with the guarded set.
 
 This test makes the trigger scope a derived consequence of the suite: every
-workflow file the suite reads must be reachable by `unit-tests.yml`'s `paths:`
-filter, on both `push` and `pull_request`. Adding a gate over a new workflow now
-forces the corresponding trigger entry in the same change.
+workflow file the suite reads must be reachable by the unit-test trigger
+scope, on both `push` and `pull_request`.
+
+That constraint currently holds trivially, because with no filter the trigger
+scope is the whole tree. This test therefore bites only if a `paths:` filter
+comes back. Then a pull request that edits *only* a guarded workflow would not
+run pytest at all, and the gate that exists to protect that exact file would
+stay silent. `_trigger_paths` treats a missing filter as "no filter" (see the
+fallback there), so the check stays armed: the moment a filter is reintroduced,
+it names every workflow file that filter would leave blind.
 """
 import re
 from pathlib import Path
@@ -38,8 +45,11 @@ _YAML_TOKEN = re.compile(r"[A-Za-z0-9_.-]+\.ya?ml")
 # fails once an entry is covered, forcing it back out of this list; growing the
 # list requires an explicit edit here, so no blind spot enters silently.
 #
-# Every entry below is a `paths:` line that belongs in `unit-tests.yml`. The
-# exact replacement text is in the tracking issue.
+# Every entry below is a workflow file that a `paths:` filter in
+# `unit-tests.yml` would leave blind. The workflow carries no such filter
+# today, so this list is empty; an entry reappears only if a filter is
+# reintroduced, and the exact replacement text is then recorded in the
+# tracking issue.
 #
 #   .github/workflows/factory-drift.yml — guarded by
 #       tests/test_factory_drift_thin_caller_check.py
@@ -72,6 +82,14 @@ def _trigger_paths(event: str) -> list[str]:
     workflow = yaml.safe_load(UNIT_TESTS_WORKFLOW.read_text(encoding="utf-8"))
     # PyYAML parses the unquoted `on:` key as the boolean True.
     triggers = workflow.get("on", workflow.get(True))
+    # A missing `paths:` key means the trigger covers every change — the state
+    # of `unit-tests.yml` today, which runs on every push to `main`, on every
+    # pull request that targets `main`, and in the merge queue. The fallback
+    # spells that out as `.github/workflows/**`, the directory every guarded
+    # workflow lives in, so the gate below still counts each of them as
+    # covered. If a filter is ever reintroduced the fallback stops applying,
+    # the real list is used, and the gate names the workflows that filter
+    # leaves blind.
     return list(triggers[event].get("paths", [".github/workflows/**"]))
 
 
