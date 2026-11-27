@@ -180,3 +180,9 @@ def test_opted_in_reset_moves_remote_target_onto_source(repo):
     result, _ = run(_step(name="Force-reset target to source (diverged)"), AHEAD="1")
     assert result.returncode == 0, result.stderr
     assert _git(remote, "rev-parse", "testing") == _git(remote, "rev-parse", "main")
+
+
+def test_diverge_step_env_carries_token():
+    """The gh api default-branch fallback needs GH_TOKEN, or it fails silently."""
+    env = _step(step_id="diverge")["env"]
+    assert env.get("GH_TOKEN") == "${{ github.token }}"
