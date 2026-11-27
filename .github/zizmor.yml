@@ -66,4 +66,4 @@ rules:
       # permissions entry above it; a stale line number is what broke the
       # audit check on unrelated PRs (#767). Never remove secrets: inherit
       # here: that drops the credentials the release gate signs with.
-      - reusable-promote-squash.yml:545
+      - reusable-promote-squash.yml:600
