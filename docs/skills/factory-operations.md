@@ -750,11 +750,12 @@ When provided, it uses a GitHub App token to bypass protected-branch push rules.
 `github.token` is used — which fails on protected branches.
 
 **Diverged target:** If the target branch has commits not in source (e.g. direct CI fixes on
-`main` while `testing` was being promoted), the workflow force-resets `target` to `source`
-instead of attempting a merge. This is safe because:
-- `main` only receives CI fixes that don't need cherry-picking
-- A failed merge leaves the pipeline broken indefinitely
-- Force-reset produces a clean, predictable state
+`main` while `testing` was being promoted), the workflow refuses by default and fails the run
+rather than discard those commits. A caller can opt in with `allow_force_reset: true`, in which
+case the workflow force-resets `target` to `source`, but only when the target is not the
+repository default branch. If the default branch cannot be resolved, it refuses instead.
+The `diverge` step carries `GH_TOKEN` so the `gh api` default-branch lookup works on events
+such as `schedule`, where the event payload has no repository default branch.
 
 ---
 
