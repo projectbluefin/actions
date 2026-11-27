@@ -119,8 +119,9 @@ Flags`, `Verification`. Both the sections and the `Use when` trigger phrase in
 **That assertion runs on every pull request.** `unit-tests.yml` has no `paths:`
 filter — it runs on every push to `main`, on every pull request that targets
 `main`, and in the merge queue — so editing a skill file on its own already
-schedules the pytest job, and a non-conforming skill cannot merge quietly. Run
-the check yourself as well when you want the answer before the round trip:
+schedules the pytest job, and a non-conforming skill shows up as a failing
+`pytest` check on the PR. Run the check yourself as well when you want the
+answer before the round trip:
 
 ```bash
 python3 -m pytest tests/test_skill_spec_conformance.py
