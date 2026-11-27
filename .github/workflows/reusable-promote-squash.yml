@@ -11,6 +11,8 @@
 #   - Squash branch is always rebuilt fresh from origin/target_branch — no staleness,
 #     no conflict drift, no "parent is stale" failures.
 #   - --auto replaces the 12-step mergeability-polling + GraphQL enqueue loop.
+#   - Refuse promotion when the target has commits absent from the source;
+#     withdraw existing automatic enrollment and warn until the source catches up.
 #
 # Branch model support — the squash branch name is derived ONCE from the inputs as
 # auto/promote-<source_branch>-to-<target_branch> (job-level env PROMOTION_BRANCH),
@@ -64,8 +66,9 @@ on:
         default: 'e2e/post-testing'
       source_branch:
         description: >
-          Branch to promote FROM. Compared against target_branch; if trees
-          differ a squash PR is opened. Default: testing (bluefin model).
+          Branch to promote FROM. A squash PR is opened when trees differ,
+          unless target_branch has commits missing from this branch. In that
+          case promotion waits for the source to catch up. Default: testing.
           Use main for repos with a separate production branch (e.g. finpilot).
         required: false
         type: string
@@ -223,7 +226,15 @@ jobs:
           TARGET_TREE=$(git rev-parse "origin/${TARGET_BRANCH}^{tree}")
           SOURCE_TREE=$(git rev-parse "origin/${SOURCE_BRANCH}^{tree}")
 
-          if [ "$TARGET_TREE" = "$SOURCE_TREE" ]; then
+          target_ahead=false
+          if ! git merge-base --is-ancestor "$TARGET_SHA" "$SOURCE_SHA"; then
+            target_ahead=true
+          fi
+          echo "target_ahead=${target_ahead}" >> "$GITHUB_OUTPUT"
+
+          if [ "$target_ahead" = true ]; then
+            echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$TARGET_TREE" = "$SOURCE_TREE" ]; then
             echo "::notice::${SOURCE_BRANCH} and ${TARGET_BRANCH} are identical — nothing to promote"
             echo "sync_needed=false" >> "$GITHUB_OUTPUT"
           else
@@ -235,6 +246,50 @@ jobs:
             echo "testing_sha=${SOURCE_SHA}"
             echo "target_sha=${TARGET_SHA}"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Stop unsafe promotion
+        if: steps.compare.outputs.target_ahead == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SOURCE_SHA: ${{ steps.compare.outputs.testing_sha }}
+          TARGET_SHA: ${{ steps.compare.outputs.target_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          commits=$(git log --oneline "${SOURCE_SHA}..${TARGET_SHA}")
+          escaped=${commits//'%'/'%25'}
+          escaped=${escaped//$'\n'/'%0A'}
+          escaped=${escaped//$'\r'/'%0D'}
+          echo "::warning::${TARGET_BRANCH} has commits missing from ${SOURCE_BRANCH}; promotion would revert them: ${escaped}"
+
+          pr=$(gh pr list --repo "$REPO" --base "$TARGET_BRANCH" --head "$PROMOTION_BRANCH" \
+            --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            exit 0
+          fi
+          state=$(gh pr view "$pr" --repo "$REPO" --json id,autoMergeRequest \
+            --jq '[.id, (if .autoMergeRequest then "true" else "false" end)] | @tsv')
+          IFS=$'\t' read -r node_id auto_merge <<< "$state"
+          queue_entry=$(gh api graphql -f query='query($id:ID!){node(id:$id){... on PullRequest{mergeQueueEntry{id}}}}' \
+            -f id="$node_id" --jq '.data.node.mergeQueueEntry.id // empty')
+          if [ -n "$queue_entry" ]; then
+            gh api graphql -f query='mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}' \
+              -f id="$node_id" >/dev/null
+          fi
+          if [ "$auto_merge" = true ]; then
+            gh pr merge "$pr" --repo "$REPO" --disable-auto
+          fi
+
+          marker="<!-- promotion-divergence ${SOURCE_SHA} ${TARGET_SHA} -->"
+          existing=$(gh api --paginate "repos/${REPO}/issues/${pr}/comments?per_page=100" \
+            --jq '.[].body')
+          if ! grep -Fqx "$marker" <<< "$existing"; then
+            body=$(printf '%s\n\nPromotion from `%s` to `%s` would revert these target commits until the source contains them:\n\n```\n%s\n```' \
+              "$marker" "$SOURCE_BRANCH" "$TARGET_BRANCH" "$commits")
+            gh pr comment "$pr" --repo "$REPO" --body "$body"
+          fi
 
       - name: Rebuild squash promotion branch
         if: steps.compare.outputs.sync_needed == 'true'
