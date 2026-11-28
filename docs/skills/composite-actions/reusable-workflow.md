@@ -20,6 +20,8 @@ The repo provides these reusable workflows:
 
 **Permissions hardening:** default reusable workflows to `permissions: {}` at the workflow level, then grant the minimum required scopes per job. Do not rely on workflow-level `packages: write`/`contents: write` unless every job in the file truly needs that access.
 
+When moving an existing workflow-level grant down to its jobs, copy each job's current effective set exactly: a job-level `permissions:` block replaces the workflow-level block entirely, so a job that already has its own block never saw the workflow-level grant, and a job without one received all of it. The move shifts line numbers, so recompute every `file:line` pin in `.github/zizmor.yml` for the edited files in the same PR (`tests/test_zizmor_baseline_pins.py` fails on a drifted pin), and delete any `excessive-permissions` baseline entry the move resolves rather than leaving an empty `ignore:` (it loads as `None`).
+
 **Token requirements (`# requires:` annotation):** Every reusable workflow annotates its `on: workflow_call` block with `# requires: PAT|App-token|any` to give callers a static contract signal:
 - `# requires: any` — standard `github.token` is sufficient; caller does not need custom tokens or secrets.
 - `# requires: App-token` — caller must provide GitHub App credentials (e.g. `app_id` + `private_key`).
