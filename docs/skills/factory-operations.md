@@ -105,6 +105,13 @@ The reusable workflow first builds the squash PR and runs the release gate. Its
 Cosign or E2E failure therefore cannot race with queue enrollment. Do not move
 enrollment back into the PR-construction job.
 
+The squash promotion replaces the target tree with the source tree. Before
+building or enrolling a promotion, require the target commit to be an ancestor
+of the source, even when their trees match. Otherwise target-only commits can
+be silently reverted. The workflow warns, withdraws existing automatic
+enrollment, and posts one warning per source/target SHA pair; the source must
+catch up through its normal sync before promotion resumes.
+
 `enablePullRequestAutoMerge` is blocked when the target branch has a merge queue
 ruleset. `use_merge_queue: true` selects `enqueuePullRequest`; it does not decide
 whether a release window is open.
