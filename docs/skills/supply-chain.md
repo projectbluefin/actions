@@ -164,6 +164,36 @@ curl -s "https://quay.io/v2/coreos/chunkah/manifests/v0.6.0" \
 
 ---
 
+## Pattern: run large CLI tools from their digest-pinned image, not `npm install -g`
+
+A CI step that runs a published CLI with a deep dependency tree (e.g. `renovate-config-validator`)
+must not install it with `npm install -g <pkg>@<version>`: only the top-level package version is
+fixed, every transitive package resolves unverified on each run, and OpenSSF Scorecard flags it
+under Pinned-Dependencies. When the upstream project ships an official image, run the tool from
+that image as a `docker://` step pinned to the manifest index digest:
+
+```yaml
+- uses: docker://ghcr.io/renovatebot/renovate:<version>@sha256:<index-digest>
+  with:
+    args: renovate-config-validator --strict
+```
+
+- Renovate's `github-actions` manager extracts `uses: docker://` references (depType `docker`)
+  and keeps both the tag and the digest current; no custom regex manager is needed.
+- The step runs with the checked-out workspace as its working directory, so reusable workflows
+  need no second checkout of this repo.
+- Keep the image's own entrypoint and pass the binary in `args` when the entrypoint dispatches on
+  `$1` (Renovate's `renovate-entrypoint.sh` does). Confirm with
+  `skopeo inspect --config docker://<image> | jq .config.Entrypoint`.
+- The step runs as the image's default user (not the runner user): it can read the workspace but
+  must not need to write to it or to `$HOME`. Reproduce locally before relying on it:
+  `podman run --rm -w /github/workspace -v "$PWD:/github/workspace" <image@digest> <args>`.
+
+For small Python or Node tools without an official image, commit a hash-locked lockfile instead
+(see `docs/skills/testing.md` → "Hash-locked Python requirements").
+
+---
+
 ## Pattern: use `actions/attest-build-provenance` for SLSA provenance
 
 Use `actions/attest-build-provenance` (not the generic `actions/attest`) for SLSA-compliant

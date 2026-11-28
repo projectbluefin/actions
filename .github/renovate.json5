@@ -29,15 +29,6 @@
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["pinDigest"]
     },
-    // reusable-validate-renovate.yml installs the renovate CLI, whose
-    // engines.node is pinned to a single major (currently ^24). Hold Node
-    // there until renovate itself supports the next major.
-    {
-      "matchFileNames": [".github/workflows/reusable-validate-renovate.yml"],
-      "matchDepNames": ["node"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
     // reusable-issue-policy-preview.yml installs a hash-locked data parser: the
     // inline fallback pins the PyYAML cp314 wheel and
     // tests/test_issue_policy_preview_install.py asserts python-version 3.14.

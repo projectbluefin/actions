@@ -19,13 +19,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: '24'
-
-      - name: Install renovate
-        run: npm install -g renovate@44.14.12
-
+      # Renovate's official image, pinned to its multi-arch index digest, carries
+      # the validator and its whole dependency tree. An `npm install -g` here
+      # would resolve hundreds of transitive packages unverified on every run.
       - name: Validate Renovate config
-        run: renovate-config-validator --strict
+        uses: docker://ghcr.io/renovatebot/renovate:44.14.12@sha256:160125831b82ae05c734870b9f65094e0f8699a0e44f3274bacc7b36a9041047
+        with:
+          args: renovate-config-validator --strict
