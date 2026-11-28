@@ -10,7 +10,8 @@ name: reusable-thin-caller-gate
 # factory-drift backstop.
 #
 # Single source of truth: the validator source is an explicit input
-# (actions_repository/actions_ref), defaulting to projectbluefin/actions@v1,
+# (actions_repository/actions_ref), defaulting to projectbluefin/actions at the
+# commit the caller pinned this reusable to (job.workflow_sha),
 # instead of a value baked into the checkout step. A consumer that pins a
 # future @v2 of this reusable inherits that version's own defaults; nothing
 # here silently drifts to whatever @v1 happens to point at independently of
@@ -36,9 +37,11 @@ on:
       actions_ref:
         description: >-
           Ref of actions_repository to check out the validator script from.
+          Empty selects the commit the caller already trusted (the reusable's
+          own pinned commit) so the workflow YAML and script never drift.
           Override only to validate a fork or branch of this reusable itself.
         type: string
-        default: v1
+        default: ''
 
 permissions: {}
 
@@ -57,7 +60,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ inputs.actions_repository }}
-          ref: ${{ inputs.actions_ref }}
+          ref: ${{ inputs.actions_ref || job.workflow_sha }}
           path: thin-caller-gate
 
       - name: Set up Python
