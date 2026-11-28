@@ -3,8 +3,10 @@ name: Vendor chunkah Containerfile.splitter
 
 # Runs on Renovate PRs that bump bootc-build/chunka/action.yml.
 # Downloads the matching Containerfile.splitter from the chunkah GitHub release,
-# updates the SHA-256 comment in action.yml, and commits both back to the
-# Renovate branch so the PR is fully self-contained and ready to automerge.
+# verifies it against the separately reviewed CHUNKAH_SHA256 in action.yml, and
+# commits it back to the Renovate branch. The checksum is never calculated from
+# the download: a version bump must carry a reviewer-supplied CHUNKAH_SHA256, and
+# the job fails closed on a missing or mismatching value.
 #
 # SECURITY: this job holds `contents: write` and checks out the PR head, so the
 # CHUNKAH_VERSION it reads out of the PR's own diff is fully attacker-controlled.
@@ -49,18 +51,25 @@ jobs:
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Download Containerfile.splitter
+      - name: Verify expected CHUNKAH digest is present
+        id: integrity
+        run: |
+          expected_sha=$(grep -oP '^\s*CHUNKAH_SHA256="\K[a-f0-9]{64}(?=")' bootc-build/chunka/action.yml)
+          if [[ ! "${expected_sha}" =~ ^[a-f0-9]{64}$ ]]; then
+            echo "::error::Missing reviewed CHUNKAH_SHA256 in bootc-build/chunka/action.yml."
+            exit 1
+          fi
+          echo "sha256=${expected_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify Containerfile.splitter
         env:
           VERSION: ${{ steps.version.outputs.version }}
+          EXPECTED_SHA256: ${{ steps.integrity.outputs.sha256 }}
         run: |
           curl --no-progress-meter -fSL \
             "https://github.com/coreos/chunkah/releases/download/${VERSION}/Containerfile.splitter" \
             -o bootc-build/chunka/Containerfile.splitter
-
-      - name: Update SHA-256 comment in action.yml
-        run: |
-          sha=$(sha256sum bootc-build/chunka/Containerfile.splitter | awk '{print $1}')
-          sed -Ei "s|# sha256:[a-f0-9]{64}|# sha256:${sha}|" bootc-build/chunka/action.yml
+          echo "${EXPECTED_SHA256}  bootc-build/chunka/Containerfile.splitter" | sha256sum --check --strict -
 
       - name: Commit if changed
         env:

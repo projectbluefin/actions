@@ -6,7 +6,7 @@
 #   * A bare rule id disables that rule for the whole scan:
 #       unpinned-image
 #     Rule ids: mutable-url, pipe-download, unpinned-clone,
-#       unpinned-image, unpinned-ostree
+#       unpinned-image, unpinned-ostree, self-checksum
 #
 #   * Any other line suppresses one finding whose printed text (summary line OR
 #     the reported source line) contains it — use the URL, image ref, or path

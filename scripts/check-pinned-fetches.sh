@@ -73,6 +73,7 @@ fi
 # unpinned-clone    git clone with no immutable commit reference
 # unpinned-image    container image referenced by tag with no digest
 # unpinned-ostree   bootc switch / ostree rebase to a tag without sigpolicy
+# self-checksum     download whose only checksum is calculated from the download
 
 declare -A SEVERITY=(
   [mutable-url]=high
@@ -80,6 +81,7 @@ declare -A SEVERITY=(
   [unpinned-clone]=medium
   [unpinned-image]=medium
   [unpinned-ostree]=high
+  [self-checksum]=high
 )
 
 # --- allowlist ----------------------------------------------------------------
@@ -238,6 +240,22 @@ while IFS= read -r f; do
     record unpinned-ostree "${SEVERITY[unpinned-ostree]}" "$f:$lineno" \
       "bootc/ostree rebase to a tag has no container signature policy" "$content"
   done < <(grep -nE 'bootc[[:space:]]+switch|([[:space:]])ostree[[:space:]]+(--repo[^[:space:]]+[[:space:]]+)?rebase|rpm-ostree[[:space:]]+rebase' "$f" 2>/dev/null | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+
+  # self-checksum: download "verified" only by a checksum computed from itself -
+  # A file fetched with curl/wget -o/-O whose checksum is then calculated in the
+  # same file (`sha=$(sha256sum f)`) and never compared to a fixed value proves
+  # nothing: a replaced upstream asset hashes to whatever it is. Reported when a
+  # file has such a download and such a calculation but no verifying command
+  # (`sha256sum -c/--check`, `shasum -c`, `cosign verify`, `gpg --verify`).
+  if grep -qE '(^|[^[:alnum:]_])(curl|wget)[[:space:]].*(-o|-O|--output|--output-document)\b' <(logical_lines "$f" | grep -vE '^[0-9]+:[[:space:]]*#') 2>/dev/null \
+     && ! grep -qE 'sha(256|512)sum[^|]*(-c|--check)\b|shasum[^|]*(-c|--check)\b|cosign[[:space:]]+verify|gpg[[:space:]]+--verify' <(logical_lines "$f" | grep -vE '^[0-9]+:[[:space:]]*#') 2>/dev/null; then
+    while IFS= read -r match; do
+      [ -n "$match" ] || continue
+      lineno="${match%%:*}"; content="${match#*:}"
+      record self-checksum "${SEVERITY[self-checksum]}" "$f:$lineno" \
+        "downloaded file is checked only against a checksum calculated from itself" "$content"
+    done < <(logical_lines "$f" 2>/dev/null | grep -E '^[0-9]+:.*(\$\(|`)[[:space:]]*(sha(256|512)sum|shasum)[[:space:]]' | grep -vE '^[0-9]+:[[:space:]]*#' || true)
+  fi
 done < <(find "$ROOT" -type f \
     \( -path '*/.github/*.yml' -o -path '*/.github/*.yaml' -o \
        -name '*.sh' -o \
