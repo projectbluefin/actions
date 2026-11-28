@@ -60,7 +60,7 @@ consumed by every image repo.
 
 ## The Rules
 
-`scripts/check-pinned-fetches.sh` reports five shapes. Each finding carries a
+`scripts/check-pinned-fetches.sh` reports six shapes. Each finding carries a
 severity; the gate fails on any non-allowlisted finding in `fail` mode.
 
 | Rule | Severity | Flags |
@@ -70,6 +70,7 @@ severity; the gate fails on any non-allowlisted finding in `fail` mode.
 | `unpinned-clone` | medium | `git clone` with no immutable commit SHA (`--branch <40-hex>`) |
 | `unpinned-image` | medium | a `FROM` image referenced by tag with no `@sha256:` digest |
 | `unpinned-ostree` | high | `bootc switch`/`ostree rebase` to a tag with no container signature policy (`--sigpolicy` / `--enforce-policy-path`) |
+| `self-checksum` | high | a file with a `curl`/`wget -o` download whose only checksum is calculated from the download (`$(sha256sum file)`), with no `sha256sum -c`, `cosign verify` or `gpg --verify` anywhere in the file; compare against a separately reviewed value instead |
 
 The gate is a **grep scan, not a parser**: it looks for a mutable reference and
 the absence of a marker *on the same line*. The one concession to shell layout

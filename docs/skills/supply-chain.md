@@ -43,16 +43,18 @@ same commit on every version update.
 
 `bootc-build/chunka/Containerfile.splitter` is vendored from the chunkah project. The action
 references it by local path (`${{ github.action_path }}/Containerfile.splitter`) so no network
-fetch happens at build time. The expected SHA-256 is recorded in a comment in `action.yml`.
+fetch happens at build time. The expected SHA-256 is recorded as `CHUNKAH_SHA256` beside `CHUNKAH_VERSION` in `action.yml`.
 
 **Renovate tracking (fully automated):** `renovate.json` has a custom regex manager that watches
 `bootc-build/chunka/action.yml` and opens a PR when a new `quay.io/coreos/chunkah` digest/tag
 is available. The `.github/workflows/vendor-chunka-files.yml` workflow automatically downloads
-the matching `Containerfile.splitter` from the chunkah GitHub release, updates the SHA-256
-comment in `action.yml`, and commits both back to the Renovate branch. When CI passes, the PR
-automerges.
+the matching `Containerfile.splitter` from the chunkah GitHub release and verifies it against
+`CHUNKAH_SHA256` before committing it back to the Renovate branch. The workflow never calculates
+that checksum from the download and fails closed when it is missing or does not match.
 
-**No manual steps are required for routine chunkah upgrades.**
+**One manual step per chunkah upgrade:** a reviewer must set `CHUNKAH_SHA256` in `action.yml` to
+the checksum for the new release, taken from independently reviewed upstream provenance, before
+the vendor job can pass.
 
 ### Hardening the vendor workflow — the version it reads is attacker-controlled
 

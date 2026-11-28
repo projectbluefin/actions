@@ -270,3 +270,60 @@ SH
   [ "$status" -eq 0 ]
   [[ $output == *"Usage"* ]]
 }
+
+# --- self-checksum: download verified only by its own hash ---------------------
+
+@test "self-checksum rule flags a checksum calculated from the download" {
+  cat > "$ROOT/.github/workflows/vendor.yml" <<'YAML'
+jobs:
+  vendor:
+    steps:
+      - run: |
+          curl -fSL "https://example.com/dl/v1.0.0/file" -o file
+          sha=$(sha256sum file | awk '{print $1}')
+YAML
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 1 ]
+  [[ $output == *"self-checksum"* ]]
+}
+
+@test "self-checksum rule passes when the download is checked against a matching expected checksum" {
+  cat > "$ROOT/.github/workflows/vendor.yml" <<'YAML'
+jobs:
+  vendor:
+    steps:
+      - run: |
+          curl -fSL "https://example.com/dl/v1.0.0/file" -o file
+          echo "${EXPECTED_SHA256}  file" | sha256sum --check --strict -
+YAML
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 0 ]
+}
+
+@test "self-checksum rule flags a download with a missing expected checksum" {
+  cat > "$ROOT/.github/workflows/vendor.yml" <<'YAML'
+jobs:
+  vendor:
+    steps:
+      - run: |
+          curl -fSL "https://example.com/dl/v1.0.0/file" -o file
+          sha=$(sha256sum file | awk '{print $1}')
+          echo "sha256=${sha}" >> "$GITHUB_OUTPUT"
+YAML
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 1 ]
+  [[ $output == *"self-checksum"* ]]
+}
+
+@test "self-checksum rule is quiet when no download is present" {
+  printf 'sha=$(sha256sum file | awk "{print \\$1}")\n' > "$ROOT/tool.sh"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail
+  [ "$status" -eq 0 ]
+}
+
+@test "self-checksum rule can be disabled by rule id in the allowlist" {
+  printf 'curl -fSL https://example.com/dl/v1/file -o file\nsha=$(sha256sum file)\n' > "$ROOT/.github/workflows/w.yml"
+  printf 'self-checksum\n' > "$ROOT/allow.txt"
+  run bash "$SCRIPT" --root "$ROOT" --mode fail --allowlist "$ROOT/allow.txt"
+  [ "$status" -eq 0 ]
+}
